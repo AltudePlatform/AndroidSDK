@@ -2,11 +2,13 @@ package com.altude.gasstation
 
 import com.altude.core.TransactionTransferBuilder
 import com.altude.core.api.SignedTransactionRequest
+import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.crypto.KeyUtils
-import java.security.PrivateKey
 import com.altude.core.model.SendOptions
+import retrofit2.Call
+import retrofit2.Response
+import retrofit2.Callback
 
 data class TransferOptions (
     override val source: String,
@@ -40,27 +42,25 @@ object GasStationSdk {
     }
 
     suspend fun transferToken(
-        options: TransferOptions
+        options: TransferOptions,
+        callback: (Result<String>) -> Unit
     ) {
-
-        val singedTransaction = TransactionTransferBuilder.TransferTokenTransaction(options)
-
+        val signedTransaction = TransactionTransferBuilder.TransferTokenTransaction(options)
         val service = SdkConfig.createService(TransactionService::class.java)
 
-        service.sendTransaction(singedTransaction).enqueue(object : retrofit2.Callback<com.altude.core.api.TransactionResponse> {
-            override fun onResponse(
-                call: retrofit2.Call<com.altude.core.api.TransactionResponse>,
-                response: retrofit2.Response<com.altude.core.api.TransactionResponse>
-            ) {
-                println("✅ Token transfer sent: ${response.body()?.message}")
+        service.sendTransaction(signedTransaction).enqueue(object : Callback<TransactionResponse> {
+            override fun onResponse(call: Call<TransactionResponse>, response: Response<TransactionResponse>) {
+                if (response.isSuccessful) {
+                    callback(Result.success(response.body()?.message ?: "Empty success"))
+                } else {
+                    callback(Result.failure(Exception("Error: ${response.errorBody()?.string()}")))
+                }
             }
 
-            override fun onFailure(
-                call: retrofit2.Call<com.altude.core.api.TransactionResponse>,
-                t: Throwable
-            ) {
-                println("❌ Failed to send: ${t.message}")
+            override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
+                callback(Result.failure(t))
             }
         })
     }
+
 }

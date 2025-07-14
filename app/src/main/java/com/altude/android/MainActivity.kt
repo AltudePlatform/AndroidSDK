@@ -14,7 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.lifecycleScope
 import com.altude.android.ui.theme.AltudesdkTheme
-
+import com.altude.gasstation.GasStationSdk
+import com.altude.gasstation.Token
+import com.altude.gasstation.TransferOptions
+import kotlinx.coroutines.launch
 
 
 class MainActivity : ComponentActivity() {
@@ -23,23 +26,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-//        GasStationSdk.setApiKey("")
-//
-//        // ✅ Call the suspend transferToken
-//        lifecycleScope.launch {
-//            try {
-//                val options = TransferOptions(
-//                    source = "BMRmo31USZuEga32JTk1Ub242JGcod982JtmynMK3fqv",
-//                    destination = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
-//                    amount = 0.0001, // Amount in smallest unit (e.g. lamports)
-//                    Token.SOL
-//                )
-//
-//                GasStationSdk.transferToken(options)
-//            } catch (e: Exception) {
-//                Log.e("GasStationTest", "Error: ${e.message}", e)
-//            }
-//        }
+        GasStationSdk.setApiKey("")
+
+        // ✅ Call the suspend transferToken
+        lifecycleScope.launch {
+            GasStationSdk.transferToken(
+                TransferOptions(
+                    source = "YourSourceWalletAddress",
+                    destination = "DestinationWalletAddress",
+                    amount = 1.0,
+                    mintToken = Token.USDC
+                )
+            ){ result ->
+                result
+                    .onSuccess { println("✅ Sent: $it") }
+                    .onFailure { println("❌ Failed: ${it.message}") }
+            }
+        }
         setContent {
             AltudesdkTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
