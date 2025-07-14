@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import foundation.metaplex.solanapublickeys.PublicKey
 import org.bouncycastle.crypto.signers.Ed25519Signer
+import kotlin.math.pow
+import kotlin.collections.listOf
 
 
 object TransactionTransferBuilder {
@@ -23,7 +25,7 @@ object TransactionTransferBuilder {
     suspend fun TransferTokenTransaction(
         option: SendOptions
 
-    ): String = withContext(Dispatchers.IO) {
+    ): String {
         val rpc = RPC("https://cold-holy-dinghy.solana-devnet.quiknode.pro/8cc52fd5faf72bedbc72d9448fba5640cd728ace/")
         val feePayerPubKeypair = SolanaPublicKey.from("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
         val privateKeyBytes = byteArrayOf(
@@ -42,7 +44,7 @@ object TransactionTransferBuilder {
         val instruction = createSplTokenTransfer(
             sourceAta = option.source,
             destinationAta = option.destination,
-            feePayer = feePayer.toString(),
+            feePayer = feePayerPubKeypair,
             mint = option.mint,
             amount = option.amount,
             decimals = decimals
@@ -54,24 +56,26 @@ object TransactionTransferBuilder {
             .build()
 
         // 🔹 Serialize and return Base64 string
-        val sign = SignTransaction(feePayer.publicKey,message)
+        val sign = SignTransaction(feePayer.privateKey,message)
 
 
 
-        Base64.encodeToString(sign.serialize(), Base64.NO_WRAP)
+        return Base64.encodeToString(sign.serialize(), Base64.NO_WRAP)
     }
+
 
     fun createSplTokenTransfer(
         sourceAta: String,
         destinationAta: String,
-        feePayer: String,
+        feePayer: SolanaPublicKey,
         mint: String,
         amount: Double,
         decimals: Int
     ): TransactionInstruction {
+        val amountInBaseUnits = (amount * 10.0.pow(decimals)).toLong()
         val data = byteArrayOf(
             12, // transferChecked instruction index
-            amount.toULong().toByte(), // amount in lamports
+            amountInBaseUnits.toByte(), // amount in lamports
             decimals.toByte()
         )
 
@@ -81,7 +85,7 @@ object TransactionTransferBuilder {
                 AccountMeta(SolanaPublicKey.from(sourceAta), isSigner = false, isWritable = true),
                 AccountMeta(SolanaPublicKey.from(mint), isSigner = false, isWritable = false),
                 AccountMeta(SolanaPublicKey.from(destinationAta), isSigner = false, isWritable = true),
-                AccountMeta(SolanaPublicKey.from(feePayer), isSigner = true, isWritable = false),
+                AccountMeta(SolanaPublicKey.from(feePayer.string()), isSigner = true, isWritable = false),
             ),
             data = data
         )
@@ -94,7 +98,7 @@ object TransactionTransferBuilder {
     suspend fun getTokenDecimals(
         rpc: RPC,
         mintAddress: String
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int {
         val pubkey = PublicKey(mintAddress)
         val accountInfo = rpc.getAccountInfo<MintLayout>(
             pubkey,
@@ -105,7 +109,7 @@ object TransactionTransferBuilder {
         val decimals = accountInfo?.data?.decimals?.toInt()
             ?: throw Exception("Failed to get decimals from token mint layout")
 
-        decimals
+        return decimals
     }
 
     suspend fun SignTransaction(
