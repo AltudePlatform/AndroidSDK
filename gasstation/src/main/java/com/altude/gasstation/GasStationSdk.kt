@@ -1,11 +1,15 @@
 package com.altude.gasstation
 
 import com.altude.core.TransactionTransferBuilder
-import com.altude.core.api.SignedTransactionRequest
+import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.core.model.SendOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import retrofit2.Call
 import retrofit2.Response
 import retrofit2.Callback
@@ -38,29 +42,41 @@ object GasStationSdk {
 
     fun setApiKey(apiKey: String) {
         SdkConfig.setApiKey(apiKey)
-        SdkConfig.initialize("")
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun transferToken(
-        options: TransferOptions,
-        callback: (Result<String>) -> Unit
-    ) {
-        val signedTransaction = TransactionTransferBuilder.TransferTokenTransaction(options)
-        val service = SdkConfig.createService(TransactionService::class.java)
+        options: TransferOptions
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val result = TransactionTransferBuilder.TransferTokenTransaction(options)
 
-        service.sendTransaction(signedTransaction).enqueue(object : Callback<TransactionResponse> {
-            override fun onResponse(call: Call<TransactionResponse>, response: Response<TransactionResponse>) {
-                if (response.isSuccessful) {
-                    callback(Result.success(response.body()?.message ?: "Empty success"))
-                } else {
-                    callback(Result.failure(Exception("Error: ${response.errorBody()?.string()}")))
-                }
-            }
+            // Check if signing was successful
+            if (result.isFailure) return@withContext result
 
-            override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
-                callback(Result.failure(t))
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+
+            // Suspend manually using suspendCoroutine
+            val request =  SendTransactionRequest( signedTransaction)
+            suspendCancellableCoroutine<Result<String>> { cont ->
+                service.sendTransaction(request)
+                    .enqueue(object : Callback<TransactionResponse> {
+                        override fun onResponse(
+                            call: Call<TransactionResponse>,
+                            response: Response<TransactionResponse>
+                        ) {
+                            val msg = response.body()?.message ?: "No message"
+                            cont.resume(Result.success(msg), onCancellation = null)
+                        }
+
+                        override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
+                            cont.resume(Result.failure(t), onCancellation = null)
+                        }
+                    })
             }
-        })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
-
 }

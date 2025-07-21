@@ -2,6 +2,12 @@ package com.altude.core.model
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
+
+@Serializable
+data class AccountInfo(
+    @SerialName("rentEpoch")
+    val rentEpoch: String // or BigInteger (if you handle it properly)
+)
 @Serializable
 data class MintLayout(
     @SerialName("mintAuthority")

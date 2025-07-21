@@ -4,8 +4,8 @@ import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.POST
 
-data class SignedTransactionRequest(
-    val signedTransaction: String
+data class SendTransactionRequest(
+    val SignedTransaction: String
 )
 
 data class BatchTransactionRequest(
@@ -21,7 +21,7 @@ interface TransactionService {
 
     @POST("api/transaction/send")
     fun sendTransaction(
-        @Body SignedTransaction: String
+        @Body SignedTransaction: SendTransactionRequest
     ): Call<TransactionResponse>
 
     @POST("api/transaction/batch")

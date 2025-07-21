@@ -45,5 +45,14 @@ dependencies {
     implementation ("com.squareup.okhttp3:logging-interceptor:5.1.0")
 
 
+    //implementation("com.funkatronics:kborsh:0.2.4") // Confirm this is the android-compatible variant
+    implementation("io.github.funkatronics:multimult:0.2.3")
+    // implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
+    implementation("com.ditchoom:buffer-android:0.2.4")
+    testImplementation(platform("org.junit:junit-bom:5.13.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
+
 

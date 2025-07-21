@@ -29,20 +29,20 @@ class MainActivity : ComponentActivity() {
         GasStationSdk.setApiKey("")
 
         // ✅ Call the suspend transferToken
-        lifecycleScope.launch {
-            GasStationSdk.transferToken(
-                TransferOptions(
-                    source = "YourSourceWalletAddress",
-                    destination = "DestinationWalletAddress",
-                    amount = 1.0,
-                    mintToken = Token.USDC
-                )
-            ){ result ->
-                result
-                    .onSuccess { println("✅ Sent: $it") }
-                    .onFailure { println("❌ Failed: ${it.message}") }
-            }
-        }
+//        lifecycleScope.launch {
+//            GasStationSdk.transferToken(
+//                TransferOptions(
+//                    source = "YourSourceWalletAddress",
+//                    destination = "DestinationWalletAddress",
+//                    amount = 1.0,
+//                    mintToken = Token.USDC
+//                )
+//            ){ result ->
+//                result
+//                    .onSuccess { println("✅ Sent: $it") }
+//                    .onFailure { println("❌ Failed: ${it.message}") }
+//            }
+//        }
         setContent {
             AltudesdkTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
