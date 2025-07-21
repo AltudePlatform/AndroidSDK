@@ -58,5 +58,13 @@ dependencies {
     implementation("com.diglol.crypto:pkc:0.2.0")
 //
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // KMP Solana + Borsh support for Android
+    //implementation("com.funkatronics:kborsh:0.2.4") // Confirm this is the android-compatible variant
+    implementation("io.github.funkatronics:multimult:0.2.3")
    // implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
+    //implementation("com.ditchoom:buffer-android:0.2.4")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+
 }
