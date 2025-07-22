@@ -1,11 +1,12 @@
 package com.altude.gasstation
 
-import com.altude.core.TransactionTransferBuilder
+import com.altude.core.TransactionBuilder
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.core.model.SendOptions
+import com.altude.core.model.Token
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,18 +26,7 @@ data class TransferOptions (
 }
 
 
-enum class Token(val mint: String) {
-    SOL("So11111111111111111111111111111111111111112"),
-    USDT("Es9vMFraZcxrRTpQHsyc7DF1mz77XCxSY3vWS4Sxrt4"),
-    USDC("EPjFWdd5AufqSSqeM2qSX2mVesERs85x3n5wjLWe1RtK"),
-    LINK("2wpTofQ8SkACrk5xNdqk1ZUidPDZcN6h4FJfB9RkqWxN"),
-    RNDR("RnwpAb5AF5JZKt4dFHb2wAHXQ2VuqsQvjA5PwMZKzp"),
-    WIF("2gcXhWhChhAAXSw1esijF7LfopdSbCCGzG04wTtdBSS"),
-    GRT("AZZre0B3UbkGwbUtEsqSiLDsDU2M7co26g7Egezheh"),
-    BONK("8HXycfvhrtRpyL9WcnjxpQfQMsXik6jhbSahQXegaEg"),
-    AR("6zHcd4Z3YAH8PfQ4Niupqv3MFf2kcKEDLRRUKn4rG"),
-    PYTH("8mQo4EG4m4sEH9D5cFsw9mqqmZbofzjysA8HkRXsLtwY")
-}
+
 
 object GasStationSdk {
 
@@ -49,7 +39,7 @@ object GasStationSdk {
         options: TransferOptions
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionTransferBuilder.TransferTokenTransaction(options)
+            val result = TransactionBuilder.TransferToken(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result

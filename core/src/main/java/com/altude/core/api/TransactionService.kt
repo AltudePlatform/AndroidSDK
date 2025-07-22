@@ -28,4 +28,14 @@ interface TransactionService {
     fun sendBatchTransaction(
         @Body body: BatchTransactionRequest
     ): Call<TransactionResponse>
+
+    @POST("api/account/create")
+    fun createAccount(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
+
+    @POST("api/account/close")
+    fun closeAccount(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
 }

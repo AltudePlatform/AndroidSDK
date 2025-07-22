@@ -5,6 +5,7 @@ import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.api.TransactionService
 import com.altude.core.config.SdkConfig
+import com.altude.core.model.Token
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -30,7 +31,7 @@ class ExampleInstrumentedTest {
         GasStationSdk.setApiKey("your_actual_api_key")
 
         val options = TransferOptions(
-            source = "chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
+            source = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
             destination = "BMRmo31USZuEga32JTk1Ub242JGcod982JtmynMK3fqv",
             amount = 0.0001,
             mintToken = Token.SOL
