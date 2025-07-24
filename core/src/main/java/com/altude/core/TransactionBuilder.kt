@@ -3,27 +3,23 @@ package com.altude.core
 import android.util.Base64
 import com.altude.core.model.CreateAccountOption
 import com.altude.core.`interface`.SendOptions
-import com.altude.core.Instructions.AssociatedTokenAccountProgram
-import com.altude.core.Instructions.AssociatedTokenAccountProgram.deriveAtaAddress
-import com.altude.core.Instructions.Core
-import com.altude.core.Instructions.TokenProgram
+import com.altude.core.Program.AssociatedTokenAccountProgram
+import com.altude.core.Program.AssociatedTokenAccountProgram.deriveAtaAddress
+import com.altude.core.Program.Utility
+import com.altude.core.Program.TokenProgram
 import com.altude.core.model.CloseAccountOption
 import com.altude.core.model.EmptySignature
 import com.altude.core.model.HotSigner
 import com.altude.core.model.SolanaKeypair
 import com.altude.core.model.SolanaTransactionBuilder
-import diglol.crypto.random.nextBytes
 import foundation.metaplex.rpc.Commitment
 import foundation.metaplex.rpc.RPC
 import foundation.metaplex.rpc.RpcGetLatestBlockhashConfiguration
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
-import foundation.metaplex.solanaeddsa.Keypair
-import foundation.metaplex.solanaeddsa.SolanaEddsa
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import foundation.metaplex.solanapublickeys.PublicKey
-import kotlinx.serialization.builtins.serializer
 import java.lang.Error
 import kotlin.collections.listOf
 
@@ -48,11 +44,11 @@ object TransactionBuilder {
             val sourceAta = deriveAtaAddress(option.owner.publicKey, pubKeyMint)
             val destinationAta = deriveAtaAddress(pubKeyDestination, pubKeyMint)
 
-            if (!Core.ataExists(sourceAta.toBase58()))
+            if (!Utility.ataExists(sourceAta.toBase58()))
                 throw Error("Owner associated token account does not exist.")
 
             val destinationCreateAta: TransactionInstruction? =
-                if (!Core.ataExists(destinationAta.toBase58())) {
+                if (!Utility.ataExists(destinationAta.toBase58())) {
                     AssociatedTokenAccountProgram.createAssociatedTokenAccount(
                         ata = destinationAta,
                         feePayer = feePayerPubKey,
@@ -61,8 +57,8 @@ object TransactionBuilder {
                     )
                 } else null
 
-            val decimals = Core.getTokenDecimals(rpc, option.mint)
-            val rawAmount = Core.getRawQuantity(option.amount, decimals)
+            val decimals = Utility.getTokenDecimals(rpc, option.mint)
+            val rawAmount = Utility.getRawQuantity(option.amount, decimals)
 
             val transferInstruction = TokenProgram.transferToken(
                 source = sourceAta,
@@ -107,7 +103,7 @@ object TransactionBuilder {
             val mintKey = PublicKey(option.mint)
             val ata = deriveAtaAddress(ownerKey, mintKey)
 
-            if(Core.ataExists(ata.toBase58()))
+            if(Utility.ataExists(ata.toBase58()))
                 throw  Error("Associated token account already exist.")
 
             val ataInstruction = AssociatedTokenAccountProgram.createAssociatedTokenAccount(
@@ -154,7 +150,7 @@ object TransactionBuilder {
             val ownerKey = option.owner
             val mintKey = PublicKey(option.mint)
             val ata = deriveAtaAddress(PublicKey(ownerKey), mintKey)
-            Core.validateAta(
+            Utility.validateAta(
                 ata.toBase58(),
                 owner = feePayerPubKey.toBase58()
             )

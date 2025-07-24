@@ -3,10 +3,8 @@ package com.altude.smartaccount
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.altude.core.model.CreateAccountOption
 import com.altude.core.model.Token
-import com.altude.core.Instructions.Core
 import com.altude.core.model.CloseAccountOption
 import com.altude.core.model.KeyPair
-import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.runBlocking
 
 import org.junit.Test
