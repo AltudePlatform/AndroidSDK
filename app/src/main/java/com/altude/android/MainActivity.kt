@@ -21,8 +21,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        GasStationSdk.setApiKey("")
-
         // ✅ Call the suspend transferToken
 //        lifecycleScope.launch {
 //            GasStationSdk.transferToken(

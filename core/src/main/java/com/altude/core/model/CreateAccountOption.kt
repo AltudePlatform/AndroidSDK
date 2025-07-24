@@ -1,6 +1,8 @@
 package com.altude.core.model
 
+import foundation.metaplex.solanaeddsa.Keypair
+
 data class CreateAccountOption (
-    val owner: String,
+    val owner: Keypair,
     val mint: String
 )

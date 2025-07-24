@@ -5,7 +5,8 @@ import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.model.SendOptions
+import com.altude.core.`interface`.SendOptions
+import com.altude.core.model.SolanaKeypair
 import com.altude.core.model.Token
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,7 +17,7 @@ import retrofit2.Response
 import retrofit2.Callback
 
 data class TransferOptions (
-    override val source: String,
+    override val owner: SolanaKeypair,
     override val destination: String,
     override val amount: Double,
     val mintToken: Token
@@ -28,7 +29,7 @@ data class TransferOptions (
 
 
 
-object GasStationSdk {
+class GasStationSdk {
 
     fun setApiKey(apiKey: String) {
         SdkConfig.setApiKey(apiKey)
