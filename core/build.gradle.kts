@@ -94,7 +94,6 @@ dependencies {
 
     implementation("foundation.metaplex:solana:0.2.10"){
         exclude(group = "com.ditchoom")
-//        exclude(group = "com.solanamobile", module = "rpccore")
         exclude(group = "io.github.funkatronics", module="kborsh" )
     }
     //implementation("com.ditchoom:buffer-jvm:1.4.2")
@@ -103,9 +102,11 @@ dependencies {
     }
     implementation("com.ditchoom:buffer-jvm:1.4.2")
 
-    implementation("io.github.funkatronics:multimult-jvm:0.2.4")
+    //implementation("io.github.funkatronics:multimult-jvm:0.2.4")
     //implementation("foundation.metaplex:solana-jvm:0.2.10")
 
+//    implementation("org.bitcoinj:bitcoinj-core:0.15.10")  // For BIP39 seed
+//    implementation("org.bouncycastle:bcprov-jdk15to18:1.70") // For Ed25519
 
 
 

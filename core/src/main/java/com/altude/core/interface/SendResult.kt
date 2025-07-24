@@ -1,4 +1,4 @@
-package com.altude.core.model
+package com.altude.core.`interface`
 
 interface SendResult {
     val success: Boolean

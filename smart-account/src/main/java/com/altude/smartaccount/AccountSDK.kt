@@ -5,6 +5,7 @@ import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.api.TransactionService
 import com.altude.core.config.SdkConfig
+import com.altude.core.model.CloseAccountOption
 import com.altude.core.model.CreateAccountOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -14,7 +15,7 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 
-object AccountSDK {
+class AccountSDK {
     fun setApiKey(apiKey: String) {
         SdkConfig.setApiKey(apiKey)
     }
@@ -24,7 +25,7 @@ object AccountSDK {
         options: CreateAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionBuilder.CreateAccount(options)
+            val result = TransactionBuilder.createAccount(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result
@@ -56,10 +57,10 @@ object AccountSDK {
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun closeAccount(
-        options: CreateAccountOption
+        options: CloseAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionBuilder.CreateAccount(options)
+            val result = TransactionBuilder.closeAccount(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result
@@ -70,7 +71,7 @@ object AccountSDK {
             // Suspend manually using suspendCoroutine
             val request = SendTransactionRequest( signedTransaction)
             suspendCancellableCoroutine<Result<String>> { cont ->
-                service.sendTransaction(request)
+                service.closeAccount(request)
                     .enqueue(object : Callback<TransactionResponse> {
                         override fun onResponse(
                             call: Call<TransactionResponse>,

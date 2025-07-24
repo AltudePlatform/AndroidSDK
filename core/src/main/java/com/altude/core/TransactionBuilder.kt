@@ -1,20 +1,30 @@
 package com.altude.core
 
 import android.util.Base64
-import com.altude.core.model.CloseAccountOption
 import com.altude.core.model.CreateAccountOption
-import com.altude.core.model.SendOptions
-import com.altude.core.service.Core
-import com.solana.publickey.SolanaPublicKey
-import com.solana.transaction.Message
+import com.altude.core.`interface`.SendOptions
+import com.altude.core.Instructions.AssociatedTokenAccountProgram
+import com.altude.core.Instructions.AssociatedTokenAccountProgram.deriveAtaAddress
+import com.altude.core.Instructions.Core
+import com.altude.core.Instructions.TokenProgram
+import com.altude.core.model.CloseAccountOption
+import com.altude.core.model.EmptySignature
+import com.altude.core.model.HotSigner
+import com.altude.core.model.SolanaKeypair
+import com.altude.core.model.SolanaTransactionBuilder
+import diglol.crypto.random.nextBytes
 import foundation.metaplex.rpc.Commitment
 import foundation.metaplex.rpc.RPC
 import foundation.metaplex.rpc.RpcGetLatestBlockhashConfiguration
-import foundation.metaplex.solana.transactions.SolanaTransactionBuilder
+import foundation.metaplex.solana.transactions.SerializeConfig
+import foundation.metaplex.solana.transactions.TransactionInstruction
+import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanaeddsa.SolanaEddsa
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import foundation.metaplex.solanapublickeys.PublicKey
+import kotlinx.serialization.builtins.serializer
+import java.lang.Error
 import kotlin.collections.listOf
 
 
@@ -22,115 +32,151 @@ object TransactionBuilder {
 
     private val quickNodeUrl = "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/"
     private val rpc = RPC(quickNodeUrl)
-    val feePayerPubKeypair = PublicKey("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
-    val privateKeyBytes = byteArrayOf(
-        235.toByte(), 144.toByte(), 12, 215.toByte(), 112, 178.toByte(), 249.toByte(), 227.toByte(), 180.toByte(), 112, 121, 214.toByte(), 13, 190.toByte(), 158.toByte(), 91,
-        208.toByte(), 118, 253.toByte(), 192.toByte(), 48, 6, 252.toByte(), 37, 111, 169.toByte(), 209.toByte(), 238.toByte(), 174.toByte(), 78, 210.toByte(), 184.toByte(),
-        9, 37, 75, 1, 98, 80, 44, 48, 119, 25, 193.toByte(), 156.toByte(), 161.toByte(), 185.toByte(), 250.toByte(), 119,
-        160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
-    )
+    val feePayerPubKey = PublicKey("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
+//    val privateKeyBytes = byteArrayOf(
+//        235.toByte(), 144.toByte(), 12, 215.toByte(), 112, 178.toByte(), 249.toByte(), 227.toByte(), 180.toByte(), 112, 121, 214.toByte(), 13, 190.toByte(), 158.toByte(), 91,
+//        208.toByte(), 118, 253.toByte(), 192.toByte(), 48, 6, 252.toByte(), 37, 111, 169.toByte(), 209.toByte(), 238.toByte(), 174.toByte(), 78, 210.toByte(), 184.toByte(),
+//        9, 37, 75, 1, 98, 80, 44, 48, 119, 25, 193.toByte(), 156.toByte(), 161.toByte(), 185.toByte(), 250.toByte(), 119,
+//        160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
+//    )
     //val feePayer = KeyPair(feePayerPubKeypair.toByteArray(), privateKeyBytes)
-    suspend fun TransferToken(
-        option: SendOptions
-    ): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun TransferToken(option: SendOptions): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
+            val pubKeyMint = PublicKey(option.mint)
+            val pubKeyDestination = PublicKey(option.destination)
 
+            val sourceAta = deriveAtaAddress(option.owner.publicKey, pubKeyMint)
+            val destinationAta = deriveAtaAddress(pubKeyDestination, pubKeyMint)
+
+            if (!Core.ataExists(sourceAta.toBase58()))
+                throw Error("Owner associated token account does not exist.")
+
+            val destinationCreateAta: TransactionInstruction? =
+                if (!Core.ataExists(destinationAta.toBase58())) {
+                    AssociatedTokenAccountProgram.createAssociatedTokenAccount(
+                        ata = destinationAta,
+                        feePayer = feePayerPubKey,
+                        owner = pubKeyDestination, // ✅ Corrected
+                        mint = pubKeyMint
+                    )
+                } else null
 
             val decimals = Core.getTokenDecimals(rpc, option.mint)
+            val rawAmount = Core.getRawQuantity(option.amount, decimals)
 
-            val instruction = Core.createSplTokenTransfer(
-                sourceAta = PublicKey(option.source),
-                destinationAta = PublicKey(option.destination),
-                feePayer = feePayerPubKeypair,
-                mint = PublicKey(option.mint),
-                amount = option.amount,
-                decimals = decimals
+            val transferInstruction = TokenProgram.transferToken(
+                source = sourceAta,
+                destination = destinationAta,
+                owner = option.owner.publicKey,
+                mint = pubKeyMint,
+                amount = rawAmount,
+                decimals = decimals,
+                signers = listOf(option.owner.publicKey, feePayerPubKey)
             )
+
             val blockhashInfo = rpc.getLatestBlockhash(
                 RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
             )
-            //val privateKey = "REDACTED".decodeBase58().copyOfRange(0, 32)
-
-            val k  = SolanaEddsa.createKeypairFromSecretKey(privateKeyBytes.copyOfRange(0, 32))//Core.createEd25519KeypairFromSeed(privateKeyBytes.copyOfRange(0, 32))
-            val signer = Core.HotSigner(Core.SolanaKeypair(k.publicKey, k.secretKey))
 
             val recentBlockhash = blockhashInfo.blockhash
-            val build = SolanaTransactionBuilder()
-                .addInstruction(instruction)
-                .setRecentBlockHash(recentBlockhash)
-                .setSigners(listOf(signer))
-                .build()
+            val authorizedSignature = HotSigner(SolanaKeypair(option.owner.publicKey, option.owner.secretKey))
 
-            //val sign = Core.SignTransaction(privateKeyBytes,message)
-            val serialized = Base64.encodeToString(build.serialize(), Base64.NO_WRAP)
+            val builder = SolanaTransactionBuilder()
+                .setFeePayer(feePayerPubKey)
+                .setRecentBlockHash(recentBlockhash)
+            destinationCreateAta?.let { builder.addInstruction(it) }
+            builder.addInstruction(transferInstruction)
+            builder.setSigners(listOf(authorizedSignature))
+
+            val build = builder.build()
+            val serialized = Base64.encodeToString(
+                build.serialize(SerializeConfig(requireAllSignatures = false)),
+                Base64.NO_WRAP
+            )
+
             Result.success(serialized)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun CreateAccount(
-        option: CreateAccountOption
-    ): Result<String> = withContext(Dispatchers.IO) {
+
+    suspend fun createAccount(option: CreateAccountOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
+            val ownerKey = option.owner.publicKey
+            val mintKey = PublicKey(option.mint)
+            val ata = deriveAtaAddress(ownerKey, mintKey)
 
-            val instruction = Core.createAssociatedTokenAccount(
-                feePayer = feePayerPubKeypair,
-                owner = option.owner,
-                mint = option.mint
+            if(Core.ataExists(ata.toBase58()))
+                throw  Error("Associated token account already exist.")
+
+            val ataInstruction = AssociatedTokenAccountProgram.createAssociatedTokenAccount(
+                ata = ata,
+                feePayer = feePayerPubKey, // only pubkey
+                owner = ownerKey,
+                mint = mintKey
             )
 
-            val k  = SolanaEddsa.createKeypairFromSecretKey(privateKeyBytes.copyOfRange(0, 32))//Core.createEd25519KeypairFromSeed(privateKeyBytes.copyOfRange(0, 32))
-            val signer = Core.HotSigner(Core.SolanaKeypair(k.publicKey, k.secretKey))
+            val authInstruction = TokenProgram.setAuthority(
+                ata = ata,
+                currentAuthority = ownerKey,
+                newOwner = feePayerPubKey
+            )
 
+            val authorizedSigner = HotSigner(SolanaKeypair(ownerKey, option.owner.secretKey))
 
+            val payerSigner = EmptySignature(feePayerPubKey)
             val blockhashInfo = rpc.getLatestBlockhash(
                 RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
             )
 
-            val recentBlockhash = blockhashInfo.blockhash
-            val build = SolanaTransactionBuilder()
-                .addInstruction(instruction)
-                .setRecentBlockHash(recentBlockhash)
-                .setSigners(listOf(signer))
+            val tx = SolanaTransactionBuilder()
+                .setFeePayer(feePayerPubKey)
+                .addInstruction(ataInstruction)
+                .addInstruction(authInstruction)
+                .setRecentBlockHash(blockhashInfo.blockhash)
+                .setSigners(listOf(authorizedSigner))
                 .build()
 
-            //val sign = Core.SignTransaction(privateKeyBytes,message)
-            val serialized = Base64.encodeToString(build.serialize(), Base64.NO_WRAP)
+            val serialized = Base64.encodeToString(
+                tx.serialize(SerializeConfig(requireAllSignatures = false)),
+                Base64.NO_WRAP
+            )
             Result.success(serialized)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-    suspend fun CloseAccount(
+    suspend fun closeAccount(
         option: CloseAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-
-            val instruction = Core.createAssociatedTokenAccount(
-                feePayer = feePayerPubKeypair,
-                owner = option.owner.publicKey.toBase58(),
-                mint = option.mint
+            val ownerKey = option.owner
+            val mintKey = PublicKey(option.mint)
+            val ata = deriveAtaAddress(PublicKey(ownerKey), mintKey)
+            Core.validateAta(
+                ata.toBase58(),
+                owner = feePayerPubKey.toBase58()
             )
-
-            val k  = SolanaEddsa.createKeypairFromSecretKey(privateKeyBytes.copyOfRange(0, 32))//Core.createEd25519KeypairFromSeed(privateKeyBytes.copyOfRange(0, 32))
-            val signer = Core.HotSigner(Core.SolanaKeypair(k.publicKey, k.secretKey))
-            val authorized = Core.HotSigner(Core.SolanaKeypair(option.owner.publicKey, option.owner.secretKey))
-
+            val instruction = TokenProgram.closeAtaAccount(
+                ata = ata,
+                destination = option.owner,
+                authority = feePayerPubKey
+            )
 
             val blockhashInfo = rpc.getLatestBlockhash(
                 RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
             )
 
             val recentBlockhash = blockhashInfo.blockhash
-            val build = SolanaTransactionBuilder()
+            val tx = SolanaTransactionBuilder()
+                .setFeePayer(feePayerPubKey)
                 .addInstruction(instruction)
-                .setRecentBlockHash(recentBlockhash)
-                .setSigners(listOf(signer,authorized))
+                .setRecentBlockHash(blockhashInfo.blockhash)
                 .build()
 
             //val sign = Core.SignTransaction(privateKeyBytes,message)
-            val serialized = Base64.encodeToString(build.serialize(), Base64.NO_WRAP)
+            val serialized = Base64.encodeToString(tx.serialize(SerializeConfig(requireAllSignatures = false)), Base64.NO_WRAP)
             Result.success(serialized)
         } catch (e: Exception) {
             Result.failure(e)

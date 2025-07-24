@@ -44,14 +44,23 @@ dependencies {
     implementation ("com.squareup.retrofit2:retrofit:3.0.0")
     implementation ("com.squareup.retrofit2:converter-gson:3.0.0")
 //    implementation("com.ditchoom:buffer-android:0.2.4")
+//
+//    //implementation("com.funkatronics:kborsh:0.2.4") // Confirm this is the android-compatible variant
+//    implementation("io.github.funkatronics:multimult:0.2.4")
+//    // implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
+//    //implementation("com.ditchoom:buffer-android:1.4.2")
+//
+//    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+//    testImplementation("org.junit.jupiter:junit-jupiter")
+//    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    //implementation("com.funkatronics:kborsh:0.2.4") // Confirm this is the android-compatible variant
-    implementation("io.github.funkatronics:multimult:0.2.4")
-    // implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
-    //implementation("com.ditchoom:buffer-android:1.4.2")
-
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
+    implementation("foundation.metaplex:solana:0.2.10"){
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module="kborsh" )
+    }
+    //implementation("com.ditchoom:buffer-jvm:1.4.2")
+    implementation("io.github.funkatronics:kborsh-jvm:0.1.1"){
+        exclude(group = "com.ditchoom")
+    }
+    implementation("com.ditchoom:buffer-jvm:1.4.2")
 }
