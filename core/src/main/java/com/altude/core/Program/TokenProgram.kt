@@ -1,13 +1,12 @@
-package com.altude.core.Instructions
+package com.altude.core.Program
 
-import com.altude.core.Instructions.Core.TOKEN_PROGRAM_ID
-import com.altude.core.Instructions.Core.buildSetAuthorityData
+import com.altude.core.Program.Utility.TOKEN_PROGRAM_ID
+import com.altude.core.Program.Utility.buildSetAuthorityData
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.pow
 
 object TokenProgram {
     fun transferToken(

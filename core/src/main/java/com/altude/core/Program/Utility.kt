@@ -1,11 +1,6 @@
-package com.altude.core.Instructions
+package com.altude.core.Program
 
-import com.metaplex.signer.Signer
 import foundation.metaplex.rpc.RPC
-import foundation.metaplex.solana.transactions.AccountMeta
-import foundation.metaplex.solana.transactions.TransactionInstruction
-import foundation.metaplex.solanaeddsa.Keypair
-import foundation.metaplex.solanaeddsa.SolanaEddsa
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -18,11 +13,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-object  Core {
+object  Utility {
 
     val TOKEN_PROGRAM_ID  = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
     val SYSTEM_PROGRAM_ID  = "11111111111111111111111111111111"
