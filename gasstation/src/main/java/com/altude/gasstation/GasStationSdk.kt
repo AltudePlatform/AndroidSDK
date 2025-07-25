@@ -1,13 +1,12 @@
 package com.altude.gasstation
 
-import com.altude.core.TransactionBuilder
+import com.altude.core.TransactionManager
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.`interface`.SendOptions
-import com.altude.core.model.SolanaKeypair
-import com.altude.core.model.Token
+import com.altude.core.data.SendOptions
+import foundation.metaplex.rpc.Commitment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -17,13 +16,13 @@ import retrofit2.Response
 import retrofit2.Callback
 
 data class TransferOptions (
-    override val owner: SolanaKeypair,
-    override val destination: String,
+    override val account: String = "",
+    override val toAddress: String,
     override val amount: Double,
-    val mintToken: Token
+    override val token: String,
+    override val commitment: Commitment = Commitment.finalized
 ) : SendOptions {
-    override val mint: String
-    get() = mintToken.mint
+
 }
 
 
@@ -36,11 +35,11 @@ class GasStationSdk {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun transferToken(
+    suspend fun transfer(
         options: TransferOptions
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionBuilder.TransferToken(options)
+            val result = TransactionManager.TransferToken(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result

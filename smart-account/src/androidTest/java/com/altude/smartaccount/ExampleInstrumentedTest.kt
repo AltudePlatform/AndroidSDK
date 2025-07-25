@@ -1,10 +1,12 @@
 package com.altude.smartaccount
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.altude.core.model.CreateAccountOption
+import com.altude.core.config.SdkConfig
+import com.altude.core.data.CreateAccountOption
 import com.altude.core.model.Token
-import com.altude.core.model.CloseAccountOption
+import com.altude.core.data.CloseAccountOption
 import com.altude.core.model.KeyPair
+import foundation.metaplex.rpc.Commitment
 import kotlinx.coroutines.runBlocking
 
 import org.junit.Test
@@ -30,11 +32,15 @@ class ExampleInstrumentedTest {
         // 👇 Replace with your actual key
         val altude = AccountSDK()
         altude.setApiKey("your_actual_api_key")
-        val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
         //val ownerKepair =KeyPair.generate()
+        val altudsdk = altude
+        SdkConfig.setPrivateKey(ownerKey)
         val options = CreateAccountOption(
-            owner = ownerKepair,
-            mint  = Token.SOL.mint
+            //owner = ownerKepair.publicKey.toBase58(),
+            tokens = listOf(Token.KIN.mint()),
+            commitment = Commitment.finalized,
+
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
@@ -54,12 +60,12 @@ class ExampleInstrumentedTest {
     fun testCloseAccount() = runBlocking {
         // 👇 Replace with your actual key
         val altude = AccountSDK()
-        altude.setApiKey("your_actual_api_key")
+        altude .setApiKey("your_actual_api_key")
         val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
         //val ownerKepair =KeyPair.generate()
+        SdkConfig.setPrivateKey(ownerKey)
         val options = CloseAccountOption(
-            owner = ownerKepair.publicKey.toBase58(),
-            mint  = Token.SOL.mint
+            tokens  = listOf(Token.KIN.mint())
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
