@@ -4,14 +4,18 @@ import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.Blockhash
 import foundation.metaplex.solana.transactions.SolanaTransaction
 import foundation.metaplex.solana.transactions.Transaction
-import foundation.metaplex.solana.transactions.TransactionBuilder
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
 
-class SolanaTransactionBuilder : TransactionBuilder {
+class AltudeTransactionBuilder : TransactionBuilder {
     private val transaction: SolanaTransaction = SolanaTransaction()
     override fun addInstruction(transactionInstruction: TransactionInstruction): TransactionBuilder {
         transaction.add(transactionInstruction)
+        return this
+    }
+
+    override fun addRangeInstruction(transactionInstruction: List<TransactionInstruction>): TransactionBuilder {
+        transactionInstruction.forEach { transaction.add(it) }
         return this
     }
 
@@ -29,7 +33,7 @@ class SolanaTransactionBuilder : TransactionBuilder {
         return transaction
     }
 
-    fun setFeePayer(publicKey: PublicKey): TransactionBuilder {
+    override fun setFeePayer(publicKey: PublicKey): TransactionBuilder {
         transaction.feePayer = publicKey
         return this
     }

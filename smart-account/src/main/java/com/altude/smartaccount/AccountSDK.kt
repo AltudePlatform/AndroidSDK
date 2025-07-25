@@ -1,12 +1,12 @@
 package com.altude.smartaccount
 
-import com.altude.core.TransactionBuilder
+import com.altude.core.TransactionManager
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.api.TransactionService
 import com.altude.core.config.SdkConfig
-import com.altude.core.model.CloseAccountOption
-import com.altude.core.model.CreateAccountOption
+import com.altude.core.data.CloseAccountOption
+import com.altude.core.data.CreateAccountOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -15,8 +15,11 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 
-class AccountSDK {
+class AccountSDK (){
     fun setApiKey(apiKey: String) {
+        SdkConfig.setApiKey(apiKey)
+    }
+    fun set(apiKey: String) {
         SdkConfig.setApiKey(apiKey)
     }
 
@@ -25,7 +28,7 @@ class AccountSDK {
         options: CreateAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionBuilder.createAccount(options)
+            val result = TransactionManager.createAccount(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result
@@ -60,7 +63,7 @@ class AccountSDK {
         options: CloseAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionBuilder.closeAccount(options)
+            val result = TransactionManager.closeAccount(options)
 
             // Check if signing was successful
             if (result.isFailure) return@withContext result
