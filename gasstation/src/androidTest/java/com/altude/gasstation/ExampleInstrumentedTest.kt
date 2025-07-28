@@ -32,8 +32,8 @@ class ExampleInstrumentedTest {
         SdkConfig.setPrivateKey(ownerKey)
         val options = TransferOptions(
             //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
-            toAddress = "BMRmo31USZuEga32JTk1Ub242JGcod982JtmynMK3fqv",
-            amount = 0.00001,
+            toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+            amount = 0.000001,
             token = Token.KIN.mint(),
         )
 
@@ -41,7 +41,7 @@ class ExampleInstrumentedTest {
         val result = altude.transfer(options)
 
         result
-            .onSuccess { println("✅ Sent: $it") }
+            .onSuccess { println("✅ Sent: ${it.signature}") }
             .onFailure {
                 println("❌ Failed: ${it.message}")
             }

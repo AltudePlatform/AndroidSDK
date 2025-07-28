@@ -26,27 +26,30 @@ class AccountSDK (){
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createAccount(
         options: CreateAccountOption
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.createAccount(options)
 
-            // Check if signing was successful
-            if (result.isFailure) return@withContext result
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
 
-            // Suspend manually using suspendCoroutine
-            val request = SendTransactionRequest( signedTransaction)
-            suspendCancellableCoroutine<Result<String>> { cont ->
+            suspendCancellableCoroutine<Result<TransactionResponse>> { cont ->
                 service.createAccount(request)
                     .enqueue(object : Callback<TransactionResponse> {
                         override fun onResponse(
                             call: Call<TransactionResponse>,
                             response: Response<TransactionResponse>
                         ) {
-                            val msg = response.body()?.message ?: "No message"
-                            cont.resume(Result.success(msg), onCancellation = null)
+                            val body = response.body()
+                            if (response.isSuccessful && body != null) {
+                                cont.resume(Result.success(body), onCancellation = null)
+                            } else {
+                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
+                                cont.resume(Result.failure(error), onCancellation = null)
+                            }
                         }
 
                         override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
@@ -55,33 +58,36 @@ class AccountSDK (){
                     })
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun closeAccount(
         options: CloseAccountOption
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.closeAccount(options)
 
-            // Check if signing was successful
-            if (result.isFailure) return@withContext result
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
 
-            // Suspend manually using suspendCoroutine
-            val request = SendTransactionRequest( signedTransaction)
-            suspendCancellableCoroutine<Result<String>> { cont ->
+            suspendCancellableCoroutine<Result<TransactionResponse>> { cont ->
                 service.closeAccount(request)
                     .enqueue(object : Callback<TransactionResponse> {
                         override fun onResponse(
                             call: Call<TransactionResponse>,
                             response: Response<TransactionResponse>
                         ) {
-                            val msg = response.body()?.message ?: "No message"
-                            cont.resume(Result.success(msg), onCancellation = null)
+                            val body = response.body()
+                            if (response.isSuccessful && body != null) {
+                                cont.resume(Result.success(body), onCancellation = null)
+                            } else {
+                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
+                                cont.resume(Result.failure(error), onCancellation = null)
+                            }
                         }
 
                         override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
@@ -90,7 +96,8 @@ class AccountSDK (){
                     })
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
+
 }
