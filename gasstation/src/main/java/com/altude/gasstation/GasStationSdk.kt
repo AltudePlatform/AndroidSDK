@@ -37,27 +37,30 @@ class GasStationSdk {
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun transfer(
         options: TransferOptions
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.TransferToken(options)
 
-            // Check if signing was successful
-            if (result.isFailure) return@withContext result
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
 
-            // Suspend manually using suspendCoroutine
-            val request =  SendTransactionRequest( signedTransaction)
-            suspendCancellableCoroutine<Result<String>> { cont ->
+            suspendCancellableCoroutine<Result<TransactionResponse>> { cont ->
                 service.sendTransaction(request)
                     .enqueue(object : Callback<TransactionResponse> {
                         override fun onResponse(
                             call: Call<TransactionResponse>,
                             response: Response<TransactionResponse>
                         ) {
-                            val msg = response.body()?.message ?: "No message"
-                            cont.resume(Result.success(msg), onCancellation = null)
+                            val body = response.body()
+                            if (response.isSuccessful && body != null) {
+                                cont.resume(Result.success(body), onCancellation = null)
+                            } else {
+                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
+                                cont.resume(Result.failure(error), onCancellation = null)
+                            }
                         }
 
                         override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
@@ -66,7 +69,7 @@ class GasStationSdk {
                     })
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
 }

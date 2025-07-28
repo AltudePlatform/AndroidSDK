@@ -201,6 +201,7 @@ object TransactionManager {
             Result.success(serialized)
         } catch (e: Exception) {
             Result.failure(e)
+
         }
     }
 
