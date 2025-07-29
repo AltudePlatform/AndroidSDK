@@ -2,6 +2,7 @@ package com.altude.core.Program
 
 import com.altude.core.Program.Utility.TOKEN_PROGRAM_ID
 import com.altude.core.Program.Utility.buildSetAuthorityData
+import com.altude.core.model.SolanaKeypair
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
@@ -15,20 +16,14 @@ object TokenProgram {
         owner: PublicKey,
         mint: PublicKey,
         amount: Long,
-        decimals: Int,
+        decimals: UInt,
         signers: List<PublicKey> = emptyList()
     ): TransactionInstruction {
         val buffer = ByteBuffer.allocate(10) //1 byte for instruction, 8 for amount, 1 for decimals
         buffer.order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(12) // Instruction: Transfer
         buffer.putLong(amount.toLong()) // Amount as u64 LE
-        buffer.put(amount.toByte()) // Amount as u64 LE
-        //return buffer.array()
-//        val data = byteArrayOf(
-//            12, // transferChecked instruction index
-//            amount.toByte(), // amount in lamports
-//            decimals.toByte()
-//        )
+        buffer.put(decimals.toByte()) // Amount as u64 LE
 
         val accounts = mutableListOf(
             AccountMeta(source, isSigner = false, isWritable = true),
@@ -69,7 +64,7 @@ object TokenProgram {
 
     fun closeAtaAccount(
         ata: PublicKey,
-        destination: String,
+        destination: PublicKey,
         authority: PublicKey
     ): TransactionInstruction {
 
@@ -77,7 +72,7 @@ object TokenProgram {
             programId = PublicKey(TOKEN_PROGRAM_ID),
             keys = listOf(
                 AccountMeta(ata, isSigner = false, isWritable = true),
-                AccountMeta(PublicKey(destination), isSigner = false, isWritable = true),
+                AccountMeta(destination, isSigner = false, isWritable = true),
                 AccountMeta(authority, isSigner = true, isWritable = false)
             ),
             data = byteArrayOf(9) // No data needed for ATA creation
