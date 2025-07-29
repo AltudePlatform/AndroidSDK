@@ -30,7 +30,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testCreateAccount() = runBlocking {
         // 👇 Replace with your actual key
-        val altude = AccountSDK()
+        val altude = AccountSDK
         altude.setApiKey("your_actual_api_key")
         //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
         //val ownerKepair =KeyPair.generate()
@@ -59,7 +59,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testCloseAccount() = runBlocking {
         // 👇 Replace with your actual key
-        val altude = AccountSDK()
+        val altude = AccountSDK
         altude .setApiKey("your_actual_api_key")
         val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
         //val ownerKepair =KeyPair.generate()

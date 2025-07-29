@@ -26,8 +26,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testTransferToken() = runBlocking {
         // 👇 Replace with your actual key
-        val altude = GasStationSdk()
-        altude.setApiKey("your_actual_api_key")
+        Altude.setApiKey("your_actual_api_key")
         //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
         SdkConfig.setPrivateKey(ownerKey)
         val options = TransferOptions(
@@ -38,7 +37,7 @@ class ExampleInstrumentedTest {
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = altude.transfer(options)
+        val result = Altude.transfer(options)
 
         result
             .onSuccess { println("✅ Sent: ${it.signature}") }
