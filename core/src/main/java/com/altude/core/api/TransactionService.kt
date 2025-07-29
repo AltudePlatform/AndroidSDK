@@ -1,5 +1,6 @@
 package com.altude.core.api
 
+import com.google.gson.annotations.SerializedName
 import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.POST
@@ -12,9 +13,16 @@ data class BatchTransactionRequest(
     val signedTransactions: List<String>
 )
 
+
 data class TransactionResponse(
-    val success: Boolean,
-    val message: String
+    //@SerializedName("Status")
+    val status: String, // Match C# string type
+
+    //@SerializedName("Message")
+    val message: String,
+
+    //@SerializedName("Signature")
+    val signature: String
 )
 
 interface TransactionService {

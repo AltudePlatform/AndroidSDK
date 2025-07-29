@@ -1,23 +1,13 @@
 package com.altude.gasstation
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.altude.core.api.SendTransactionRequest
-import com.altude.core.api.TransactionResponse
-import com.altude.core.api.TransactionService
 import com.altude.core.config.SdkConfig
 import com.altude.core.model.KeyPair
-import com.altude.core.model.SolanaKeypair
 import com.altude.core.model.Token
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 import org.junit.Test
 import org.junit.runner.RunWith
-
-import org.junit.Assert.*
-import retrofit2.Call
-import retrofit2.Callback
-import retrofit2.Response
 
 /**
  * Instrumented test, which will execute on an Android device.
@@ -36,22 +26,21 @@ class ExampleInstrumentedTest {
     @Test
     fun testTransferToken() = runBlocking {
         // 👇 Replace with your actual key
-        val altude = GasStationSdk()
-        altude.setApiKey("your_actual_api_key")
-        val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-
+        Altude.setApiKey("your_actual_api_key")
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        SdkConfig.setPrivateKey(ownerKey)
         val options = TransferOptions(
-            owner = ownerKepair,//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
-            destination = "BMRmo31USZuEga32JTk1Ub242JGcod982JtmynMK3fqv",
-            amount = 0.0001,
-            mintToken = Token.SOL
+            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
+            toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+            amount = 0.000001,
+            token = Token.KIN.mint(),
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = altude.transferToken(options)
+        val result = Altude.transfer(options)
 
         result
-            .onSuccess { println("✅ Sent: $it") }
+            .onSuccess { println("✅ Sent: ${it.signature}") }
             .onFailure {
                 println("❌ Failed: ${it.message}")
             }

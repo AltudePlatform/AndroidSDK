@@ -1,5 +1,7 @@
 package com.altude.core.Program
 
+import com.altude.core.data.AccountInfoResponse
+import com.altude.core.data.AccountInfoValue
 import foundation.metaplex.rpc.RPC
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.serialization.json.Json
@@ -13,8 +15,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.pow
 
 object  Utility {
 
@@ -32,25 +36,15 @@ object  Utility {
         }
     }
 
-    suspend fun getTokenDecimals(rpc: RPC, mintAddress: String): Int {
-        val pubkey = PublicKey(mintAddress)
+    suspend fun getTokenDecimals(mintAddress: String): Int {
+        val response = getAccountInfo(mintAddress)
 
-        val jsonObject = getAccountInfoRaw(mintAddress)
+        val decimals = response
+            ?.data?.parsed?.info?.decimals
 
-        val dataArray = jsonObject["result"]?.jsonObject
-            ?.get("value")?.jsonObject
-
-        val parsedDecimals = jsonObject["result"]
-            ?.jsonObject?.get("value")
-            ?.jsonObject?.get("data")
-            ?.jsonObject?.get("parsed")
-            ?.jsonObject?.get("info")
-            ?.jsonObject?.get("decimals")
-            ?.jsonPrimitive?.int
-
-        return parsedDecimals ?: throw Exception("Unable to parse decimals")
-        //return 9
+        return decimals ?: throw Exception("Unable to parse token decimals from mint: $mintAddress")
     }
+
 
 
     fun buildSetAuthorityData(
@@ -71,39 +65,24 @@ object  Utility {
         return buffer.array()
     }
 
-    //    suspend fun SignTransaction(
-//        privateKeyBytes: ByteArray,
-//        message: Message
-//    ) :  Transaction {
-//        val seed32 = privateKeyBytes.copyOfRange(0, 32) // Only the seed
-//        val keyPair = Ed25519.generateKeyPair(seed32)
-//        val signer = object : Ed25519Signer() {
-//            val publicKey: ByteArray get() = keyPair.publicKey
-//            suspend fun signPayload(payload: ByteArray): ByteArray = Ed25519.sign(keyPair, payload)
-//        }
-//        val signature = signer.signPayload(message.serialize());
-//        // Build Transaction
-//        val transaction = Transaction(listOf(signature), message)
-//        return  transaction;
-//    }
-    fun getAccountInfoRaw(publicKey: String): JsonObject {
+    fun getAccountInfo(publicKey: String): AccountInfoValue? {
         val client = OkHttpClient()
 
         val payload = """
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getAccountInfo",
+          "params": [
+            "$publicKey",
             {
-              "jsonrpc": "2.0",
-              "id": 1,
-              "method": "getAccountInfo",
-              "params": [
-                "$publicKey",
-                {
-                  "encoding": "jsonParsed"
-                }
-              ]
+              "encoding": "jsonParsed"
             }
-        """.trimIndent()
-        val mediaType = "application/json".toMediaType()
+          ]
+        }
+    """.trimIndent()
 
+        val mediaType = "application/json".toMediaType()
         val request = Request.Builder()
             .url(quickNodeUrl)
             .post(payload.toRequestBody(mediaType))
@@ -111,7 +90,12 @@ object  Utility {
 
         val response = client.newCall(request).execute()
         val body = response.body.string()
-        return Json.parseToJsonElement(body).jsonObject
+
+        val json = Json {
+            ignoreUnknownKeys = true // <-- IMPORTANT
+        }
+
+        return json.decodeFromString<AccountInfoResponse>(body).result.value
     }
 
 
@@ -123,35 +107,26 @@ object  Utility {
     }
 
     fun ataExists(publicKey: String): Boolean {
-        val result = getAccountInfoRaw(publicKey)
-        val value = result["result"]?.jsonObject?.get("value")
-        return value != null && value !is JsonNull
+        val response = getAccountInfo(publicKey)
+        return response != null
     }
+
     fun getAtaOwner(publicKey: String): String? {
-        val result = getAccountInfoRaw(publicKey)
-
-        val value = result["result"]?.jsonObject?.get("value")?.jsonObject
-            ?: return null
-
-        return value["data"]?.jsonObject
-            ?.get("parsed")?.jsonObject
-            ?.get("info")?.jsonObject
-            ?.get("owner")?.jsonPrimitive?.content
+        val response = getAccountInfo(publicKey)
+        return response?.data?.parsed?.info?.owner
     }
-    fun validateAta(publicKey: String, owner: String) {
-        val result = getAccountInfoRaw(publicKey)
 
-        val value = result["result"]?.jsonObject?.get("value")?.jsonObject
-        if (value == null)
-            throw Error("Associated token account does not exist!")
-        val authorized =  value["data"]?.jsonObject
-            ?.get("parsed")?.jsonObject
-            ?.get("info")?.jsonObject
-            ?.get("closeAuthority")?.jsonPrimitive?.content
-        if(owner !=  authorized)
-            throw Error("Authorized owner is $authorized")
+    fun validateAta(publicKey: String, expectedOwner: String) {
+        val response = getAccountInfo(publicKey)
+        val value = response
+            ?: throw Error("Associated token account does not exist!")
+
+        val actualOwner = value.data?.parsed?.info?.owner
+        if (expectedOwner != actualOwner) {
+            throw Error("Authorized owner is $actualOwner, expected $expectedOwner")
+        }
     }
     fun getRawQuantity(quantity: Double, decimals: Int): Long {
-        return (quantity * Math.pow(10.0, decimals.toDouble())).toLong()
+        return (quantity * 10.0.pow(decimals)).toLong()
     }
 }
