@@ -1,9 +1,8 @@
 package com.altude.core.data
 
 import foundation.metaplex.rpc.Commitment
-import foundation.metaplex.solanaeddsa.Keypair
 
-interface SendOptions {
+interface SendOption {
     val account: String
     val toAddress: String
     val amount: Double
