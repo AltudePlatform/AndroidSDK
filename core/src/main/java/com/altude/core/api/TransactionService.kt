@@ -1,16 +1,19 @@
 package com.altude.core.api
 
+import com.altude.core.data.GetHistoryData
 import com.google.gson.annotations.SerializedName
+import foundation.metaplex.solana.transactions.Transaction
 import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 data class SendTransactionRequest(
     val SignedTransaction: String
 )
 
 data class BatchTransactionRequest(
-    val signedTransactions: List<String>
+    val SignedTransaction: String
 )
 
 
@@ -32,7 +35,7 @@ interface TransactionService {
         @Body SignedTransaction: SendTransactionRequest
     ): Call<TransactionResponse>
 
-    @POST("api/transaction/batch")
+    @POST("api/transaction/sendbatch")
     fun sendBatchTransaction(
         @Body body: BatchTransactionRequest
     ): Call<TransactionResponse>
@@ -46,4 +49,15 @@ interface TransactionService {
     fun closeAccount(
         @Body body: SendTransactionRequest
     ): Call<TransactionResponse>
+    @POST("api/account/close")
+    fun getbalance(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
+
+    @POST("api/account/gethistory")
+    fun getHistory(
+        @Query("Page") page: String,
+        @Query("PageSize") pageSize: String,
+        @Query("address") address: String,
+    ): Call<GetHistoryData>
 }

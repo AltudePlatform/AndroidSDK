@@ -8,19 +8,19 @@
       <SelectionState runConfigName="MainActivity">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="Tests in 'com.altude.gasstation'">
+      <SelectionState runConfigName="testBatchTransferToken()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="ExampleInstrumentedTest (1)">
+      <SelectionState runConfigName="testTransferToken()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testCloseAccount()">
+      <SelectionState runConfigName="testGetBalance()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testCreateAccount()">
+      <SelectionState runConfigName="testGetAccountInfo()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="ExampleInstrumentedTest">
+      <SelectionState runConfigName="testGetHistory()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

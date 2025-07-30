@@ -2,7 +2,10 @@ package com.altude.gasstation
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.altude.core.config.SdkConfig
-import com.altude.core.model.KeyPair
+import com.altude.core.data.GetAccountInfoOption
+import com.altude.core.data.GetBalanceOption
+import com.altude.core.data.GetHistoryOption
+import com.altude.core.data.TransferOptions
 import com.altude.core.model.Token
 import kotlinx.coroutines.runBlocking
 
@@ -48,6 +51,62 @@ class ExampleInstrumentedTest {
         // Add an assert if needed
         assert(result.isSuccess)
     }
+    @Test
+    fun testBatchTransferToken() = runBlocking {
+        // 👇 Replace with your actual key
+        Altude.setApiKey("your_actual_api_key")
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        SdkConfig.setPrivateKey(ownerKey)
+        val options = TransferOptions(
+            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
+            toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+            amount = 0.0001,
+            token = Token.KIN.mint(),
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.batchtransfer(listOf(options))
+
+        result
+            .onSuccess { println("✅ Sent: ${it.signature}") }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(result.isSuccess)
+    }
+
+    @Test
+    fun testGetBalance() = runBlocking {
+        // 👇 Replace with your actual key
+        Altude.setApiKey("your_actual_api_key")
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        SdkConfig.setPrivateKey(ownerKey)
+        val option = GetBalanceOption(
+            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
+            token = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.getBalance(option)
+        println(result)
+    }
+    @Test
+    fun testGetAccountInfo() = runBlocking {
+        // 👇 Replace with your actual key
+        Altude.setApiKey("your_actual_api_key")
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        SdkConfig.setPrivateKey(ownerKey)
+        val option = GetAccountInfoOption(
+            account = "3KwZ3eq7kiVDRYsNAPAss2TCa715faab8djy6Zg21HhZ",
+            //token = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.getAccountInfo(option)
+        println(result)
+    }
 //    @Test
 //    fun testTransferToken() = runBlocking {
 //        GasStationSdk.setApiKey("your_actual_api_key")
@@ -62,5 +121,29 @@ class ExampleInstrumentedTest {
 //            println("❌ API error: ${response.errorBody()?.string()}")
 //        }
 //    }
+    @Test
+    fun testGetHistory() = runBlocking {
+        // 👇 Replace with your actual key
+        Altude.setApiKey("your_actual_api_key")
+        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
+        SdkConfig.setPrivateKey(ownerKey)
+        val options = GetHistoryOption(
+            account = "test",
+            limit = 1,
+            offset =2
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.getHistory(options)
+
+        result
+            .onSuccess { println("✅ Sent: $it") }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(result.isSuccess)
+    }
 
 }
