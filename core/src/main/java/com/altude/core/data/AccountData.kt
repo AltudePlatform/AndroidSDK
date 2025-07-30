@@ -1,5 +1,6 @@
 package com.altude.core.data
 
+import com.altude.core.helper.AccountDataPolymorphicSerializer
 import com.altude.core.helper.U64AsStringSerializer
 import kotlinx.serialization.Serializable
 
@@ -15,6 +16,7 @@ data class AccountInfoResult(
 
 @Serializable
 data class AccountInfoValue(
+    @Serializable(with = AccountDataPolymorphicSerializer::class)
     val data: AccountData? = null,
     val executable: Boolean? = null,
     val lamports: Long? = null,

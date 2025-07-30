@@ -2,20 +2,13 @@ package com.altude.core.Program
 
 import com.altude.core.data.AccountInfoResponse
 import com.altude.core.data.AccountInfoValue
-import foundation.metaplex.rpc.RPC
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.pow
