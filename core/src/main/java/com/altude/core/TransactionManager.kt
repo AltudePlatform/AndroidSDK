@@ -2,13 +2,14 @@ package com.altude.core
 
 import android.util.Base64
 import com.altude.core.data.CreateAccountOption
-import com.altude.core.data.SendOptions
+import com.altude.core.data.SendOption
 import com.altude.core.Program.AssociatedTokenAccountProgram
 import com.altude.core.Program.AssociatedTokenAccountProgram.deriveAtaAddress
 import com.altude.core.Program.Utility
 import com.altude.core.Program.TokenProgram
 import com.altude.core.config.SdkConfig
 import com.altude.core.data.CloseAccountOption
+import com.altude.core.data.TransferOptions
 import com.altude.core.model.EmptySignature
 import com.altude.core.model.HotSigner
 import com.altude.core.model.SolanaKeypair
@@ -37,7 +38,7 @@ object TransactionManager {
 //        160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
 //    )
     //val feePayer = KeyPair(feePayerPubKeypair.toByteArray(), privateKeyBytes)
-    suspend fun TransferToken(option: SendOptions): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun transferToken(option: SendOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val pubKeyMint = PublicKey(option.token)
             val pubKeyDestination = PublicKey(option.toAddress)
@@ -97,6 +98,69 @@ object TransactionManager {
         }
     }
 
+    suspend fun batchTransferToken(options: List<TransferOptions>): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val transferInstructions = mutableListOf<TransactionInstruction>();
+            options.forEach { option ->
+                val pubKeyMint = PublicKey(option.token)
+                val pubKeyDestination = PublicKey(option.toAddress)
+
+                val sourceAta = deriveAtaAddress(SdkConfig.ownerKeyPair.publicKey, pubKeyMint)
+                val destinationAta = deriveAtaAddress(pubKeyDestination, pubKeyMint)
+
+                if (!Utility.ataExists(sourceAta.toBase58()))
+                    throw Error("Owner associated token account does not exist.")
+
+                val destinationCreateAta: TransactionInstruction? =
+                    if (!Utility.ataExists(destinationAta.toBase58())) {
+                        AssociatedTokenAccountProgram.createAssociatedTokenAccount(
+                            ata = destinationAta,
+                            feePayer = feePayerPubKey,
+                            owner = pubKeyDestination, // ✅ Corrected
+                            mint = pubKeyMint
+                        )
+                    } else null
+                if (destinationCreateAta != null)
+                    transferInstructions.add(destinationCreateAta)
+                val decimals = Utility.getTokenDecimals(option.token)
+                val rawAmount = Utility.getRawQuantity(option.amount, decimals)
+
+                val transferInstruction = TokenProgram.transferToken(
+                    source = sourceAta,
+                    destination = destinationAta,
+                    owner = SdkConfig.ownerKeyPair.publicKey,
+                    mint = pubKeyMint,
+                    amount = rawAmount,
+                    decimals = decimals.toUInt(),
+                    signers = listOf(SdkConfig.ownerKeyPair.publicKey, feePayerPubKey)
+                )
+                transferInstructions.add(transferInstruction)
+            }
+            val blockhashInfo = rpc.getLatestBlockhash(
+                RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
+            )
+
+            val recentBlockhash = blockhashInfo.blockhash
+            val authorizedSignature = HotSigner(SolanaKeypair(SdkConfig.ownerKeyPair.publicKey, SdkConfig.ownerKeyPair.secretKey))
+
+            val builder = AltudeTransactionBuilder()
+                .setFeePayer(feePayerPubKey)
+                .setRecentBlockHash(recentBlockhash)
+            //destinationCreateAta?.let { builder.addInstruction(it) }
+            builder.addRangeInstruction(transferInstructions)
+            builder.setSigners(listOf(authorizedSignature))
+
+            val build = builder.build()
+            val serialized = Base64.encodeToString(
+                build.serialize(SerializeConfig(requireAllSignatures = false)),
+                Base64.NO_WRAP
+            )
+
+            Result.success(serialized)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     suspend fun createAccount(option: CreateAccountOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
@@ -169,12 +233,12 @@ object TransactionManager {
                         authorized = SdkConfig.ownerKeyPair.publicKey
                         isOwnerRequiredSignature = true
                     }
-                        val instruction = TokenProgram.closeAtaAccount(
-                            ata = ata,
-                            destination = feePayerPubKey,
-                            authority = authorized
-                        )
-                        TxInstructions.add(instruction)
+                    val instruction = TokenProgram.closeAtaAccount(
+                        ata = ata,
+                        destination = feePayerPubKey,
+                        authority = authorized
+                    )
+                    TxInstructions.add(instruction)
 
                 }
             }
@@ -204,6 +268,7 @@ object TransactionManager {
 
         }
     }
+
 
 }
 
