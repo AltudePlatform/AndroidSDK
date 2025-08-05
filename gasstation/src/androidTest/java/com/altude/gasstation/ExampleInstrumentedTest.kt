@@ -54,7 +54,7 @@ class ExampleInstrumentedTest {
 
         Altude.savePrivateKey(accountPrivateKey)
         val seedData = StorageService.getDecryptedSeed("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
-        val decodedPrivateKey = Base64.decode(seedData?.privateKeyBase64, Base64.DEFAULT)
+        val decodedPrivateKey = seedData?.privateKey
         assert(accountPrivateKey.contentEquals(decodedPrivateKey))
 
 
@@ -75,6 +75,7 @@ class ExampleInstrumentedTest {
 
         println(keypair)
         assertEquals(keypair.publicKey.toBase58(), "BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
+
         //val mnemonic2 = Mnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         val keypair2 =  KeyPair.solanaKeyPairFromMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         assertEquals(keypair2.publicKey.toBase58(), "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W")
@@ -139,7 +140,6 @@ class ExampleInstrumentedTest {
         // Add an assert if needed
         assert(result.isSuccess)
     }
-
 
     @Test
     fun testTransferToken() = runBlocking {
@@ -211,7 +211,7 @@ class ExampleInstrumentedTest {
 
     @Test
     fun testGetHistory() = runBlocking {
-        
+
         val options = GetHistoryOption(
             account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             limit = 1,

@@ -7,7 +7,6 @@ import com.altude.core.Program.AssociatedTokenAccountProgram
 import com.altude.core.Program.AssociatedTokenAccountProgram.deriveAtaAddress
 import com.altude.core.Program.Utility
 import com.altude.core.Program.TokenProgram
-import com.altude.core.config.SdkConfig
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.TransferOptions
 import com.altude.core.helper.Mnemonic
@@ -23,11 +22,9 @@ import foundation.metaplex.rpc.RPC
 import foundation.metaplex.rpc.RpcGetLatestBlockhashConfiguration
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
-import foundation.metaplex.solanaeddsa.Keypair
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import foundation.metaplex.solanapublickeys.PublicKey
-import kotlinx.coroutines.Job
 import java.lang.Error
 import kotlin.collections.listOf
 
@@ -276,7 +273,7 @@ object TransactionManager {
         val seedData = StorageService.getDecryptedSeed(account)
         if(seedData != null){
             if(seedData.type == "mnemonic") return Mnemonic(seedData.mnemonic).getKeyPair()
-            return  if(seedData.privateKeyBase64!= null) KeyPair.solanaKeyPairFromPrivateKey(Base64.decode( seedData.privateKeyBase64, Base64.DEFAULT))
+            return  if(seedData.privateKey!= null) KeyPair.solanaKeyPairFromPrivateKey(seedData.privateKey)
             else throw Error("No seed found in storage")
         }else throw Error("Please set seed first")
     }
