@@ -1,30 +1,48 @@
 package com.altude.core.service
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
 import android.util.Log
-import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
 import kotlinx.serialization.json.Json
-import java.security.KeyPairGenerator
-import java.security.KeyStore
-import javax.crypto.Cipher
 import java.io.File
 import kotlinx.serialization.Serializable
-import java.security.PrivateKey
 import kotlin.io.encoding.Base64
 
 @Serializable
 data class SeedData(
-    val accountAddress: String,
-    val mnemonic: String,
+    val accountAddress: String = "",
+    val mnemonic: String = "",
     val passphrase: String,
-    val privateKeyBase64: String?,
+    val privateKey: ByteArray?,
     val type: String
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as SeedData
+
+        if (accountAddress != other.accountAddress) return false
+        if (mnemonic != other.mnemonic) return false
+        if (passphrase != other.passphrase) return false
+        if (!privateKey.contentEquals(other.privateKey)) return false
+        if (type != other.type) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = accountAddress.hashCode()
+        result = 31 * result + mnemonic.hashCode()
+        result = 31 * result + passphrase.hashCode()
+        result = 31 * result + (privateKey?.contentHashCode() ?: 0)
+        result = 31 * result + type.hashCode()
+        return result
+    }
+}
 
 object StorageService {
     private lateinit var appContext : Context
@@ -43,7 +61,7 @@ object StorageService {
         val data = SeedData(
             accountAddress,
             "", "",
-            privateKeyBase64 = Base64.encode( privateKeyByteArray),
+            privateKey =  privateKeyByteArray,
             type ="privatekey"
         )
         storeWalletSeed(accountAddress,data)
@@ -55,7 +73,7 @@ object StorageService {
         val data = SeedData(
             accountAddress,
             seedPhrase, passPhrase,
-            privateKeyBase64 =null,
+            privateKey =null,
             type ="mnemonic"
         )
         storeWalletSeed(accountAddress,data)
@@ -161,11 +179,9 @@ object StorageService {
             }
         }
     }
-
-
     fun getDecryptedSeed(accountAddress: String = ""): SeedData? {
         val dir = appContext.filesDir
-        val dataFile = dir.listFiles { _, name -> name.endsWith("$accountAddress.dat") }?.firstOrNull()
+        val dataFile = dir.listFiles { _, name -> name.endsWith("$accountAddress.dat") && name.startsWith("encrypted_seed_")}?.firstOrNull()
             ?: return null
 
         return try {
@@ -187,16 +203,4 @@ object StorageService {
             throw Error("Decryption failed for $accountAddress")
         }
     }
-
-//    private fun writeMetadata(accountAddress: String, type: String) {
-//        val metaFile = File(context.filesDir, "${getSeedFileName(accountAddress)}.meta.json")
-//        metaFile.writeText("""{ "type": "$type" }""")
-//    }
-//    fun getStoredSeedType(accountAddress: String): String? {
-//        val metaFile = File(context.filesDir, "${getSeedFileName(accountAddress)}.meta.json")
-//        return if (metaFile.exists()) {
-//            val text = metaFile.readText()
-//            Regex(""""type"\s*:\s*"(\w+)"""").find(text)?.groupValues?.get(1)
-//        } else null
-//    }
 }
