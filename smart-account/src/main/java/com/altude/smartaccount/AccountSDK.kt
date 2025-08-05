@@ -1,5 +1,6 @@
 package com.altude.smartaccount
 
+import android.content.Context
 import com.altude.core.TransactionManager
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
@@ -16,12 +17,10 @@ import retrofit2.Callback
 import retrofit2.Response
 
 object AccountSDK {
-    fun setApiKey(apiKey: String) {
-        SdkConfig.setApiKey(apiKey)
+    fun setApiKey(context: Context, apiKey: String) {
+        SdkConfig.setApiKey(context,apiKey)
     }
-    fun set(apiKey: String) {
-        SdkConfig.setApiKey(apiKey)
-    }
+
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createAccount(

@@ -1,17 +1,26 @@
 package com.altude.gasstation
 
+import android.content.Context
+import android.util.Base64
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.altude.core.config.SdkConfig
+import com.altude.core.data.CloseAccountOption
+import com.altude.core.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TransferOptions
+import com.altude.core.helper.Mnemonic
+import com.altude.core.model.KeyPair
 import com.altude.core.model.Token
+import com.altude.core.service.StorageService
+import foundation.metaplex.rpc.Commitment
 import kotlinx.coroutines.runBlocking
+import org.junit.Before
 
 import org.junit.Test
 import org.junit.runner.RunWith
-
+import org.junit.Assert.assertEquals
 /**
  * Instrumented test, which will execute on an Android device.
  *
@@ -19,23 +28,127 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class ExampleInstrumentedTest {
-
-    val ownerKey = byteArrayOf(
+    private lateinit var service: StorageService
+    private lateinit var context: Context
+    val accountPrivateKey = byteArrayOf(
         235.toByte(), 144.toByte(), 12, 215.toByte(), 112, 178.toByte(), 249.toByte(), 227.toByte(), 180.toByte(), 112, 121, 214.toByte(), 13, 190.toByte(), 158.toByte(), 91,
         208.toByte(), 118, 253.toByte(), 192.toByte(), 48, 6, 252.toByte(), 37, 111, 169.toByte(), 209.toByte(), 238.toByte(), 174.toByte(), 78, 210.toByte(), 184.toByte(),
         9, 37, 75, 1, 98, 80, 44, 48, 119, 25, 193.toByte(), 156.toByte(), 161.toByte(), 185.toByte(), 250.toByte(), 119,
         160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
     )
+    @Before
+    fun setup() {
+        context = ApplicationProvider.getApplicationContext()
+        Altude.setApiKey(context,"myAPIKey")
+
+    }
+
+    @Test
+    fun testStorage()= runBlocking{
+
+
+
+        Altude.saveMnemonic("bring record van away man person trouble clay rebuild review dust pond")
+        val seedData2 = StorageService.getDecryptedSeed("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
+        assertEquals(seedData2?.mnemonic, "bring record van away man person trouble clay rebuild review dust pond")
+
+        Altude.savePrivateKey(accountPrivateKey)
+        val seedData = StorageService.getDecryptedSeed("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
+        val decodedPrivateKey = Base64.decode(seedData?.privateKeyBase64, Base64.DEFAULT)
+        assert(accountPrivateKey.contentEquals(decodedPrivateKey))
+
+
+        val list = StorageService.getDecryptedSeeds()
+
+
+        StorageService.deleteWallet("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
+        val seedData3 = StorageService.getDecryptedSeed("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
+        assertEquals(seedData3, null)
+
+    }
+
+    @Test
+    fun testMnemonicToKeyPair()= runBlocking{
+
+        //val mnemonic = Mnemonic("bring record van away man person trouble clay rebuild review dust pond")
+        val keypair =  KeyPair.solanaKeyPairFromMnemonic("bring record van away man person trouble clay rebuild review dust pond")
+
+        println(keypair)
+        assertEquals(keypair.publicKey.toBase58(), "BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
+        //val mnemonic2 = Mnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        val keypair2 =  KeyPair.solanaKeyPairFromMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        assertEquals(keypair2.publicKey.toBase58(), "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W")
+
+        //val mnemonic3 = Mnemonic("profit admit clean purchase wagon cake cattle they favorite diamond rigid present twin devote busy rack float catch route menu short beyond inherit sight")
+        val keypair3 =  KeyPair.solanaKeyPairFromMnemonic("profit admit clean purchase wagon cake cattle they favorite diamond rigid present twin devote busy rack float catch route menu short beyond inherit sight")
+        assertEquals(keypair3.publicKey.toBase58(), "GRicVJoBc9Gxg7aqE11xAuSGej6Q2DAf1Wo72ggYzaSw")
+    }
+
+    @Test
+    fun testGenerateMnemonic()= runBlocking{
+        val mnemonic = Mnemonic.generateMnemonic(24)
+        println(mnemonic)
+        val mnemonic3 = Mnemonic(mnemonic)
+        val keypair3 =  mnemonic3.getKeyPair()
+        println(keypair3)
+    }
+
+    @Test
+    fun testCreateAccount() = runBlocking {
+        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+
+        val options = CreateAccountOption(
+            //owner = ownerKepair.publicKey.toBase58(),
+            tokens = listOf(Token.KIN.mint()),
+            commitment = Commitment.finalized,
+
+            )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.createAccount(options)
+
+        result
+            .onSuccess { println("✅ Sent: $it") }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(result.isSuccess)
+    }
+
+    @Test
+    fun testCloseAccount() = runBlocking {
+
+        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+
+        val options = CloseAccountOption(
+            account = "",   //optional
+            tokens  = listOf(Token.KIN.mint())
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.closeAccount(options)
+
+        result
+            .onSuccess { println("✅ Sent: $it") }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(result.isSuccess)
+    }
+
+
     @Test
     fun testTransferToken() = runBlocking {
-        // 👇 Replace with your actual key
-        Altude.setApiKey("your_actual_api_key")
-        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-        SdkConfig.setPrivateKey(ownerKey)
+        Altude.savePrivateKey(accountPrivateKey)
+
         val options = TransferOptions(
-            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
+            account = "", //optional
             toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
-            amount = 0.000001,
+            amount = 0.00001,
             token = Token.KIN.mint(),
         )
 
@@ -53,12 +166,9 @@ class ExampleInstrumentedTest {
     }
     @Test
     fun testBatchTransferToken() = runBlocking {
-        // 👇 Replace with your actual key
-        Altude.setApiKey("your_actual_api_key")
-        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-        SdkConfig.setPrivateKey(ownerKey)
+        Altude.savePrivateKey(accountPrivateKey)
+
         val options = TransferOptions(
-            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
             toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             amount = 0.0001,
             token = Token.KIN.mint(),
@@ -79,12 +189,8 @@ class ExampleInstrumentedTest {
 
     @Test
     fun testGetBalance() = runBlocking {
-        // 👇 Replace with your actual key
-        Altude.setApiKey("your_actual_api_key")
-        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-        SdkConfig.setPrivateKey(ownerKey)
+
         val option = GetBalanceOption(
-            //account = ownerKepair.publicKey.toBase58(),//"chenQmpQGpVwvFqGNqbJ8tGPxDYM97SF6jSDvLwdm4E",
             token = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
         )
 
@@ -94,41 +200,20 @@ class ExampleInstrumentedTest {
     }
     @Test
     fun testGetAccountInfo() = runBlocking {
-        // 👇 Replace with your actual key
-        Altude.setApiKey("your_actual_api_key")
-        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-        SdkConfig.setPrivateKey(ownerKey)
         val option = GetAccountInfoOption(
-            account = "3KwZ3eq7kiVDRYsNAPAss2TCa715faab8djy6Zg21HhZ",
-            //token = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
+            account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
         val result = Altude.getAccountInfo(option)
         println(result)
     }
-//    @Test
-//    fun testTransferToken() = runBlocking {
-//        GasStationSdk.setApiKey("your_actual_api_key")
-//        val service = SdkConfig.createService(TransactionService::class.java)
-//
-//        val request = SendTransactionRequest("test") // Use an actual base64-encoded transaction later
-//        val response = service.sendTransaction(request).execute()
-//
-//        if (response.isSuccessful) {
-//            println("✅ API response: ${response.body()?.message}")
-//        } else {
-//            println("❌ API error: ${response.errorBody()?.string()}")
-//        }
-//    }
+
     @Test
     fun testGetHistory() = runBlocking {
-        // 👇 Replace with your actual key
-        Altude.setApiKey("your_actual_api_key")
-        //val ownerKepair = KeyPair.solanaKeyPairFromPrivateKey(ownerKey.copyOfRange(0,32))
-        SdkConfig.setPrivateKey(ownerKey)
+        
         val options = GetHistoryOption(
-            account = "test",
+            account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             limit = 1,
             offset =2
         )
