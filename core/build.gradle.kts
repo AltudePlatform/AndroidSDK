@@ -83,7 +83,7 @@ dependencies {
    // implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
     //implementation("com.ditchoom:buffer-android:0.2.4")
     implementation("com.squareup.okhttp3:okhttp:5.1.0"){
-        exclude(group = "com.ditchoom")
+        //exclude(group = "com.ditchoom")
         //exclude(group = "io.github.funkatronics")
     }
 
@@ -95,6 +95,7 @@ dependencies {
     implementation("foundation.metaplex:solana:0.2.10"){
         exclude(group = "com.ditchoom")
         exclude(group = "io.github.funkatronics", module="kborsh" )
+
     }
     //implementation("com.ditchoom:buffer-jvm:1.4.2")
     implementation("io.github.funkatronics:kborsh-jvm:0.1.1"){
@@ -107,9 +108,24 @@ dependencies {
 
 //    implementation("org.bitcoinj:bitcoinj-core:0.15.10")  // For BIP39 seed
 //    implementation("org.bouncycastle:bcprov-jdk15to18:1.70") // For Ed25519
+    implementation("org.bitcoinj:bitcoinj-core:0.16.2")
+    //implementation("org.bouncycastle:bcprov-jdk15to18:1.78")
+    // https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk18on
+    //implementation("org.bouncycastle:bcprov-jdk18on:1.81")
+    implementation("io.provenance.hdwallet:hdwallet-bip39:0.1.15"){
+        exclude(group = "org.bouncycastle")
+    }
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    //implementation("com.ditchoom:buffer-jvm:1.4.2") // Note: Group ID is com.ditchoom
+    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
+//    implementation("com.ditchoom.buffer:bip39-jvm:1.4.2") // This one looks correct for BIP39
+//    implementation("com.ditchoom.buffer:bip32-jvm:1.4.2") // This one looks correct for BIP32
+    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
+    //implementation("com.ionspin.kotlin:multiplatform-crypto:0.1.0")
+
+    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
 
 
-
-
+    //testImplementation("junit:junit:4.13.2")
 
 }
