@@ -167,15 +167,30 @@ class ExampleInstrumentedTest {
     @Test
     fun testBatchTransferToken() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey)
+        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
 
-        val options = TransferOptions(
-            toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
-            amount = 0.0001,
-            token = Token.KIN.mint(),
+        val options =listOf(
+//            TransferOptions(
+//                toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+//                amount = 0.00001,
+//                token = Token.KIN.mint(),
+            //),
+            TransferOptions(
+                account = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
+                toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                amount = 0.00001,
+                token = Token.KIN.mint(),
+            ),
+//            TransferOptions(
+//                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
+//                toAddress = "GRicVJoBc9Gxg7aqE11xAuSGej6Q2DAf1Wo72ggYzaSw",
+//                amount = 0.00001,
+//                token = Token.KIN.mint(),
+//            )
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.batchtransfer(listOf(options))
+        val result = Altude.batchtransfer(options)
 
         result
             .onSuccess { println("✅ Sent: ${it.signature}") }

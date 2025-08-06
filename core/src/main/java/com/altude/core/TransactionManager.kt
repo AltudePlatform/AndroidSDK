@@ -66,7 +66,7 @@ object TransactionManager {
                 mint = pubKeyMint,
                 amount = rawAmount,
                 decimals = decimals.toUInt(),
-                signers = listOf(defaultWallet.publicKey, feePayerPubKey)
+                //signers = listOf(defaultWallet.publicKey, feePayerPubKey)
             )
 
             val blockhashInfo = rpc.getLatestBlockhash(
@@ -130,11 +130,13 @@ object TransactionManager {
                     mint = pubKeyMint,
                     amount = rawAmount,
                     decimals = decimals.toUInt(),
-                    signers = listOf(defaultWallet.publicKey, feePayerPubKey)
+                    //signers = listOf(defaultWallet.publicKey, feePayerPubKey)
                 )
                 transferInstructions.add(transferInstruction)
-                authorizedSignatures.add(HotSigner(SolanaKeypair(defaultWallet.publicKey, defaultWallet.secretKey)))
+                if (authorizedSignatures.find { it.publicKey == defaultWallet.publicKey } == null )
+                    authorizedSignatures.add(HotSigner(SolanaKeypair(defaultWallet.publicKey, defaultWallet.secretKey)))
             }
+
             val blockhashInfo = rpc.getLatestBlockhash(
                 RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
             )
@@ -220,7 +222,7 @@ object TransactionManager {
             val defaultWallet =  getKeyPair(option.account)
             val ownerKey = defaultWallet
 
-            val TxInstructions = mutableListOf<TransactionInstruction>()
+            val txInstructions = mutableListOf<TransactionInstruction>()
             var authorized: PublicKey
             var isOwnerRequiredSignature = false
             option.tokens.forEach { token ->
@@ -239,11 +241,11 @@ object TransactionManager {
                         destination = feePayerPubKey,
                         authority = authorized
                     )
-                    TxInstructions.add(instruction)
+                    txInstructions.add(instruction)
 
                 }
             }
-            if(TxInstructions.count() == 0){
+            if(txInstructions.count() == 0){
                 if(option.tokens.count() > 1)
                     throw Error("All Token accounts already closed")
                 throw Error("Token account already closed")
@@ -256,7 +258,7 @@ object TransactionManager {
             val recentBlockhash = blockhashInfo.blockhash
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
-                .addRangeInstruction(TxInstructions)
+                .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .build()
             if(isOwnerRequiredSignature)
