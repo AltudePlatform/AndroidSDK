@@ -1,9 +1,9 @@
-package com.altude.core.Program
+package com.altude.core.Programs
 
-import com.altude.core.Program.Utility.ATA_PROGRAM_ID
-import com.altude.core.Program.Utility.SYSTEM_PROGRAM_ID
-import com.altude.core.Program.Utility.SYSVAR_RENT_PUBKEY
-import com.altude.core.Program.Utility.TOKEN_PROGRAM_ID
+import com.altude.core.Programs.Utility.ATA_PROGRAM_ID
+import com.altude.core.Programs.Utility.SYSTEM_PROGRAM_ID
+import com.altude.core.Programs.Utility.SYSVAR_RENT_PUBKEY
+import com.altude.core.Programs.Utility.TOKEN_PROGRAM_ID
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey

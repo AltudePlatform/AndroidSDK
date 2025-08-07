@@ -1,8 +1,7 @@
-package com.altude.core.Program
+package com.altude.core.Programs
 
-import com.altude.core.Program.Utility.TOKEN_PROGRAM_ID
-import com.altude.core.Program.Utility.buildSetAuthorityData
-import com.altude.core.model.SolanaKeypair
+import com.altude.core.Programs.Utility.TOKEN_PROGRAM_ID
+import com.altude.core.Programs.Utility.buildSetAuthorityData
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey

@@ -40,14 +40,10 @@ class ExampleInstrumentedTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         Altude.setApiKey(context,"myAPIKey")
-
     }
 
     @Test
     fun testStorage()= runBlocking{
-
-
-
         Altude.saveMnemonic("bring record van away man person trouble clay rebuild review dust pond")
         val seedData2 = StorageService.getDecryptedSeed("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
         assertEquals(seedData2?.mnemonic, "bring record van away man person trouble clay rebuild review dust pond")
@@ -57,32 +53,26 @@ class ExampleInstrumentedTest {
         val decodedPrivateKey = seedData?.privateKey
         assert(accountPrivateKey.contentEquals(decodedPrivateKey))
 
-
         val list = StorageService.getDecryptedSeeds()
-
-
+        assertEquals(list.count(), 2)
         StorageService.deleteWallet("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
         val seedData3 = StorageService.getDecryptedSeed("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
         assertEquals(seedData3, null)
-
     }
 
     @Test
     fun testMnemonicToKeyPair()= runBlocking{
-
-        //val mnemonic = Mnemonic("bring record van away man person trouble clay rebuild review dust pond")
         val keypair =  KeyPair.solanaKeyPairFromMnemonic("bring record van away man person trouble clay rebuild review dust pond")
-
-        println(keypair)
         assertEquals(keypair.publicKey.toBase58(), "BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
 
-        //val mnemonic2 = Mnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         val keypair2 =  KeyPair.solanaKeyPairFromMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         assertEquals(keypair2.publicKey.toBase58(), "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W")
 
-        //val mnemonic3 = Mnemonic("profit admit clean purchase wagon cake cattle they favorite diamond rigid present twin devote busy rack float catch route menu short beyond inherit sight")
         val keypair3 =  KeyPair.solanaKeyPairFromMnemonic("profit admit clean purchase wagon cake cattle they favorite diamond rigid present twin devote busy rack float catch route menu short beyond inherit sight")
         assertEquals(keypair3.publicKey.toBase58(), "GRicVJoBc9Gxg7aqE11xAuSGej6Q2DAf1Wo72ggYzaSw")
+
+        val keypair4 =  KeyPair.solanaKeyPairFromMnemonic("wisdom hospital stable flavor payment slice cannon dirt galaxy capital side hunt parent surprise rate upon jaguar ketchup keen swim mammal kite net omit")
+        assertEquals(keypair4.publicKey.toBase58(), "HPzZhuj27KQLpAJqS4QZAeHpz4c1t5fgihzXXoFsSTDo")
     }
 
     @Test
