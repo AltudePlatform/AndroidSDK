@@ -3,10 +3,7 @@ package com.altude.core.helper
 import com.altude.core.helper.WordList
 import com.altude.core.model.KeyPair
 import com.altude.core.model.SolanaKeypair
-import diglol.crypto.Ed25519
-import foundation.metaplex.base58.encodeToBase58String
-import foundation.metaplex.solanaeddsa.SolanaEddsa
-import kotlinx.serialization.encoding.Encoder
+
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
@@ -67,6 +64,7 @@ class Mnemonic (
 
             val bits = entBits + checksumStr
             val wordIndexes = bits.chunked(11).map { it.toInt(2) }.toIntArray()
+
             return wordList.getSentence(wordIndexes)
         }
         fun sha256(input: ByteArray): ByteArray {
@@ -88,7 +86,7 @@ class Mnemonic (
             return entropy
         }
 
-        fun generateMnemonic(wordCount: Int = 12, wordList: WordList = WordList.English): String {
+        fun generateMnemonic(wordCount: Int = 12): String {
             val entropy = generateEntropy(wordCount)
             return encode(entropy)
         }

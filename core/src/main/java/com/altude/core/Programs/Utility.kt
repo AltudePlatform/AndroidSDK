@@ -1,4 +1,4 @@
-package com.altude.core.Program
+package com.altude.core.Programs
 
 import com.altude.core.data.AccountInfoResponse
 import com.altude.core.data.AccountInfoValue

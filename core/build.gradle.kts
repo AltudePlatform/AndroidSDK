@@ -116,6 +116,8 @@ dependencies {
         exclude(group = "org.bouncycastle")
     }
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    //implementation("com.github.metaplex-foundation.SolanaKT:solana:2.1.1")
     //implementation("com.ditchoom:buffer-jvm:1.4.2") // Note: Group ID is com.ditchoom
     //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
 //    implementation("com.ditchoom.buffer:bip39-jvm:1.4.2") // This one looks correct for BIP39

@@ -3,10 +3,10 @@ package com.altude.core
 import android.util.Base64
 import com.altude.core.data.CreateAccountOption
 import com.altude.core.data.SendOption
-import com.altude.core.Program.AssociatedTokenAccountProgram
-import com.altude.core.Program.AssociatedTokenAccountProgram.deriveAtaAddress
-import com.altude.core.Program.Utility
-import com.altude.core.Program.TokenProgram
+import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.Programs.AssociatedTokenAccountProgram.deriveAtaAddress
+import com.altude.core.Programs.Utility
+import com.altude.core.Programs.TokenProgram
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.TransferOptions
 import com.altude.core.helper.Mnemonic
