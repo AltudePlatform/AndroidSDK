@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.altude.android.ui.theme.AltudesdkTheme
-import com.altude.gasstation.GasStationSdk
 
 
 class MainActivity : ComponentActivity() {
