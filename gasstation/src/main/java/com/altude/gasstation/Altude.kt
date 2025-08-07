@@ -1,7 +1,8 @@
 package com.altude.gasstation
 
-import com.altude.core.Program.AssociatedTokenAccountProgram
-import com.altude.core.Program.Utility
+import android.content.Context
+import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.Programs.Utility
 import com.altude.core.TransactionManager
 import com.altude.core.api.BatchTransactionRequest
 import com.altude.core.api.SendTransactionRequest
@@ -9,7 +10,6 @@ import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.core.data.AccountInfoValue
-import com.altude.core.data.AccountParsedInfo
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.CreateAccountOption
@@ -18,6 +18,7 @@ import com.altude.core.data.GetHistoryData
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
 import com.altude.core.data.TransferOptions
+import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,16 +27,20 @@ import kotlinx.coroutines.withContext
 import retrofit2.Call
 import retrofit2.Response
 import retrofit2.Callback
-
-
-
-
+import java.lang.Error
 
 
 object Altude {
 
-    fun setApiKey(apiKey: String) {
-        SdkConfig.setApiKey(apiKey)
+    fun setApiKey(context: Context, apiKey: String) {
+        SdkConfig.setApiKey(context, apiKey)
+    }
+
+    suspend fun saveMnemonic(mnemonicWords: String) {
+        StorageService.storeMnemonic(mnemonicWords)
+    }
+    suspend fun savePrivateKey(byteArraySecretKey: ByteArray ) {
+        StorageService.storePrivateKeyByteArray(  byteArraySecretKey)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -235,11 +240,11 @@ object Altude {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getBalance(
-        options: GetBalanceOption
+        option: GetBalanceOption
     ): TokenAmount? {
-
-        val owner = SdkConfig.ownerKeyPair.publicKey.toBase58().let { options.account }
-        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey(owner), PublicKey(options.token))
+        val defaultWallet = TransactionManager.getKeyPair(option.account)
+        val owner = defaultWallet.publicKey.toBase58().let { option.account }
+        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey(owner), PublicKey(option.token))
         val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
         if (result == null) throw Error("No data found")
 
@@ -247,10 +252,10 @@ object Altude {
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
-        options: GetAccountInfoOption
+        option: GetAccountInfoOption
     ): AccountInfoValue? {
-
-        val owner = SdkConfig.ownerKeyPair.publicKey.toBase58().let { options.account }
+        val defaultWallet = TransactionManager.getKeyPair(option.account)
+        val owner = defaultWallet.publicKey.toBase58().let { option.account }
 
         val result = Utility.getAccountInfo(owner)
         //if (result == null) throw Error("No data found")

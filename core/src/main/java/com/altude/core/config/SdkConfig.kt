@@ -11,7 +11,11 @@ val service = SdkConfig.createService(TransactionService::class.java)
 package com.altude.core.config
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.util.Base64
+import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
+import com.altude.core.service.StorageService
 import foundation.metaplex.solanaeddsa.Keypair
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -33,7 +37,7 @@ object SdkConfig {
 
     private var baseUrl: String = "http://10.0.2.2:5250"
     private var apiKey: String = ""
-    lateinit var ownerKeyPair: Keypair
+    //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
@@ -93,9 +97,10 @@ object SdkConfig {
             chain.proceed(request)
         }
     }
-    fun setApiKey(key: String) {
+    fun setApiKey(context: Context, key: String) {
         this.apiKey = key
         this.initialize()
+        StorageService.init(context)
     }
 
     fun setNetwork(isDevnet: Boolean){
@@ -103,12 +108,7 @@ object SdkConfig {
     }
 
     //fun setConfig()
-    suspend fun setNemonic(key: String) {
-        ownerKeyPair = KeyPair.generate()
-    }
-    suspend fun setPrivateKey(byteArraySecretKey: ByteArray ) {
-        ownerKeyPair = KeyPair.solanaKeyPairFromPrivateKey(byteArraySecretKey.copyOfRange(0,32))
-    }
+
 
     fun <T> createService(service: Class<T>): T {
         if (!::retrofit.isInitialized) {
