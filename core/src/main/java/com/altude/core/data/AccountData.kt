@@ -26,11 +26,33 @@ data class AccountInfoValue(
 )
 
 @Serializable
-data class AccountData(
-    val parsed: AccountParsed? = null,
-    val program: String? = null,
-    val space: Int? = null
-)
+open class AccountData {
+
+    @Serializable
+    data class Parsed(
+        val parsed: AccountParsed? = null,
+        val program: String? = null,
+        val space: Int? = null
+    ) : AccountData()
+
+    @Serializable
+    data class Raw(val bytes: ByteArray) : AccountData() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as Raw
+
+            if (!bytes.contentEquals(other.bytes)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            return bytes.contentHashCode()
+        }
+    }
+}
 
 @Serializable
 data class AccountParsed(
