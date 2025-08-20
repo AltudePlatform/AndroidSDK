@@ -4,6 +4,8 @@ import com.altude.core.data.AccountData
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -12,11 +14,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.bouncycastle.util.encoders.Base64
 
 
 object AccountDataPolymorphicSerializer : KSerializer<AccountData?> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("AccountDataPolymorphic")
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("AccountDataPolymorphic")
 
     override fun deserialize(decoder: Decoder): AccountData? {
         val input = decoder as? JsonDecoder
@@ -24,21 +27,26 @@ object AccountDataPolymorphicSerializer : KSerializer<AccountData?> {
         val element = input.decodeJsonElement()
 
         return when (element) {
-            is JsonObject -> input.json.decodeFromJsonElement(AccountData.serializer(), element)
-            is JsonArray -> null // Ignore string[] like ["", "base64"]
-            else -> throw SerializationException("Unexpected JSON for AccountData: $element")
+            is JsonObject -> input.json.decodeFromJsonElement(AccountData.Parsed.serializer(), element)
+            is JsonArray -> {
+                // Base64 case ["<base64string>", "base64"]
+                val base64Str = element[0].jsonPrimitive.content
+                AccountData.Raw(Base64.decode(base64Str))
+            }
+            else -> null
         }
     }
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun serialize(encoder: Encoder, value: AccountData?) {
-        if (value == null) {
-            encoder.encodeNull()
-        } else {
-            val jsonEncoder = encoder as? JsonEncoder
-                ?: throw SerializationException("Expected JsonEncoder")
-            val jsonElement = jsonEncoder.json.encodeToJsonElement(AccountData.serializer(), value)
-            jsonEncoder.encodeJsonElement(jsonElement)
+        val jsonEncoder = encoder as? JsonEncoder ?: throw SerializationException("Expected JsonEncoder")
+        when (value) {
+            is AccountData.Parsed -> jsonEncoder.encodeSerializableValue(AccountData.Parsed.serializer(), value)
+            is AccountData.Raw -> {
+                val encoded = Base64.toBase64String(value.bytes)
+                jsonEncoder.encodeSerializableValue(ListSerializer(String.serializer()), listOf(encoded, "base64"))
+            }
+            null -> encoder.encodeNull()
         }
     }
 }

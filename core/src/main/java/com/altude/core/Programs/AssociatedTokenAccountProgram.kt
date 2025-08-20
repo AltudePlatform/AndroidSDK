@@ -17,18 +17,19 @@ object AssociatedTokenAccountProgram {
         owner: PublicKey,
         mint: PublicKey,
     ): TransactionInstruction {
+
         val accounts = mutableListOf(
             AccountMeta(feePayer, isSigner = true, isWritable = true),
             AccountMeta(ata, isSigner = false, isWritable = true),
             AccountMeta(owner, isSigner = false, isWritable = false),
             AccountMeta(mint, isSigner = false, isWritable = false),
-            AccountMeta(PublicKey(SYSTEM_PROGRAM_ID), isSigner = false, isWritable = false),
-            AccountMeta(PublicKey(TOKEN_PROGRAM_ID), isSigner = false, isWritable = false),
+            AccountMeta(SYSTEM_PROGRAM_ID, isSigner = false, isWritable = false),
+            AccountMeta(TOKEN_PROGRAM_ID, isSigner = false, isWritable = false),
             AccountMeta(SYSVAR_RENT_PUBKEY, isSigner = false, isWritable = false),
         )
 
         return TransactionInstruction(
-            programId = PublicKey(ATA_PROGRAM_ID),
+            programId = ATA_PROGRAM_ID,
             keys = accounts,
             data = byteArrayOf() // No data needed for ATA creation
         )
@@ -36,10 +37,12 @@ object AssociatedTokenAccountProgram {
     suspend fun deriveAtaAddress(owner: PublicKey, mint: PublicKey): PublicKey {
         val seeds = listOf(
             owner.toByteArray(),
-            PublicKey(TOKEN_PROGRAM_ID).toByteArray(),
+            TOKEN_PROGRAM_ID.toByteArray(),
             mint.toByteArray()
         )
-        val programid = PublicKey(ATA_PROGRAM_ID)
+        val programid = ATA_PROGRAM_ID
         return PublicKey.findProgramAddress(seeds, programid).address
     }
+
+
 }

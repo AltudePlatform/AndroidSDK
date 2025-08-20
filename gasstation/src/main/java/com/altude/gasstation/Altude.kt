@@ -9,6 +9,7 @@ import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
+import com.altude.core.data.AccountData
 import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.CloseAccountOption
@@ -248,16 +249,21 @@ object Altude {
         val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
         if (result == null) throw Error("No data found")
 
-        return  result.data?.parsed?.info?.tokenAmount
+        return   when (val data = result.data) {
+            is AccountData.Parsed -> data.parsed?.info?.tokenAmount
+            is AccountData.Raw -> null
+            null -> null
+            else -> {null}
+        }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
         option: GetAccountInfoOption
     ): AccountInfoValue? {
-        val defaultWallet = TransactionManager.getKeyPair(option.account)
-        val owner = defaultWallet.publicKey.toBase58().let { option.account }
+//        val defaultWallet = TransactionManager.getKeyPair(option.account)
+//        val owner = defaultWallet.publicKey.toBase58().let { option.account }
 
-        val result = Utility.getAccountInfo(owner)
+        val result = Utility.getAccountInfo(option.account, option.useBase64)
         //if (result == null) throw Error("No data found")
 
         return  result

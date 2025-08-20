@@ -97,6 +97,16 @@ dependencies {
         exclude(group = "io.github.funkatronics", module="kborsh" )
 
     }
+    implementation("foundation.metaplex:mplbubblegum:0.2.10"){
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module="kborsh" )
+
+    }
+    implementation("foundation.metaplex:mpltokenmetadata:0.2.10"){
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module="kborsh" )
+
+    }
     //implementation("com.ditchoom:buffer-jvm:1.4.2")
     implementation("io.github.funkatronics:kborsh-jvm:0.1.1"){
         exclude(group = "com.ditchoom")

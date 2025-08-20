@@ -1,6 +1,7 @@
 package com.altude.core.api
 
 import com.altude.core.data.GetHistoryData
+import com.altude.core.data.MintData
 import com.google.gson.annotations.SerializedName
 import foundation.metaplex.solana.transactions.Transaction
 import retrofit2.Call
@@ -26,6 +27,18 @@ data class TransactionResponse(
 
     //@SerializedName("Signature")
     val signature: String
+)
+
+data class MintRequest(
+    val userId: String,
+    val transaction: String,
+    val code: String
+)
+
+
+data class MintResponse(
+    val status: String,
+    val data: MintData?
 )
 
 interface TransactionService {
@@ -60,4 +73,14 @@ interface TransactionService {
         @Query("PageSize") pageSize: String,
         @Query("address") address: String,
     ): Call<GetHistoryData>
+
+    @POST("api/nft/mint")
+    fun postMint(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
+
+    @POST("api/nft/createNFTCollection")
+    fun postCreateCollectionNft(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.altude.core.Programs.MPLCore
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
@@ -15,6 +17,7 @@ import com.altude.core.model.KeyPair
 import com.altude.core.model.Token
 import com.altude.core.service.StorageService
 import foundation.metaplex.rpc.Commitment
+import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 
@@ -38,7 +41,7 @@ class ExampleInstrumentedTest {
     )
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
+        context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
         Altude.setApiKey(context,"myAPIKey")
     }
 
@@ -86,8 +89,9 @@ class ExampleInstrumentedTest {
 
     @Test
     fun testCreateAccount() = runBlocking {
-        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
-
+        //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        val keypair = KeyPair.generate()
+        Altude.savePrivateKey(keypair.secretKey)
         val options = CreateAccountOption(
             //owner = ownerKepair.publicKey.toBase58(),
             tokens = listOf(Token.KIN.mint()),
@@ -205,13 +209,27 @@ class ExampleInstrumentedTest {
     }
     @Test
     fun testGetAccountInfo() = runBlocking {
+        val pda1 = MPLCore.findTreeConfigPda(PublicKey("14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj"))
         val option = GetAccountInfoOption(
-            account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"
+            account = pda1.toBase58(),
+            useBase64 = true
         )
+
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
         val result = Altude.getAccountInfo(option)
-        println(result)
+        println("account:pda, ${pda1.toBase58()}" )
+        println("account:14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj, $result" )
+
+        val pda2 = MPLCore.findTreeConfigPda(PublicKey("7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb"))
+        val option2 = GetAccountInfoOption(
+            account = pda2.toBase58(),
+                useBase64 = true
+        )
+        println("account:pda, ${pda1.toBase58()}" )
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result2 = Altude.getAccountInfo(option2)
+        println("account:7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb, $result2")
     }
 
     @Test
