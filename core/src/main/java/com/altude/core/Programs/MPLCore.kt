@@ -14,6 +14,8 @@ import foundation.metaplex.solana.programs.SystemProgram
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import kotlin.math.pow
 
@@ -28,15 +30,15 @@ object MPLCore {
     ): TransactionInstruction{
         return TransactionInstruction(
             keys = listOf(
-                AccountMeta(collectionMint, true, true), // writable + signer
-                AccountMeta(updateAuthority, false, false),      // your update authority
-                AccountMeta(payer, true, true),       // payer (signer)
-                AccountMeta(PublicKey("11111111111111111111111111111111"), false, false) // system program
+                AccountMeta(collectionMint, isSigner = true, isWritable = true), // writable + signer
+                AccountMeta(updateAuthority, isSigner = false, isWritable = false),      // your update authority
+                AccountMeta(payer, isSigner = true, isWritable = true),       // payer (signer)
+                AccountMeta(Utility.SYSTEM_PROGRAM_ID, isSigner = false, isWritable = false) // system program
             ),
             programId = Utility.mplCoreProgramId,
             data = Utility. serializeCreateCollectionV2(
                 name = name,
-                uri = uri
+                uri = uri,
             )
         )
     }
@@ -56,11 +58,11 @@ object MPLCore {
         assetData: ByteArray? = null       // Optional custom binary data for off-chain references or dApp-specific features
         //assetDataSchema: AssetDataSchema? = null // Optional schema for validating the assetData structure
 
-    ): TransactionInstruction {
+    ): List<TransactionInstruction> {
         val programId = Utility.MPL_BUBBLEGUM_PROGRAM_ID// mplBubblegum
 
         // Resolve defaults
-        val treeConfig = Utility.findTreeConfigPda(merkleTree)
+        val treeConfig = findTreeConfigPda(merkleTree)
         val logWrapper = Utility.MPL_NOOP  // mplNoop
         val compressionProgram = Utility.MPL_ACCOUNT_COMPRESSION// mplAccountCompression
         val mplCoreProgram = Utility.mplCoreProgramId // mplCore
@@ -84,12 +86,12 @@ object MPLCore {
             uses = null,
             tokenProgramVersion = TokenProgramVersion.Original
         )
+        val cuIx = setComputeUnitLimit(800_000)   // ~800k units
+        val heapIx = requestHeapFrame(256 * 1024) // 256 KB
 
         // Serialize instruction data
         val data = MintV2InstructionData(
-            discriminator = byteArrayOf(120, 121, 23, 146.toByte(), 173.toByte(), 110,
-                199.toByte(), 205.toByte()
-            ),
+            discriminator = byteArrayOf(120, 121, 23, 146.toByte(), 173.toByte(), 110, 199.toByte(), 205.toByte()), // mintV2Discriminator(),//
             metadata = metadata,
             assetData = assetData,
             assetDataSchema = null
@@ -98,34 +100,80 @@ object MPLCore {
         // Accounts list in correct index order
         val keys = listOfNotNull(
             AccountMeta(treeConfig, isWritable = true, isSigner = false),
+
+            // payer always signs
             AccountMeta(payer, isWritable = true, isSigner = true),
-            treeCreatorOrDelegate?.let { AccountMeta(it, isWritable = false, isSigner = true) }
-                ?: AccountMeta(payer, isWritable = false, isSigner = true),
-            collectionAuthority?.let { AccountMeta(it, isWritable = false, isSigner = true) }
-                ?: AccountMeta(treeCreatorOrDelegate ?: payer, isWritable = false, isSigner = true),
-            AccountMeta(leafOwner, isWritable = false, isSigner = false),
-            leafDelegate?.let { AccountMeta(it, isWritable = false, isSigner = false) },
+
+            // tree creator or delegate (signer if provided)
+            treeCreatorOrDelegate?.let { AccountMeta(it, isWritable = true, isSigner = true) }
+                ?: AccountMeta(programId, isWritable = false, isSigner = false),
+
+            // collection authority (signer if provided, otherwise fall back to treeCreatorOrDelegate or payer)
+            collectionAuthority?.let { AccountMeta(it, isWritable = true, isSigner = true) }
+                ?: AccountMeta( programId, isWritable = true, isSigner = false),
+
+            // leaf owner must sign
+            AccountMeta(leafOwner, isWritable = true, isSigner = true),
+
+            // leaf delegate (optional, no signer needed if not passed)
+            leafDelegate?.let { AccountMeta(it, isWritable = false, isSigner = false) }
+                ?: AccountMeta(programId, isWritable = false, isSigner = false),
+
+            // merkle tree
             AccountMeta(merkleTree, isWritable = true, isSigner = false),
-            coreCollection?.let { AccountMeta(it, isWritable = true, isSigner = false) },
-            mplCoreCpiSigner?.let { AccountMeta(it, isWritable = false, isSigner = false) },
+
+            // collection account (optional, non-signer)
+            coreCollection?.let { AccountMeta(it, isWritable = true, isSigner = false) }
+                ?: AccountMeta(programId, isWritable = false, isSigner = false),
+
+            // remaining fixed accounts
+            mplCoreCpiSigner?.let { AccountMeta(mplCoreCpiSigner, isWritable = false, isSigner = false) } ?: AccountMeta(programId, isWritable = false, isSigner = false) ,
             AccountMeta(logWrapper, isWritable = false, isSigner = false),
             AccountMeta(compressionProgram, isWritable = false, isSigner = false),
             AccountMeta(mplCoreProgram, isWritable = false, isSigner = false),
-            AccountMeta(systemProgram, isWritable = false, isSigner = false)
+            AccountMeta(systemProgram, isWritable = false, isSigner = false),
         )
-
-        return TransactionInstruction(
+        print("mintv2 keys: $keys")
+        return listOf(
+//            cuIx,
+//            heapIx,
+            TransactionInstruction(
             programId = programId,
             keys = keys,
             data = data
+        ))
+    }
+//
+    fun setComputeUnitLimit(units: Int): TransactionInstruction {
+        val data = ByteBuffer.allocate(1 + 4).order(ByteOrder.LITTLE_ENDIAN)
+        data.put(2.toByte())          // tag for SetComputeUnitLimit
+        data.putInt(units)            // number of units
+        return TransactionInstruction(
+            programId = Utility.COMPUTE_BUDGET_PROGRAM_ID,
+            keys = emptyList(),
+            data = data.array()
         )
     }
-
-    suspend fun findTreeConfigPda(merkleTree: PublicKey): PublicKey {
-        // matches Umi/TS: findTreeConfigPda(context, { merkleTree })
-        val seeds = listOf(merkleTree.publicKeyBytes)
-        return PublicKey.findProgramAddress(seeds, Utility.MPL_BUBBLEGUM_PROGRAM_ID).address
+    fun requestHeapFrame(bytes: Int): TransactionInstruction {
+        val data = ByteBuffer.allocate(1 + 4).order(ByteOrder.LITTLE_ENDIAN)
+        data.put(1.toByte())          // tag for RequestHeapFrame
+        data.putInt(bytes)            // number of bytes
+        return TransactionInstruction(
+            programId = Utility.COMPUTE_BUDGET_PROGRAM_ID,
+            keys = emptyList(),
+            data = data.array()
+        )
     }
+    suspend fun findTreeConfigPda(merkleTree: PublicKey): PublicKey {
+        val seeds = listOf(
+           // "tree".encodeToByteArray(),
+            merkleTree.publicKeyBytes
+        )
+        val address = PublicKey.findProgramAddress(seeds, Utility.MPL_BUBBLEGUM_PROGRAM_ID).address
+        println("findTreeConfigPda: $address")
+        return address
+    }
+
 
     // --- Size helper (same math you already use) --------------------------------
     fun getMerkleTreeSize(maxDepth: Int, maxBufferSize: Int, canopyDepth: Int = 0): Long {
@@ -139,7 +187,14 @@ object MPLCore {
     // 1️⃣ Discriminator
     fun createTreeV2Discriminator(): ByteArray {
         val name = "global:create_tree_v2"
-        val hash = java.security.MessageDigest.getInstance("SHA-256")
+        val hash = MessageDigest.getInstance("SHA-256")
+            .digest(name.toByteArray())
+        return hash.copyOfRange(0, 8)
+    }
+
+    fun mintV2Discriminator(): ByteArray {
+        val name = "global:mint_v2"
+        val hash = MessageDigest.getInstance("SHA-256")
             .digest(name.toByteArray())
         return hash.copyOfRange(0, 8)
     }
@@ -331,7 +386,7 @@ object MPLCore {
 
 
         // Compute treeConfig PDA
-        val treeConfigPda = MPLCore.findTreeConfigPda(merkleTree)
+        val treeConfigPda = findTreeConfigPda(merkleTree)
 
         //Prepare keys for CreateTreeV2 instruction
         val keys = listOf(
@@ -397,7 +452,7 @@ object MPLCore {
 
 
         // Compute treeConfig PDA
-        val treeConfigPda = MPLCore.findTreeConfigPda(merkleTree)
+        val treeConfigPda = findTreeConfigPda(merkleTree)
 
         //Prepare keys for CreateTreeV2 instruction
         val keys = listOf(
@@ -428,23 +483,7 @@ object MPLCore {
         return listOf(createTreeIx, createTreeConfigV2Ix)
     }
 
-    fun getValidCanopy(maxDepth: Int, canopy: Int): Int {
-        // Allow 0 only if tree is small enough
-        if (canopy == 0 && maxDepth <= 14) {
-            return 0
-        }
 
-        // Force canopy into valid form: 2^k - 2
-        var k = 2
-        var valid = 2
-        while (true) {
-            val candidate = (1 shl k) - 2 // 2^k - 2
-            if (candidate >= maxDepth) break
-            valid = candidate
-            k++
-        }
-        return valid
-    }
 }
 
 sealed class Option<out T>

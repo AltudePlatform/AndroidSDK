@@ -65,8 +65,8 @@ class ExampleInstrumentedTest {
             symbol = "alt",
             name = "test1",
             owner = "",
-            sellerFeeBasisPoints = 1,
-            collection = "8yAVKpkdGGfRKJcT7y6hWke3xB1SaS5ghZDLjK9o2vqA" //8yAVKpkdGGfRKJcT7y6hWke3xB1SaS5ghZDLjK9o2vqA 2EnwP9qZXWzhJkGyHoETTBjBED93hPDkSCTdfdW4AJiz
+            sellerFeeBasisPoints = 500,
+            collection = "3aFvpFTubEatCeY9wJGbQ81YpMLmVCA4MeYFyUFsZJCF" //3aFvpFTubEatCeY9wJGbQ81YpMLmVCA4MeYFyUFsZJCF 8yAVKpkdGGfRKJcT7y6hWke3xB1SaS5ghZDLjK9o2vqA 2EnwP9qZXWzhJkGyHoETTBjBED93hPDkSCTdfdW4AJiz 8xV6BsBzYb9QnjGs1Dufwf1NFLfdxHLDUuxn9MchSBm4 B6FensJaNwdq9R5X18Dvm6C1DkSEcMtN87s2hYdFZYrf
         )
         val result = NFTSdk.mint(option)
 

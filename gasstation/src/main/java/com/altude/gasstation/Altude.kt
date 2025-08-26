@@ -249,12 +249,7 @@ object Altude {
         val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
         if (result == null) throw Error("No data found")
 
-        return   when (val data = result.data) {
-            is AccountData.Parsed -> data.parsed?.info?.tokenAmount
-            is AccountData.Raw -> null
-            null -> null
-            else -> {null}
-        }
+        return   result.data?.parsed?.info?.tokenAmount
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(

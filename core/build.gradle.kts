@@ -108,7 +108,7 @@ dependencies {
 
     }
     //implementation("com.ditchoom:buffer-jvm:1.4.2")
-    implementation("io.github.funkatronics:kborsh-jvm:0.1.1"){
+    implementation("io.github.funkatronics:kborsh:0.1.1"){
         exclude(group = "com.ditchoom")
     }
     implementation("com.ditchoom:buffer-jvm:1.4.2")
