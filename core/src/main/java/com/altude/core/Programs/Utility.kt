@@ -6,6 +6,7 @@ import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.ConcurrentMerkleTreeHeaderDataSerializer
 import com.altude.core.data.KtSerializer
 import com.altude.core.data.MerkleTreeAccountData
+import diglol.crypto.internal.toByteArray
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ChangeLog
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ConcurrentMerkleTree
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.Path
@@ -17,11 +18,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import kotlin.math.pow
-
 
 object  Utility {
 
@@ -35,7 +37,7 @@ object  Utility {
     val mplCoreProgramId = PublicKey("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d")
     val BUBBLEGUM_PROGRAM_ID  = PublicKey("BGUMApnG53q5bGgBdKrvSkpMFe7d4QKCEZy8Apju6U6G")
 
-
+    val COMPUTE_BUDGET_PROGRAM_ID = PublicKey("ComputeBudget111111111111111111111111111111")
     //
     val MPL_BUBBLEGUM_PROGRAM_ID     = PublicKey("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY")
     val SPL_ACCOUNT_COMPRESSION     = PublicKey("cmtDvXumGCrqC1Age74AVPhSRVXJMd8PJS91L8KbNCK")
@@ -56,12 +58,7 @@ object  Utility {
     suspend fun getTokenDecimals(mintAddress: String): Int {
         val response = getAccountInfo(mintAddress)
 
-        val decimals = when (val data = response?.data) {
-            is AccountData.Parsed -> data.parsed?.info?.decimals
-            is AccountData.Raw -> null
-            null -> null
-            else -> {null}
-        }
+        val decimals = response?.data?.parsed?.info?.decimals
 
         return decimals ?: throw Exception("Unable to parse token decimals from mint: $mintAddress")
     }
@@ -88,7 +85,7 @@ object  Utility {
 
     fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
         val client = OkHttpClient()
-        val encoding = if (useBase64) "base64" else "jsonParsed"
+        val encoding = "jsonParsed"//if (useBase64) "base64" else "jsonParsed"
         val payload = """
         {
           "jsonrpc": "2.0",
@@ -112,12 +109,10 @@ object  Utility {
         val response = client.newCall(request).execute()
         val body = response.body.string()
 
-        val json = Json {
-            ignoreUnknownKeys = true // <-- IMPORTANT
-        }
-
+        val json = Json { ignoreUnknownKeys = true }
         return json.decodeFromString<AccountInfoResponse>(body).result.value
     }
+
 
 
     fun createEd25519KeypairFromSeed(seed: ByteArray): Pair<ByteArray, ByteArray> {
@@ -142,12 +137,7 @@ object  Utility {
         val value = response
             ?: throw Error("Associated token account does not exist!")
 
-        val actualOwner = when (val data = value.data) {
-            is AccountData.Parsed -> data.parsed?.info?.owner
-            is AccountData.Raw -> null
-            null -> null
-            else -> {}
-        }
+        val actualOwner = value.data?.parsed?.info?.owner
         if (expectedOwner != actualOwner) {
             throw Error("Authorized owner is $actualOwner, expected $expectedOwner")
         }
@@ -174,37 +164,32 @@ object  Utility {
         val programid = METADATA_PROGRAM_ID
         return PublicKey.findProgramAddress(seeds, programid).address
     }
-    suspend fun findCollectionAuthorityRecordPda(
-        collectionMint: PublicKey,
-        collectionAuthority: PublicKey
-    ): PublicKey {
-        val seeds = listOf(
-            "metadata".toByteArray(),
-            METADATA_PROGRAM_ID  .toByteArray(),
-            collectionMint.toByteArray(),
-            "collection_authority".toByteArray(),
-            collectionAuthority.toByteArray()
-        )
-        return PublicKey.findProgramAddress(seeds, METADATA_PROGRAM_ID).address
+
+
+    // --- Borsh helpers ---
+    // --- Serializer helpers ---
+    fun writeU32LE(writer: DataOutputStream, value: Int) {
+        writer.write(byteArrayOf(
+            (value and 0xFF).toByte(),
+            ((value shr 8) and 0xFF).toByte(),
+            ((value shr 16) and 0xFF).toByte(),
+            ((value shr 24) and 0xFF).toByte()
+        ))
     }
-    suspend fun findTreeAuthorityPda(merkleTree: PublicKey): PublicKey {
-        // Returns the PDA AND the bump
-        val (pda, bump) = PublicKey.findProgramAddress(
-            listOf(
-                merkleTree.toByteArray(),
-                "tree_authority".toByteArray()
-            ),
-            BUBBLEGUM_PROGRAM_ID
-        )
-        return pda
+
+    fun writeBorshString(writer: DataOutputStream, s: String) {
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        writeU32LE(writer, bytes.size)
+        writer.write(bytes)
     }
-    suspend fun findTreeAuthority(treeAddress: PublicKey): PublicKey {
-        val (pda, _) = PublicKey.findProgramAddress(
-            listOf(treeAddress.toByteArray()),
-            BUBBLEGUM_PROGRAM_ID
-        )
-        return pda
-    }
+
+    // --- Serialize CreateCollectionV2 instruction data ---
+//    Plugin Name	        Discriminator (Hex)	        As Integer
+//    BubblegumV2	                0f	                    15
+//    PermanentFreezeDelegate	    10	                    16
+//    ProgramDenyList	            11	                    17
+//    ProgramAllowList	            12	                    18
+//    CollectionAuthorityRecord	    13	                    19
     fun serializeCreateCollectionV2(
         name: String,
         uri: String
@@ -222,17 +207,30 @@ object  Utility {
         }
 
         // Encode Option::None as 0u8
-        val noneByte = byteArrayOf(0)
+        val buffer = ByteArrayOutputStream()
+        val writer = DataOutputStream(buffer)
 
-        val nameBytes = encodeString(name)
-        val uriBytes = encodeString(uri)
+        // discriminator
+        writer.writeByte(21)
 
-        return byteArrayOf(discriminator) +
-                nameBytes +
-                uriBytes +
-                noneByte + // plugins = None
-                noneByte  // externalPluginAdapters = None
+        // name & uri
+        writer.write(encodeString(name))
+        writer.write(encodeString(uri))
+
+        // plugins: Option<Vec<Plugin>>
+        writer.writeByte(1)             // Some
+        writer.write(byteArrayOf(1,0,0,0)) // Vec length = 1
+        writer.writeByte(15)             // Plugin::BubblegumV2 discriminator
+        writer.writeByte(0)             // authority = None
+
+        // externalPluginAdapters: Option<Vec> (empty)
+        writer.writeByte(1)             // Some
+        writer.write(byteArrayOf(0,0,0,0)) // Vec length = 0
+
+
+        return buffer.toByteArray()
     }
+
 
     /*
     * Max Depth	Max Buffer Size	Leaves Capacity	Notes

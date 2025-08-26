@@ -20,38 +20,17 @@ data class AccountInfoValue(
     val data: AccountData? = null,
     val executable: Boolean? = null,
     val lamports: Long? = null,
+    val space: Long? = null,
     val owner: String? = null,
     @Serializable(with = U64AsStringSerializer::class)
     val rentEpoch: String? = null
 )
 
 @Serializable
-open class AccountData {
-
-    @Serializable
-    data class Parsed(
-        val parsed: AccountParsed? = null,
-        val program: String? = null,
-        val space: Int? = null
-    ) : AccountData()
-
-    @Serializable
-    data class Raw(val bytes: ByteArray) : AccountData() {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as Raw
-
-            if (!bytes.contentEquals(other.bytes)) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            return bytes.contentHashCode()
-        }
-    }
+class AccountData {
+    val parsed: AccountParsed? = null
+    val program: String? = null
+    val space: Int? = null
 }
 
 @Serializable
