@@ -15,6 +15,7 @@ import android.content.Context
 import android.util.Base64
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
+import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanaeddsa.Keypair
 import okhttp3.Interceptor
@@ -36,6 +37,7 @@ object SdkConfig {
 
 
     private var baseUrl: String = "http://10.0.2.2:5250"
+    private var quickNodeUrl: String = "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/"
     private var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true

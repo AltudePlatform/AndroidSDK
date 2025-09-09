@@ -6,6 +6,7 @@ import com.google.gson.annotations.SerializedName
 import foundation.metaplex.solana.transactions.Transaction
 import retrofit2.Call
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
 
@@ -40,7 +41,9 @@ data class MintResponse(
     val status: String,
     val data: MintData?
 )
-
+data class QuickNodeResponse(
+    val token: String,
+)
 interface TransactionService {
 
     @POST("api/transaction/send")
@@ -83,4 +86,8 @@ interface TransactionService {
     fun postCreateCollectionNft(
         @Body body: SendTransactionRequest
     ): Call<TransactionResponse>
+
+    @GET("api/auth/token")
+    fun getQuickNodeJWTTOken(
+    ): Call<QuickNodeResponse>
 }

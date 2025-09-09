@@ -6,6 +6,7 @@ import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.ConcurrentMerkleTreeHeaderDataSerializer
 import com.altude.core.data.KtSerializer
 import com.altude.core.data.MerkleTreeAccountData
+import com.altude.core.network.QuickNodeRpc
 import diglol.crypto.internal.toByteArray
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ChangeLog
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ConcurrentMerkleTree
@@ -83,34 +84,9 @@ object  Utility {
         return buffer.array()
     }
 
-    fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
-        val client = OkHttpClient()
-        val encoding = "jsonParsed"//if (useBase64) "base64" else "jsonParsed"
-        val payload = """
-        {
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "getAccountInfo",
-          "params": [
-            "$publicKey",
-            {
-              "encoding": "$encoding"
-            }
-          ]
-        }
-    """.trimIndent()
-
-        val mediaType = "application/json".toMediaType()
-        val request = Request.Builder()
-            .url(quickNodeUrl)
-            .post(payload.toRequestBody(mediaType))
-            .build()
-
-        val response = client.newCall(request).execute()
-        val body = response.body.string()
-
-        val json = Json { ignoreUnknownKeys = true }
-        return json.decodeFromString<AccountInfoResponse>(body).result.value
+    suspend fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
+        val rpc = QuickNodeRpc(quickNodeUrl)
+        return  rpc.getAccountInfo(publicKey).value
     }
 
 

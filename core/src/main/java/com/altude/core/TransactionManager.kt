@@ -18,6 +18,7 @@ import com.altude.core.model.HotSigner
 import com.altude.core.model.SolanaKeypair
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.KeyPair
+import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.metaplex.signer.Signer
 
@@ -35,9 +36,9 @@ import kotlin.collections.listOf
 
 object TransactionManager {
 
-    private val quickNodeUrl =
+        private const val  QUICK_NODE_URL =
         "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/"
-    private val rpc = RPC(quickNodeUrl)
+    private val rpc = QuickNodeRpc(QUICK_NODE_URL)
     val feePayerPubKey = PublicKey("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
     suspend fun transferToken(option: SendOption): Result<String> = withContext(Dispatchers.IO) {
@@ -75,7 +76,7 @@ object TransactionManager {
             )
 
             val blockhashInfo = rpc.getLatestBlockhash(
-                RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
+                commitment = Commitment.finalized
             )
 
             val recentBlockhash = blockhashInfo.blockhash
@@ -152,7 +153,7 @@ object TransactionManager {
                 }
 
                 val blockhashInfo = rpc.getLatestBlockhash(
-                    RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
+                    commitment = Commitment.finalized
                 )
 
                 val recentBlockhash = blockhashInfo.blockhash
@@ -213,7 +214,7 @@ object TransactionManager {
 
                 val payerSigner = EmptySignature(feePayerPubKey)
                 val blockhashInfo = rpc.getLatestBlockhash(
-                    RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
+                    commitment = Commitment.finalized
                 )
 
                 val tx = AltudeTransactionBuilder().addRangeInstruction(txInstructions)
@@ -270,7 +271,7 @@ object TransactionManager {
             }
 
             val blockhashInfo = rpc.getLatestBlockhash(
-                RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized)
+                commitment = Commitment.finalized
             )
 
             val tx = AltudeTransactionBuilder()
@@ -326,7 +327,7 @@ object TransactionManager {
             )
 
             val blockhashInfo =
-                rpc.getLatestBlockhash(RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized))
+                rpc.getLatestBlockhash(commitment = Commitment.finalized)
 
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
@@ -375,16 +376,26 @@ object TransactionManager {
                 treeCreatorOrDelegate = feePayerPubKey,
                 collectionAuthority = defaultWallet.publicKey
             )
+
+//            val tree  = MPLCore.createTreeV2(
+//                rpc = rpc,
+//                payer = feePayerPubKey,
+//                merkleTree = KeyPair.generate().publicKey,
+//                treeCreator = feePayerPubKey,
+//                maxDepth = 14,
+//                maxBufferSize = 64,
+//                isPublic = true,
+//            )
            // println("Mint ix: $mintIx")
-            val blockhash =
-                rpc.getLatestBlockhash(RpcGetLatestBlockhashConfiguration(commitment = Commitment.confirmed )).blockhash
-            println("latest blockhash $blockhash")
+            val blockhashInfo =
+                rpc.getLatestBlockhash(commitment = Commitment.confirmed)
+            println("latest blockhash $blockhashInfo")
             //val payerKeypair = KeyPair.solanaKeyPairFromMnemonic("bring record van away man person trouble clay rebuild review dust pond")
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
                 //.addRangeInstruction(ixs)
                 .addRangeInstruction(mintIx)
-                .setRecentBlockHash(blockhash)
+                .setRecentBlockHash(blockhashInfo.blockhash)
                 //.setSigners(listOf(HotSigner(defaultWallet)))//HotSigner(merkleTree), ,HotSigner(defaultWallet)
                 .build()
             //val stx = tx.serialize()
@@ -405,57 +416,6 @@ object TransactionManager {
                 Base64.NO_WRAP
             )
             println("Partial Signed tx $serialized")
-            // You must sign & send the tx (server-side or client-side):
-            // rpc.sendTransaction(tx, listOf(feePayerKeypair, mintAccount /*, defaultWallet if needed */)).getOrThrow()
-
-            Result.success(serialized)
-        } catch (e: Exception) {
-            Result.failure(e)
-
-        }
-    }
-
-
-
-    suspend fun createTreeInstruction(
-        option: MintOption
-    ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            // --- Setup / accounts ----------------------------------------------------------------
-            //val mintAccount = KeyPair.generate()                     // new mint keypair
-            //val mintLayout: Long = 82
-            val defaultWallet =
-                getKeyPair(option.owner)                       // your wallet (payer / update authority)
-            val merkleTree = KeyPair.generate()
-            // println("New tree ${merkleTree.publicKey}")
-
-            val ixs = MPLCore. createTreeV2(
-                rpc = rpc,
-                payer = feePayerPubKey,
-                merkleTree = merkleTree.publicKey,
-                treeCreator = feePayerPubKey,
-                maxDepth = 14,
-                maxBufferSize = 64,
-                //can = 0,
-                isPublic = true
-            )
-
-
-            val blockhashInfo =
-                rpc.getLatestBlockhash(RpcGetLatestBlockhashConfiguration(commitment = Commitment.finalized))
-
-            val tx = AltudeTransactionBuilder()
-                .setFeePayer(feePayerPubKey)
-                .addRangeInstruction(ixs)
-                .setRecentBlockHash(blockhashInfo.blockhash)
-                .setSigners(listOf(HotSigner(defaultWallet)))
-                .build()
-
-            val serialized = Base64.encodeToString(
-                tx.serialize(SerializeConfig(requireAllSignatures = false)),
-                Base64.NO_WRAP
-            )
-
             // You must sign & send the tx (server-side or client-side):
             // rpc.sendTransaction(tx, listOf(feePayerKeypair, mintAccount /*, defaultWallet if needed */)).getOrThrow()
 

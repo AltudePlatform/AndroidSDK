@@ -9,7 +9,6 @@ import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.data.AccountData
 import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.CloseAccountOption
@@ -35,6 +34,7 @@ object Altude {
 
     fun setApiKey(context: Context, apiKey: String) {
         SdkConfig.setApiKey(context, apiKey)
+
     }
 
     suspend fun saveMnemonic(mnemonicWords: String) {
@@ -45,7 +45,7 @@ object Altude {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun transfer(
+    suspend fun send(
         options: TransferOptions
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
@@ -83,7 +83,7 @@ object Altude {
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun batchtransfer(
+    suspend fun sendBatch(
         options: List<TransferOptions>
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
