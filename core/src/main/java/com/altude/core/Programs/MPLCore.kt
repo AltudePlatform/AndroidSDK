@@ -2,6 +2,7 @@ package com.altude.core.Programs
 
 import com.altude.core.data.ChangeLog
 import com.altude.core.data.MintV2InstructionData
+import com.altude.core.network.QuickNodeRpc
 import com.funkatronics.kborsh.BorshEncoder
 import foundation.metaplex.mplbubblegum.generated.bubblegum.Collection
 import foundation.metaplex.mplbubblegum.generated.bubblegum.Creator
@@ -417,7 +418,7 @@ object MPLCore {
         return listOf(createTreeIx, createTreeConfigV2Ix)
     }
     suspend fun createTreeV2(
-        rpc: RPC,
+        rpc: QuickNodeRpc,
         payer: PublicKey,
         merkleTree: PublicKey,
         treeCreator: PublicKey,
@@ -444,7 +445,7 @@ object MPLCore {
         val createTreeIx = SystemProgram.createAccount(
             fromPublicKey = payer,
             newAccountPublickey = merkleTree,
-            lamports = lamports.toLong(),
+            lamports = lamports,
             space = space.toLong(),
             programId = compressionProgram
         )
