@@ -97,8 +97,18 @@ dependencies {
         exclude(group = "io.github.funkatronics", module="kborsh" )
 
     }
+    implementation("foundation.metaplex:mplbubblegum:0.2.10"){
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module="kborsh" )
+
+    }
+    implementation("foundation.metaplex:mpltokenmetadata:0.2.10"){
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module="kborsh" )
+
+    }
     //implementation("com.ditchoom:buffer-jvm:1.4.2")
-    implementation("io.github.funkatronics:kborsh-jvm:0.1.1"){
+    implementation("io.github.funkatronics:kborsh:0.1.1"){
         exclude(group = "com.ditchoom")
     }
     implementation("com.ditchoom:buffer-jvm:1.4.2")
@@ -117,17 +127,9 @@ dependencies {
     }
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    //implementation("com.github.metaplex-foundation.SolanaKT:solana:2.1.1")
-    //implementation("com.ditchoom:buffer-jvm:1.4.2") // Note: Group ID is com.ditchoom
-    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
-//    implementation("com.ditchoom.buffer:bip39-jvm:1.4.2") // This one looks correct for BIP39
-//    implementation("com.ditchoom.buffer:bip32-jvm:1.4.2") // This one looks correct for BIP32
-    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
-    //implementation("com.ionspin.kotlin:multiplatform-crypto:0.1.0")
+    implementation("com.auth0:java-jwt:4.4.0")
 
-    //implementation("com.solanamobile:seedvault-wallet-sdk:0.3.2")
-
-
-    //testImplementation("junit:junit:4.13.2")
+    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:0.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.0")
 
 }

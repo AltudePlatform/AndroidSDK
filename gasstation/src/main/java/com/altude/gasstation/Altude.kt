@@ -17,7 +17,7 @@ import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetHistoryData
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
-import com.altude.core.data.TransferOptions
+import com.altude.core.data.SendOptions
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +34,7 @@ object Altude {
 
     fun setApiKey(context: Context, apiKey: String) {
         SdkConfig.setApiKey(context, apiKey)
+
     }
 
     suspend fun saveMnemonic(mnemonicWords: String) {
@@ -44,8 +45,8 @@ object Altude {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun transfer(
-        options: TransferOptions
+    suspend fun send(
+        options: SendOptions
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.transferToken(options)
@@ -82,8 +83,8 @@ object Altude {
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun batchtransfer(
-        options: List<TransferOptions>
+    suspend fun sendBatch(
+        options: List<SendOptions>
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.batchTransferToken(options)
@@ -248,16 +249,16 @@ object Altude {
         val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
         if (result == null) throw Error("No data found")
 
-        return  result.data?.parsed?.info?.tokenAmount
+        return   result.data?.parsed?.info?.tokenAmount
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
         option: GetAccountInfoOption
     ): AccountInfoValue? {
-        val defaultWallet = TransactionManager.getKeyPair(option.account)
-        val owner = defaultWallet.publicKey.toBase58().let { option.account }
+//        val defaultWallet = TransactionManager.getKeyPair(option.account)
+//        val owner = defaultWallet.publicKey.toBase58().let { option.account }
 
-        val result = Utility.getAccountInfo(owner)
+        val result = Utility.getAccountInfo(option.account, option.useBase64)
         //if (result == null) throw Error("No data found")
 
         return  result

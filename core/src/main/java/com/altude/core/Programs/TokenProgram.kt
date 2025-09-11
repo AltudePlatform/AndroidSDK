@@ -35,7 +35,7 @@ object TokenProgram {
             AccountMeta(pubKey, isSigner = true, isWritable = false)
         }
         return TransactionInstruction(
-            programId = PublicKey(TOKEN_PROGRAM_ID),
+            programId = TOKEN_PROGRAM_ID,
             keys = accounts,
             data = buffer.array()
         )
@@ -56,11 +56,82 @@ object TokenProgram {
         val data = byteArrayOf(3) + ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(amount.toLong()).array()
         return TransactionInstruction(
             keys = keys,
-            programId = PublicKey(TOKEN_PROGRAM_ID),
+            programId = TOKEN_PROGRAM_ID,
             data = data
         )
     }
 
+    fun initializeMint(
+        mint: PublicKey,
+        decimals: UInt,
+        mintAuthority: PublicKey,
+        freezeAuthority: PublicKey? = null
+    ): TransactionInstruction {
+        val keys = listOf(
+            AccountMeta(mint, isSigner = false, isWritable = true),           // Writable mint account
+            AccountMeta(Utility.SYSVAR_RENT_PUBKEY, isSigner = false, isWritable = false) // Rent sysvar
+        )
+
+        val freezeAuthorityOption = if (freezeAuthority != null) 1 else 0
+        val freezeAuthKey = freezeAuthority ?: PublicKey(ByteArray(32))
+
+        // SPL Token Program InitializeMint layout:
+        // u8: instruction index (0)
+        // u8: decimals
+        // [32]: mintAuthority
+        // u8: freezeAuthorityOption
+        // [32]: freezeAuthority
+        val buffer = ByteBuffer.allocate(1 + 1 + 32 + 1 + 32)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put(0) // instruction index 0 = InitializeMint
+        buffer.put(decimals.toByte())
+        buffer.put(mintAuthority.toByteArray())
+        buffer.put(freezeAuthorityOption.toByte())
+        buffer.put(freezeAuthKey.toByteArray())
+
+        val data = buffer.array()
+
+        return TransactionInstruction(
+            TOKEN_PROGRAM_ID,
+            keys,
+            data
+        )
+    }
+
+    fun mintTo(
+        mint: PublicKey,
+        destination: PublicKey,
+        amount: ULong,
+        mintAuthority: PublicKey,
+        signers: List<PublicKey> = emptyList()
+    ): TransactionInstruction {
+        val keys = mutableListOf(
+            AccountMeta(mint, false, true),       // Writable mint
+            AccountMeta(destination, false, true) // Writable destination token account
+        )
+
+        // Add the mintAuthority + any multisig signers
+        keys.add(AccountMeta(mintAuthority, true, false))
+        signers.forEach { signer ->
+            keys.add(AccountMeta(signer, true, false))
+        }
+
+        // Encode MintTo data
+        // u8: instruction index (7 for MintTo)
+        // u64: amount (little endian)
+        val buffer = ByteBuffer.allocate(1 + 8)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put(7.toByte())        // MintTo instruction index
+        buffer.putLong(amount.toLong())        // Amount to mint
+
+        val data = buffer.array()
+
+        return TransactionInstruction(
+            TOKEN_PROGRAM_ID,
+            keys,
+            data
+        )
+    }
     fun closeAtaAccount(
         ata: PublicKey,
         destination: PublicKey,
@@ -68,7 +139,7 @@ object TokenProgram {
     ): TransactionInstruction {
 
         return TransactionInstruction(
-            programId = PublicKey(TOKEN_PROGRAM_ID),
+            programId = TOKEN_PROGRAM_ID,
             keys = listOf(
                 AccountMeta(ata, isSigner = false, isWritable = true),
                 AccountMeta(destination, isSigner = false, isWritable = true),
@@ -87,7 +158,7 @@ object TokenProgram {
         val newOwnerKey = newOwner
 
         return TransactionInstruction(
-            programId = PublicKey(TOKEN_PROGRAM_ID),
+            programId = TOKEN_PROGRAM_ID,
             keys = listOf(
                 AccountMeta(ata, isSigner = false, isWritable = true), // account whose authority is changing
                 AccountMeta(authority, isSigner = true, isWritable = false) // current authority

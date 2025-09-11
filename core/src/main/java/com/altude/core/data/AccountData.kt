@@ -20,17 +20,18 @@ data class AccountInfoValue(
     val data: AccountData? = null,
     val executable: Boolean? = null,
     val lamports: Long? = null,
+    val space: Long? = null,
     val owner: String? = null,
     @Serializable(with = U64AsStringSerializer::class)
     val rentEpoch: String? = null
 )
 
 @Serializable
-data class AccountData(
-    val parsed: AccountParsed? = null,
-    val program: String? = null,
+class AccountData {
+    val parsed: AccountParsed? = null
+    val program: String? = null
     val space: Int? = null
-)
+}
 
 @Serializable
 data class AccountParsed(

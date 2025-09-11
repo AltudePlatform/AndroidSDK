@@ -1,10 +1,12 @@
 package com.altude.core.api
 
 import com.altude.core.data.GetHistoryData
+import com.altude.core.data.MintData
 import com.google.gson.annotations.SerializedName
 import foundation.metaplex.solana.transactions.Transaction
 import retrofit2.Call
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
 
@@ -28,6 +30,20 @@ data class TransactionResponse(
     val signature: String
 )
 
+data class MintRequest(
+    val userId: String,
+    val transaction: String,
+    val code: String
+)
+
+
+data class MintResponse(
+    val status: String,
+    val data: MintData?
+)
+data class QuickNodeResponse(
+    val token: String,
+)
 interface TransactionService {
 
     @POST("api/transaction/send")
@@ -60,4 +76,18 @@ interface TransactionService {
         @Query("PageSize") pageSize: String,
         @Query("address") address: String,
     ): Call<GetHistoryData>
+
+    @POST("api/nft/mint")
+    fun postMint(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
+
+    @POST("api/nft/createNFTCollection")
+    fun postCreateCollectionNft(
+        @Body body: SendTransactionRequest
+    ): Call<TransactionResponse>
+
+    @GET("api/auth/token")
+    fun getQuickNodeJWTTOken(
+    ): Call<QuickNodeResponse>
 }
