@@ -98,7 +98,7 @@ object  Utility {
         return pubKey to privKey
     }
 
-    fun ataExists(publicKey: String): Boolean {
+    suspend fun ataExists(publicKey: String): Boolean {
         val response = getAccountInfo(publicKey)
         return response != null
     }
@@ -108,7 +108,7 @@ object  Utility {
 //        return response?.data.parse?.owner
 //    }
 
-    fun validateAta(publicKey: String, expectedOwner: String) {
+    suspend fun validateAta(publicKey: String, expectedOwner: String) {
         val response = getAccountInfo(publicKey)
         val value = response
             ?: throw Error("Associated token account does not exist!")
