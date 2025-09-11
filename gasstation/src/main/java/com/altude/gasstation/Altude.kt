@@ -17,7 +17,7 @@ import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetHistoryData
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
-import com.altude.core.data.TransferOptions
+import com.altude.core.data.SendOptions
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +46,7 @@ object Altude {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun send(
-        options: TransferOptions
+        options: SendOptions
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.transferToken(options)
@@ -84,7 +84,7 @@ object Altude {
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun sendBatch(
-        options: List<TransferOptions>
+        options: List<SendOptions>
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = TransactionManager.batchTransferToken(options)

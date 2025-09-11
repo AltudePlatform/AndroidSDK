@@ -1,19 +1,16 @@
 package com.altude.gasstation
 
 import android.content.Context
-import android.util.Base64
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.MPLCore
-import com.altude.core.Programs.TokenProgram
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.GetHistoryOption
-import com.altude.core.data.TransferOptions
+import com.altude.core.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
 import com.altude.core.model.Token
@@ -152,11 +149,12 @@ class ExampleInstrumentedTest {
     fun testTransferToken() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey)
 
-        val options = TransferOptions(
+        val options = SendOptions(
             account = "", //optional
             toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             amount = 0.00001,
-            token = Token.KIN.mint(),
+            token = Token.USDC.mint(),
+            commitment =  Commitment.finalized
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
@@ -174,17 +172,17 @@ class ExampleInstrumentedTest {
     @Test
     fun testBatchTransferToken() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey)
-        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
 
         val options =listOf(
-//            TransferOptions(
-//                toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
-//                amount = 0.00001,
-//                token = Token.KIN.mint(),
-            //),
-            TransferOptions(
-                account = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
+            SendOptions(
                 toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                amount = 0.00001,
+                token = Token.KIN.mint(),
+            ),
+            SendOptions(
+                //account = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
+                toAddress = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
                 amount = 0.00001,
                 token = Token.KIN.mint(),
             ),
@@ -213,11 +211,11 @@ class ExampleInstrumentedTest {
     fun testGetBalance() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey )
         val option = GetBalanceOption(
-            token = "REDACTED"
+            token = Token.KIN.mint()
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.getBalance(option)
+        val result = Altude.getBalance(option)?.amount
         println(result)
     }
     @Test

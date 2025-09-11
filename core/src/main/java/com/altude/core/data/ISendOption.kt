@@ -2,7 +2,7 @@ package com.altude.core.data
 
 import foundation.metaplex.rpc.Commitment
 
-interface SendOption {
+interface ISendOption {
     val account: String
     val toAddress: String
     val amount: Double

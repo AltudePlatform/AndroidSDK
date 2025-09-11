@@ -2,7 +2,7 @@ package com.altude.core
 
 import android.util.Base64
 import com.altude.core.data.CreateAccountOption
-import com.altude.core.data.SendOption
+import com.altude.core.data.ISendOption
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.AssociatedTokenAccountProgram.deriveAtaAddress
 import com.altude.core.Programs.MPLCore
@@ -11,7 +11,7 @@ import com.altude.core.Programs.TokenProgram
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.CreateNFTCollectionOption
 import com.altude.core.data.MintOption
-import com.altude.core.data.TransferOptions
+import com.altude.core.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.EmptySignature
 import com.altude.core.model.HotSigner
@@ -23,8 +23,6 @@ import com.altude.core.service.StorageService
 import com.metaplex.signer.Signer
 
 import foundation.metaplex.rpc.Commitment
-import foundation.metaplex.rpc.RPC
-import foundation.metaplex.rpc.RpcGetLatestBlockhashConfiguration
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +39,7 @@ object TransactionManager {
     private val rpc = QuickNodeRpc(QUICK_NODE_URL)
     val feePayerPubKey = PublicKey("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
-    suspend fun transferToken(option: SendOption): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun transferToken(option: ISendOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val pubKeyMint = PublicKey(option.token)
             val pubKeyDestination = PublicKey(option.toAddress)
@@ -102,7 +100,7 @@ object TransactionManager {
         }
     }
 
-    suspend fun batchTransferToken(options: List<TransferOptions>): Result<String> =
+    suspend fun batchTransferToken(options: List<SendOptions>): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val transferInstructions = mutableListOf<TransactionInstruction>();
