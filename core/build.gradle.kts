@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     kotlin("plugin.serialization") version "2.2.0"
+    id("maven-publish")
 }
 
 android {
@@ -28,6 +29,13 @@ android {
     kotlin {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        }
+    }
+    
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
         }
     }
 }
