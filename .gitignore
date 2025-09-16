@@ -3,6 +3,9 @@
 .gradle/
 .kotlin/
 
+# Visual Studio
+.vs/
+
 # Local configuration file (sdk path, etc)
 local.properties
 
