@@ -16,7 +16,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral() // ✅ Required
-        maven { url = uri("https://jitpack.io") }
+        maven { 
+            url = uri("https://jitpack.io")
+            credentials.username = providers.gradleProperty("authToken").get()
+        }
     }
 }
 
