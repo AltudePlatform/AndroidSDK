@@ -1,23 +1,15 @@
 package com.altude.core.Programs
 
-import com.altude.core.data.AccountData
-import com.altude.core.data.AccountInfoResponse
+import com.altude.core.config.SdkConfig
 import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.ConcurrentMerkleTreeHeaderDataSerializer
 import com.altude.core.data.KtSerializer
 import com.altude.core.data.MerkleTreeAccountData
 import com.altude.core.network.QuickNodeRpc
-import diglol.crypto.internal.toByteArray
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ChangeLog
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ConcurrentMerkleTree
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.Path
-import foundation.metaplex.solanapublickeys.Pda
 import foundation.metaplex.solanapublickeys.PublicKey
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
@@ -46,7 +38,7 @@ object  Utility {
     val MPL_NOOP                 = PublicKey("mnoopTCrg4p8ry25e4bcWA9XZjbNjMTfgYVGGEdRsf3") // mplNoop
 
     //
-    val quickNodeUrl = "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/" //change this with envi variable
+    val QUICKNODE_URL = SdkConfig.apiConfig.rpcUrl//"https://cold-holy-dinghy.solana-devnet.quiknode.pro/8cc52fd5faf72bedbc72d9448fba5640cd728ace/"//"https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/" //change this with envi variable
 
 
 
@@ -85,7 +77,7 @@ object  Utility {
     }
 
     suspend fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
-        val rpc = QuickNodeRpc(quickNodeUrl)
+        val rpc = QuickNodeRpc(QUICKNODE_URL)
         return  rpc.getAccountInfo(publicKey).value
     }
 
@@ -98,7 +90,7 @@ object  Utility {
         return pubKey to privKey
     }
 
-    suspend fun ataExists(publicKey: String): Boolean {
+    suspend fun ataExists(publicKey: String = ""): Boolean {
         val response = getAccountInfo(publicKey)
         return response != null
     }
