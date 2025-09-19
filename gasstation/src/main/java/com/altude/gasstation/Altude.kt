@@ -18,6 +18,8 @@ import com.altude.core.data.GetHistoryData
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
 import com.altude.core.data.SendOptions
+import com.altude.core.helper.Mnemonic
+import com.altude.core.model.KeyPair
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +34,9 @@ import java.lang.Error
 
 object Altude {
 
-    fun setApiKey(context: Context, apiKey: String) {
+    suspend fun setApiKey(context: Context, apiKey: String) {
         SdkConfig.setApiKey(context, apiKey)
-
+        saveMnemonic(Mnemonic.generateMnemonic(12))
     }
 
     suspend fun saveMnemonic(mnemonicWords: String) {
@@ -253,7 +255,7 @@ object Altude {
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
-        option: GetAccountInfoOption
+        option: GetAccountInfoOption = GetAccountInfoOption()
     ): AccountInfoValue? {
 //        val defaultWallet = TransactionManager.getKeyPair(option.account)
 //        val owner = defaultWallet.publicKey.toBase58().let { option.account }

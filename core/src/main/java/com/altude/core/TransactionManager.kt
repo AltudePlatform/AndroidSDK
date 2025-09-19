@@ -8,6 +8,7 @@ import com.altude.core.Programs.AssociatedTokenAccountProgram.deriveAtaAddress
 import com.altude.core.Programs.MPLCore
 import com.altude.core.Programs.Utility
 import com.altude.core.Programs.TokenProgram
+import com.altude.core.config.SdkConfig
 import com.altude.core.data.CloseAccountOption
 import com.altude.core.data.CreateNFTCollectionOption
 import com.altude.core.data.MintOption
@@ -25,6 +26,7 @@ import com.metaplex.signer.Signer
 import foundation.metaplex.rpc.Commitment
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
+import foundation.metaplex.solanaeddsa.Keypair
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import foundation.metaplex.solanapublickeys.PublicKey
@@ -34,10 +36,8 @@ import kotlin.collections.listOf
 
 object TransactionManager {
 
-        private const val  QUICK_NODE_URL =
-        "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/"
-    private val rpc = QuickNodeRpc(QUICK_NODE_URL)
-    val feePayerPubKey = PublicKey("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
+    private val rpc = QuickNodeRpc(Utility.QUICKNODE_URL)
+    val feePayerPubKey = PublicKey(SdkConfig.apiConfig.feePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
     suspend fun transferToken(option: ISendOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
@@ -46,8 +46,8 @@ object TransactionManager {
             val defaultWallet = getKeyPair(option.account)
             val sourceAta = deriveAtaAddress(defaultWallet.publicKey, pubKeyMint)
             val destinationAta = deriveAtaAddress(pubKeyDestination, pubKeyMint)
-
-            if (!Utility.ataExists(sourceAta.toBase58()))
+            val sourceAtaBase58 = sourceAta.toBase58()
+            if (!Utility.ataExists(sourceAtaBase58))
                 throw Error("Owner associated token account does not exist.")
 
             val destinationCreateAta: TransactionInstruction? =
@@ -235,19 +235,22 @@ object TransactionManager {
         option: CloseAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            val defaultWallet = getKeyPair(option.account)
-            val ownerKey = defaultWallet
+            var defaultWallet: SolanaKeypair? = null
+            try{
+                defaultWallet  = getKeyPair(option.account)
+            } catch (e: Error){}
+            val ownerKeypubkey = defaultWallet?.publicKey ?: PublicKey(option.account)
 
             val txInstructions = mutableListOf<TransactionInstruction>()
             var authorized: PublicKey
             var isOwnerRequiredSignature = false
             option.tokens.forEach { token ->
                 val mintKey = PublicKey(token)
-                val ata = deriveAtaAddress(ownerKey.publicKey, mintKey)
+                val ata = deriveAtaAddress(ownerKeypubkey, mintKey)
                 val ataInfo = Utility.getAccountInfo(ata.toBase58())
                 if (ataInfo != null) {
                     val parsed =ataInfo.data?.parsed?.info
-                    if (parsed?.closeAuthority == feePayerPubKey.toBase58())
+                    if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
                         authorized = feePayerPubKey
                     else {
                         authorized = defaultWallet.publicKey
@@ -277,7 +280,7 @@ object TransactionManager {
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .build()
-            if (isOwnerRequiredSignature)
+            if (isOwnerRequiredSignature && defaultWallet != null)
                 tx.sign(HotSigner(defaultWallet))
             //val sign = Core.SignTransaction(privateKeyBytes,message)
             val serialized = Base64.encodeToString(
