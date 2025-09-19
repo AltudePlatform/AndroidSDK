@@ -19,7 +19,7 @@ import retrofit2.Response
 
 object NFTSdk {
 
-    fun setApiKey(context: Context, apiKey: String) {
+    suspend fun setApiKey(context: Context, apiKey: String) {
         SdkConfig.setApiKey(context, apiKey)
     }
     @OptIn(ExperimentalCoroutinesApi::class)

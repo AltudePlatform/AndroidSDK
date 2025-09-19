@@ -24,6 +24,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.Assert.assertEquals
+
 /**
  * Instrumented test, which will execute on an Android device.
  *
@@ -40,7 +41,7 @@ class ExampleInstrumentedTest {
         160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
     )
     @Before
-    fun setup(){
+    fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
         Altude.setApiKey(context,"myAPIKey")
     }
@@ -96,14 +97,61 @@ class ExampleInstrumentedTest {
         val keypair3 =  mnemonic3.getKeyPair()
         println(keypair3)
     }
+    @Test
+    fun testCreateandCloseAccount() = runBlocking {
+        //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        val keypair = KeyPair.generate()
+        Altude.savePrivateKey(keypair.secretKey)
+        val options = CreateAccountOption(
+            account = keypair.publicKey.toBase58(),
+            tokens = listOf(Token.KIN.mint()),
+            commitment = Commitment.finalized,
 
+            )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.createAccount(options)
+
+        result
+            .onSuccess {
+                println("✅ Sent: $it")
+                assert(it.signature.isNotEmpty())
+            }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(result.isSuccess)
+        Thread.sleep(15000) // wait 2 seconds
+
+        val closeoptions = CloseAccountOption(
+            account = keypair.publicKey.toBase58(),   //optional
+            tokens = listOf(Token.KIN.mint())
+        )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val closeresult = Altude.closeAccount(closeoptions)
+
+        closeresult
+            .onSuccess {
+                println("✅ Sent: $it")
+                assert(it.signature.isNotEmpty())
+            }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assert(closeresult.isSuccess)
+    }
     @Test
     fun testCreateAccount() = runBlocking {
         //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         val keypair = KeyPair.generate()
         Altude.savePrivateKey(keypair.secretKey)
         val options = CreateAccountOption(
-            //owner = ownerKepair.publicKey.toBase58(),
+            account = keypair.publicKey.toBase58(),
             tokens = listOf(Token.KIN.mint()),
             commitment = Commitment.finalized,
 
@@ -125,10 +173,12 @@ class ExampleInstrumentedTest {
     @Test
     fun testCloseAccount() = runBlocking {
 
+
+        StorageService.listStoredWalletAddresses()
         Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
 
         val options = CloseAccountOption(
-            account = "",   //optional
+            account = "BW9UiAzLfMTBrzUcMeLhpMUqhWZa3NMTLCF79dSStXuk",   //optional
             tokens  = listOf(Token.KIN.mint())
         )
 
@@ -146,14 +196,24 @@ class ExampleInstrumentedTest {
     }
 
     @Test
-    fun testTransferToken() = runBlocking {
+    fun testStorageList() =runBlocking {
+
+        //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        val addresses =StorageService.listStoredWalletAddresses()
+        println("addresses $addresses")
+        assertEquals(1, addresses.size)
+
+    }
+    @Test
+    fun testTransferToken() = runBlocking  {
+
         Altude.savePrivateKey(accountPrivateKey)
 
         val options = SendOptions(
-            account = "", //optional
+            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu", //optional
             toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             amount = 0.00001,
-            token = Token.USDC.mint(),
+            token = Token.KIN .mint(),
             commitment =  Commitment.finalized
         )
 

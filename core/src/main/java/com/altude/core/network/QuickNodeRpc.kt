@@ -35,7 +35,8 @@ class QuickNodeRpc(val endpoint: String) {
         ignoreUnknownKeys = true
     }
     companion object{
-        private var token: String = ""
+        //temp token for 3 days
+        private var token: String = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJxdWlja25vZGUtY2xpZW50IiwibmJmIjoxNzU4MjQyMzIzLCJleHAiOjE3NTg1ODgwNDMsImlhdCI6MTc1ODI0MjMyM30.lwdjnfgX9qvMuhIQzzH5GEM1mz8TeSTNlIAWBG1dOYux_XQhri5QZPCYSl2tak8bWTg914R81CrTALK89KoJxazzo2RsrWg7wb9u3dD8rtW9MoBsd4LWKiiNqImvfYioSD4WZKoKDJ5KoeUyGFMEbtr_BtZgbXgw5cPFX_LCEb3mV646hhjxSG-fZGjscCbfV2ZuhwxpGAxlqC4fGZncr1Jfh2m2GuSxaiQHazRjItQCznOJitVgxUMw-kXh4D3UWGAPV3qeiRsRHNGoclL3JrBE4ZOKJhDVOK8-YtUHRB-2sp5s7XhngTjUp0lgywWGASnwUG9XnuW7cqkesOFW3w"
         private var expiry: Long = 0
 
         suspend fun getValidToken(): String? {

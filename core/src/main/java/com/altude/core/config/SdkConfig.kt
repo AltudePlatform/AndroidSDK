@@ -13,6 +13,8 @@ package com.altude.core.config
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Base64
+import com.altude.core.api.ConfigResponse
+import com.altude.core.api.TransactionService
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
 import com.altude.core.network.QuickNodeRpc
@@ -22,9 +24,11 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import retrofit2.await
 import retrofit2.converter.gson.GsonConverterFactory
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
@@ -36,15 +40,16 @@ import javax.net.ssl.X509TrustManager
 object SdkConfig {
 
 
-    private var baseUrl: String = "http://10.0.2.2:5250"
-    private var quickNodeUrl: String = "https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/"
+    private var baseUrl: String = "https://api.altude.so" //"http://10.0.2.2:5000" //
     private var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
+
+    var apiConfig = ConfigResponse()
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
 
-    fun initialize() {
+    suspend fun initialize() {
         this.baseUrl;
 
         val logging = HttpLoggingInterceptor().apply {
@@ -67,6 +72,7 @@ object SdkConfig {
         val sslSocketFactory: SSLSocketFactory = sslContext.getSocketFactory()
 
         val client = OkHttpClient.Builder()
+
             .sslSocketFactory(
                 sslSocketFactory,
                 (trustAllCerts[0] as javax.net.ssl.X509TrustManager?)!!
@@ -77,6 +83,9 @@ object SdkConfig {
         okHttpClient = client
             .addInterceptor(provideApiKeyInterceptor())
             .addInterceptor(logging)
+            .connectTimeout(30, TimeUnit.SECONDS)   // increase timeouts
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .build()
 
         retrofit = Retrofit.Builder()
@@ -84,6 +93,9 @@ object SdkConfig {
             .addConverterFactory(GsonConverterFactory.create())
             .client(okHttpClient)
             .build()
+
+        val service = retrofit.create(TransactionService::class.java)
+        apiConfig = service.getConfig().await()
     }
 
     private fun provideApiKeyInterceptor(): Interceptor {
@@ -99,7 +111,7 @@ object SdkConfig {
             chain.proceed(request)
         }
     }
-    fun setApiKey(context: Context, key: String) {
+    suspend fun setApiKey(context: Context, key: String) {
         this.apiKey = key
         this.initialize()
         StorageService.init(context)

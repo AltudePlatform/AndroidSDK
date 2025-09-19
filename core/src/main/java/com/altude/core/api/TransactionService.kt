@@ -44,6 +44,10 @@ data class MintResponse(
 data class QuickNodeResponse(
     val token: String,
 )
+data class ConfigResponse(
+    val feePayer: String = "",
+    val rpcUrl: String  = "",
+)
 interface TransactionService {
 
     @POST("api/transaction/send")
@@ -90,4 +94,8 @@ interface TransactionService {
     @GET("api/auth/token")
     fun getQuickNodeJWTTOken(
     ): Call<QuickNodeResponse>
+
+    @GET("api/transaction/config")
+    fun getConfig(
+    ): Call<ConfigResponse>
 }

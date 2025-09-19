@@ -147,7 +147,7 @@ object StorageService {
             ?.map { it.name.removePrefix("encrypted_seed_").removeSuffix(".dat") }
             ?: emptyList()
     }
-    fun listEncryptedSeedFiles(): List<File> {
+    private fun listEncryptedSeedFiles(): List<File> {
         val dir = appContext.filesDir
         return dir.listFiles { _, name -> name.endsWith(".dat") }?.toList() ?: emptyList()
     }
