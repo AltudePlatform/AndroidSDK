@@ -63,13 +63,13 @@ class QuickNodeRpc(val endpoint: String) {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    suspend fun getLatestBlockhash(commitment: Commitment = Commitment.finalized): BlockhashValue {
+    suspend fun getLatestBlockhash(commitment: String = "finalized"): BlockhashValue {
 // Create a list to hold JSON elements for RPC request parameters
         val params: MutableList<JsonElement> = mutableListOf()
 
         // Use the provided configuration or create a default one
 
-        params.add(json.encodeToJsonElement(CommitmentParam(commitment.name)))
+        params.add(json.encodeToJsonElement(CommitmentParam(commitment)))
 
         getValidToken()
         val rpcRequest = JsonRpc20Request(

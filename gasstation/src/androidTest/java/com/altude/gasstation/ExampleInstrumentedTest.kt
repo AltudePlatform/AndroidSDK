@@ -12,7 +12,7 @@ import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
+import com.altude.gasstation.data.KeyPair
 import com.altude.core.model.Token
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService

@@ -9,12 +9,13 @@ import com.altude.core.data.MintOption
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.HotSigner
-import com.altude.core.model.KeyPair
-import com.altude.core.model.SolanaKeypair
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
+import com.altude.nft.data.KeyPair
+import com.altude.nft.data.SolanaKeypair
 import foundation.metaplex.rpc.Commitment
 import foundation.metaplex.solana.transactions.SerializeConfig
+import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +30,7 @@ object TransactionManager {
 
 
 
-    suspend fun getKeyPair(account: String = ""): SolanaKeypair {
+    suspend fun getKeyPair(account: String = ""): Keypair {
         val seedData = StorageService.getDecryptedSeed(account)
         if (seedData != null) {
             if (seedData.type == "mnemonic") return Mnemonic(seedData.mnemonic).getKeyPair()
@@ -63,7 +64,7 @@ object TransactionManager {
             )
 
             val blockhashInfo =
-                rpc.getLatestBlockhash(commitment = Commitment.finalized)
+                rpc.getLatestBlockhash(commitment = Commitment.finalized.name)
 
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
@@ -124,7 +125,7 @@ object TransactionManager {
 //            )
             // println("Mint ix: $mintIx")
             val blockhashInfo =
-                rpc.getLatestBlockhash(commitment = Commitment.confirmed)
+                rpc.getLatestBlockhash(commitment = Commitment.confirmed.name)
             println("latest blockhash $blockhashInfo")
             //val payerKeypair = KeyPair.solanaKeyPairFromMnemonic("bring record van away man person trouble clay rebuild review dust pond")
             val tx = AltudeTransactionBuilder()

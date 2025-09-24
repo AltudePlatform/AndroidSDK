@@ -12,14 +12,9 @@ package com.altude.core.config
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
 import com.altude.core.api.ConfigResponse
 import com.altude.core.api.TransactionService
-import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
-import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
-import foundation.metaplex.solanaeddsa.Keypair
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor

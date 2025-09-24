@@ -5,11 +5,10 @@ import android.util.Log
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
+import foundation.metaplex.solanaeddsa.SolanaEddsa
 import kotlinx.serialization.json.Json
 import java.io.File
 import kotlinx.serialization.Serializable
-import kotlin.io.encoding.Base64
 
 @Serializable
 data class SeedData(
@@ -56,7 +55,7 @@ object StorageService {
 
     suspend fun storePrivateKeyByteArray(privateKeyByteArray: ByteArray) {
 
-        val keyPair = KeyPair.solanaKeyPairFromPrivateKey(privateKeyByteArray)
+        val keyPair = SolanaEddsa.createKeypairFromSecretKey(privateKeyByteArray)
         val accountAddress = keyPair.publicKey.toBase58()
         val data = SeedData(
             accountAddress,

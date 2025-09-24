@@ -12,8 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.altude.android.ui.theme.AltudesdkTheme
-import com.altude.core.model.KeyPair
 import com.altude.gasstation.Altude
+import com.altude.gasstation.data.KeyPair
 import kotlinx.coroutines.runBlocking
 
 
@@ -40,11 +40,10 @@ class MainActivity : ComponentActivity() {
 //        }
 
 //        Altude .setApiKey(this,"myAPIKey")
-//        val keyPair = Altude.generateKeyPair()
-
-
         val keyPair = Altude.generateKeyPair()
-        //KeyPair.
+
+        val s = KeyPair.generate()
+
         setContent {
             AltudesdkTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

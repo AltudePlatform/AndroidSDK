@@ -7,20 +7,20 @@ import com.altude.core.Programs.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
-import com.altude.core.data.ISendOption
+import com.altude.gasstation.data.ISendOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature
 import com.altude.core.model.HotSigner
-import com.altude.core.model.KeyPair
-import com.altude.core.model.SolanaKeypair
+import com.altude.gasstation.data.KeyPair
+import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.metaplex.signer.Signer
-import foundation.metaplex.rpc.Commitment
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
+import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -69,7 +69,7 @@ object GaslessManager {
             )
 
             val blockhashInfo = rpc.getLatestBlockhash(
-                commitment = Commitment.finalized
+                commitment = option.commitment.name
             )
 
             val recentBlockhash = blockhashInfo.blockhash
@@ -151,9 +151,7 @@ object GaslessManager {
                         )
                 }
 
-                val blockhashInfo = rpc.getLatestBlockhash(
-                    commitment = Commitment.finalized
-                )
+                val blockhashInfo = rpc.getLatestBlockhash()
 
                 val recentBlockhash = blockhashInfo.blockhash
 
@@ -213,7 +211,7 @@ object GaslessManager {
 
                 val payerSigner = EmptySignature(feePayerPubKey)
                 val blockhashInfo = rpc.getLatestBlockhash(
-                    commitment = Commitment.finalized
+                    commitment = option.commitment.name
                 )
 
                 val tx = AltudeTransactionBuilder().addRangeInstruction(txInstructions)
@@ -236,7 +234,7 @@ object GaslessManager {
         option: CloseAccountOption
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            var defaultWallet: SolanaKeypair? = null
+            var defaultWallet: Keypair? = null
             try {
                 defaultWallet = getKeyPair(option.account)
             } catch (e: Error) {
@@ -274,7 +272,7 @@ object GaslessManager {
             }
 
             val blockhashInfo = rpc.getLatestBlockhash(
-                commitment = Commitment.finalized
+                commitment = option.commitment.name
             )
 
             val tx = AltudeTransactionBuilder()
@@ -296,7 +294,7 @@ object GaslessManager {
         }
     }
 
-    suspend fun getKeyPair(account: String = ""): SolanaKeypair {
+    suspend fun getKeyPair(account: String = ""): Keypair {
         val seedData = StorageService.getDecryptedSeed(account)
         if (seedData != null) {
             if (seedData.type == "mnemonic") return Mnemonic(seedData.mnemonic).getKeyPair()
