@@ -1,5 +1,6 @@
-package com.altude.core.data
+package com.altude.gasstation.data
 
+import com.altude.core.data.ISendOption
 import com.altude.core.model.Token
 import foundation.metaplex.rpc.Commitment
 

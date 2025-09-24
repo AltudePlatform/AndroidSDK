@@ -40,7 +40,7 @@ dependencies {
 //    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    implementation(project(":core"))
+    api(project(":core"))
     // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)

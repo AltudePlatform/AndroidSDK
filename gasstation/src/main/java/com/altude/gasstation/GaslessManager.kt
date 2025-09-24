@@ -2,16 +2,13 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.MPLCore
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.Programs.Utility
 import com.altude.core.config.SdkConfig
-import com.altude.core.data.CloseAccountOption
-import com.altude.core.data.CreateAccountOption
-import com.altude.core.data.CreateNFTCollectionOption
+import com.altude.gasstation.data.CloseAccountOption
+import com.altude.gasstation.data.CreateAccountOption
 import com.altude.core.data.ISendOption
-import com.altude.core.data.MintOption
-import com.altude.core.data.SendOptions
+import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature

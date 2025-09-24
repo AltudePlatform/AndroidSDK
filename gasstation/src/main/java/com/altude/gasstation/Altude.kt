@@ -10,13 +10,13 @@ import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.core.data.AccountInfoValue
 import com.altude.core.data.GetBalanceOption
-import com.altude.core.data.CloseAccountOption
-import com.altude.core.data.CreateAccountOption
+import com.altude.gasstation.data.CloseAccountOption
+import com.altude.gasstation.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetHistoryData
 import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
-import com.altude.core.data.SendOptions
+import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
 import com.altude.core.model.SolanaKeypair
