@@ -3,7 +3,6 @@ package com.altude.gasstation
 import android.content.Context
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.Utility
-import com.altude.core.TransactionManager
 import com.altude.core.api.BatchTransactionRequest
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
@@ -20,6 +19,7 @@ import com.altude.core.data.TokenAmount
 import com.altude.core.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
+import com.altude.core.model.SolanaKeypair
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +51,7 @@ object Altude {
         options: SendOptions
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.transferToken(options)
+            val result = GaslessManager.transferToken(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -89,7 +89,7 @@ object Altude {
         options: List<SendOptions>
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.batchTransferToken(options)
+            val result = GaslessManager.batchTransferToken(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -128,7 +128,7 @@ object Altude {
         options: CreateAccountOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.createAccount(options)
+            val result = GaslessManager.createAccount(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -166,7 +166,7 @@ object Altude {
         options: CloseAccountOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.closeAccount(options)
+            val result = GaslessManager.closeAccount(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -245,7 +245,7 @@ object Altude {
     suspend fun getBalance(
         option: GetBalanceOption
     ): TokenAmount? {
-        val defaultWallet = TransactionManager.getKeyPair(option.account)
+        val defaultWallet = GaslessManager.getKeyPair(option.account)
         val owner = defaultWallet.publicKey.toBase58().let { option.account }
         val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey(owner), PublicKey(option.token))
         val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
@@ -264,5 +264,13 @@ object Altude {
         //if (result == null) throw Error("No data found")
 
         return  result
+    }
+
+    suspend fun generateKeyPair(): SolanaKeypair {
+        val keypair = KeyPair.generate()
+        return SolanaKeypair(keypair.publicKey,keypair.secretKey)
+    }
+    fun storedWallet():List<String>{
+        return StorageService.listStoredWalletAddresses()
     }
 }

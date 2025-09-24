@@ -148,7 +148,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testCreateAccount() = runBlocking {
         //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
-        val keypair = KeyPair.generate()
+        val keypair = Altude.generateKeyPair()
         Altude.savePrivateKey(keypair.secretKey)
         val options = CreateAccountOption(
             account = keypair.publicKey.toBase58(),

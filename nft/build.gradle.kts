@@ -40,7 +40,15 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":core"))
-    implementation ("com.squareup.retrofit2:retrofit:3.0.0")
-    implementation ("com.squareup.retrofit2:converter-gson:3.0.0")
+    // Networking
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+
+
+    // Solana & Metaplex
+    implementation(libs.solana) {
+        exclude(group = "com.ditchoom")
+        exclude(group = "io.github.funkatronics", module = "kborsh")
+    }
 
 }
