@@ -1,13 +1,3 @@
-// core/config/SdkConfig.kt
-
-/* Usage Example in SDK Entry Point or App
-
-SdkConfig.initialize("https://api.yourdomain.com/")
-SdkConfig.setApiKey("your-api-key")
-
-val service = SdkConfig.createService(TransactionService::class.java)
-*/
-
 package com.altude.core.config
 
 import android.annotation.SuppressLint
@@ -15,7 +5,11 @@ import android.content.Context
 import com.altude.core.api.ConfigResponse
 import com.altude.core.api.TransactionService
 import com.altude.core.service.StorageService
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -31,11 +25,10 @@ import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-
 object SdkConfig {
 
 
-    private var baseUrl: String = "https://api.altude.so" //"http://10.0.2.2:5000" //
+    private var baseUrl: String = "http://10.0.2.2:63192" //"https://api.altude.so" //
     private var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
@@ -44,6 +37,7 @@ object SdkConfig {
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
 
+    @OptIn(ExperimentalSerializationApi::class)
     suspend fun initialize() {
         this.baseUrl;
 
@@ -51,7 +45,8 @@ object SdkConfig {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
-        val trustAllCerts: Array<TrustManager> = arrayOf<TrustManager>(object : X509TrustManager {
+        val trustAllCerts: Array<TrustManager> = arrayOf<TrustManager>(@SuppressLint("CustomX509TrustManager")
+        object : X509TrustManager {
             @SuppressLint("TrustAllX509TrustManager")
             override fun checkClientTrusted(chain: Array<X509Certificate?>?, authType: String?) {}
             @SuppressLint("TrustAllX509TrustManager")
@@ -70,7 +65,7 @@ object SdkConfig {
 
             .sslSocketFactory(
                 sslSocketFactory,
-                (trustAllCerts[0] as javax.net.ssl.X509TrustManager?)!!
+                (trustAllCerts[0] as X509TrustManager?)!!
             )
             .hostnameVerifier(HostnameVerifier { hostname: String?, session: SSLSession? -> true })
 
@@ -82,13 +77,13 @@ object SdkConfig {
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
-
+        val json = Json { ignoreUnknownKeys = true }
         retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
-            .addConverterFactory(GsonConverterFactory.create())
+            //.addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .client(okHttpClient)
             .build()
-
         val service = retrofit.create(TransactionService::class.java)
         apiConfig = service.getConfig().await()
     }

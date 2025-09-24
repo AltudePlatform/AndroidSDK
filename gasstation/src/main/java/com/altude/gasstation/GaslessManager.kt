@@ -3,7 +3,7 @@ package com.altude.gasstation
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.TokenProgram
-import com.altude.core.Programs.Utility
+import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
@@ -56,7 +56,7 @@ object GaslessManager {
                 } else null
 
             val decimals = Utility.getTokenDecimals(option.token)
-            val rawAmount = Utility.getRawQuantity(option.amount, decimals)
+            val rawAmount = com.altude.core.Programs.Utility.getRawQuantity(option.amount, decimals)
 
             val transferInstruction = TokenProgram.transferToken(
                 source = sourceAta,
@@ -128,7 +128,7 @@ object GaslessManager {
                     if (destinationCreateAta != null)
                         transferInstructions.add(destinationCreateAta)
                     val decimals = Utility.getTokenDecimals(option.token)
-                    val rawAmount = Utility.getRawQuantity(option.amount, decimals)
+                    val rawAmount = com.altude.core.Programs.Utility.getRawQuantity(option.amount, decimals)
 
                     val transferInstruction = TokenProgram.transferToken(
                         source = sourceAta,
@@ -226,6 +226,7 @@ object GaslessManager {
                 )
                 Result.success(serialized)
             } catch (e: Exception) {
+                Error(e)
                 Result.failure(e)
             }
         }

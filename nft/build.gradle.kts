@@ -50,5 +50,9 @@ dependencies {
         exclude(group = "com.ditchoom")
         exclude(group = "io.github.funkatronics", module = "kborsh")
     }
+    // Serialization
+    implementation(libs.serialization.json) {
+        exclude(group = "com.ditchoom")
+    }
 
 }

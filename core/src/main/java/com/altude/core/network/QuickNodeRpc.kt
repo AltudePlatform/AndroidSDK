@@ -1,5 +1,6 @@
 package com.altude.core.network
 
+import com.altude.core.api.QuickNodeResponse
 import com.altude.core.api. QuickNodeRpcService
 import com.altude.core.api.TransactionService
 import com.altude.core.api.callRpcTyped
@@ -10,7 +11,6 @@ import com.altude.core.data.BlockhashResult
 import com.altude.core.data.BlockhashValue
 import com.altude.core.data.CommitmentParam
 import com.altude.core.data.JsonRpc20Request
-import foundation.metaplex.rpc.Commitment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -18,9 +18,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
-import okhttp3.OkHttpClient
 import kotlin.random.Random
 import kotlin.random.nextUInt
 
@@ -28,13 +28,14 @@ import kotlin.random.nextUInt
 class QuickNodeRpc(val endpoint: String) {
 
     val rpcService = RpcConfig.createService(endpoint, QuickNodeRpcService::class.java)
-    private val json = Json {
-        prettyPrint = true
-        encodeDefaults = true
-        explicitNulls = false
-        ignoreUnknownKeys = true
-    }
+
     companion object{
+        private val json = Json {
+            prettyPrint = true
+            encodeDefaults = true
+            explicitNulls = false
+            ignoreUnknownKeys = true
+        }
         //temp token for 3 days
         private var token: String = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJxdWlja25vZGUtY2xpZW50IiwibmJmIjoxNzU4NTkxMzI2LCJleHAiOjE3NjExODM0NDYsImlhdCI6MTc1ODU5MTMyNn0.Z0Z3ym9b-OxUiYP4FKfD8eeoMsMJdVhtFaTZY3daTCnAn_elWZg-y5uTTCD5NzqzVmzrXDcqrAIBu26M0SmPKH8NQuGxF6aqsFwpXe4UhpxxJg26uboXTBmdj1j_qNr6TFefr1OK1_0zKleTJqK1Ia0FTZ2Tc5H-yf3xsCrDQS1uEB-I3YXDHBW-Q3O7Hjc4Wki_zZfiTVNEdvIogx1aN_Is6l7kWchsHjeeTsd7DRKgNM_geRjGCxLNWvysEGBpu8Myin3k4QMxE87erIKkvSwCM96JWcUL8HdjelBVJl3OlaycmuP-pi-ncStBB8pL9Zmyz3g5wq9EH7G6hlSOXg"
         private var expiry: Long = 0
@@ -51,13 +52,15 @@ class QuickNodeRpc(val endpoint: String) {
         }
         suspend fun setToken() : String? = withContext(Dispatchers.IO) {
             val service = SdkConfig.createService(TransactionService::class.java)
-            val response = service.getQuickNodeJWTTOken().execute()
-            if (response.isSuccessful) {
-                saveToken( response.body()?.token.toString(), 60)
-                token
-            } else {
-                null
-            }
+            val response = service.getQuickNodeJWTToken()
+            token = json.decodeFromJsonElement<QuickNodeResponse>(response).token
+            token
+//            if (response.isSuccessful) {
+//                saveToken( response.body()?.token.toString(), 60)
+//                token
+//            } else {
+//                null
+//            }
         }
 
     }

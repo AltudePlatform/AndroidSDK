@@ -9,14 +9,14 @@ import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetBalanceOption
-import com.altude.core.data.GetHistoryOption
+import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
-import com.altude.core.model.Token
+import com.altude.gasstation.data.Token
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
-import foundation.metaplex.rpc.Commitment
+import com.altude.gasstation.data.Commitment
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
@@ -236,12 +236,13 @@ class ExampleInstrumentedTest {
 
         val options =listOf(
             SendOptions(
+                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
                 toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
                 amount = 0.00001,
                 token = Token.KIN.mint(),
             ),
             SendOptions(
-                //account = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
+                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
                 toAddress = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
                 amount = 0.00001,
                 token = Token.KIN.mint(),
@@ -309,7 +310,8 @@ class ExampleInstrumentedTest {
         val options = GetHistoryOption(
             account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             limit = 1,
-            offset =2
+            offset = 2,
+            walletAddress = ""
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
