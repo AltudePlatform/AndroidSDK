@@ -209,7 +209,7 @@ object GaslessManager {
                 }
                 val authorizedSigner = HotSigner(SolanaKeypair(ownerKey, defaultWallet.secretKey))
 
-                val payerSigner = EmptySignature(feePayerPubKey)
+
                 val blockhashInfo = rpc.getLatestBlockhash(
                     commitment = option.commitment.name
                 )

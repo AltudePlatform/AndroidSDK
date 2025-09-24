@@ -52,9 +52,13 @@ class QuickNodeRpc(val endpoint: String) {
         }
         suspend fun setToken() : String? = withContext(Dispatchers.IO) {
             val service = SdkConfig.createService(TransactionService::class.java)
+            try {
+
+
             val response = service.getQuickNodeJWTToken()
             token = json.decodeFromJsonElement<QuickNodeResponse>(response).token
             token
+            }catch (e: Exception){ null }
 //            if (response.isSuccessful) {
 //                saveToken( response.body()?.token.toString(), 60)
 //                token
