@@ -1,7 +1,7 @@
 package com.altude.gasstation.data
 
 import com.altude.gasstation.data.ISendOption
-import com.altude.core.model.Token
+import com.altude.gasstation.data.Token
 import com.altude.gasstation.data.Commitment
 
 data class SendOptions (

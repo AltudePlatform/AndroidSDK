@@ -55,7 +55,7 @@ object StorageService {
 
     suspend fun storePrivateKeyByteArray(privateKeyByteArray: ByteArray) {
 
-        val keyPair = SolanaEddsa.createKeypairFromSecretKey(privateKeyByteArray)
+        val keyPair = SolanaEddsa.createKeypairFromSecretKey(privateKeyByteArray.copyOfRange(0,32))
         val accountAddress = keyPair.publicKey.toBase58()
         val data = SeedData(
             accountAddress,

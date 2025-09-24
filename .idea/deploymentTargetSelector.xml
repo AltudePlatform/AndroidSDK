@@ -8,9 +8,6 @@
       <SelectionState runConfigName="MainActivity">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testBatchTransferToken()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
       <SelectionState runConfigName="testTransferToken()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
@@ -20,10 +17,13 @@
       <SelectionState runConfigName="testCreateandCloseAccount()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testCloseAccount()">
+      <SelectionState runConfigName="testCreateandCloseAccount() (1)">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testStorageList()">
+      <SelectionState runConfigName="testGetHistory()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="testBatchTransferToken()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

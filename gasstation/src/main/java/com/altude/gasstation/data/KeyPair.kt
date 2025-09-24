@@ -1,7 +1,6 @@
 package com.altude.gasstation.data
 
 import com.altude.core.helper.Mnemonic
-import com.altude.gasstation.data.SolanaKeypair
 import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanaeddsa.SolanaEddsa
 

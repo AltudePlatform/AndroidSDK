@@ -1,4 +1,4 @@
-package com.altude.core.data
+package com.altude.gasstation.data
 
 
 data class GetHistoryData(

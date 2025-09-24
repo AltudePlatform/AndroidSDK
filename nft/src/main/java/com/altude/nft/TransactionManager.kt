@@ -2,7 +2,6 @@ package com.altude.nft
 
 import android.util.Base64
 import com.altude.core.Programs.MPLCore
-import com.altude.core.Programs.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.data.CreateNFTCollectionOption
 import com.altude.core.data.MintOption
@@ -24,7 +23,7 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    private val rpc = QuickNodeRpc(Utility.QUICKNODE_URL)
+    private val rpc = QuickNodeRpc(SdkConfig.apiConfig.rpcUrl)
     val feePayerPubKey =
         PublicKey(SdkConfig.apiConfig.feePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
