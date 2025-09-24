@@ -1,6 +1,6 @@
 package com.altude.gasstation.data
 
-import foundation.metaplex.rpc.Commitment
+import com.altude.gasstation.data.Commitment
 
 data class CreateAccountOption (
     val account: String = "",

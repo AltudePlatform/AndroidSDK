@@ -1,8 +1,8 @@
 package com.altude.gasstation.data
 
-import com.altude.core.data.ISendOption
+import com.altude.gasstation.data.ISendOption
 import com.altude.core.model.Token
-import foundation.metaplex.rpc.Commitment
+import com.altude.gasstation.data.Commitment
 
 data class SendOptions (
     override val account: String = "",

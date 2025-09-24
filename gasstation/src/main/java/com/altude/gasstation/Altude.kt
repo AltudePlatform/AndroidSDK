@@ -18,8 +18,8 @@ import com.altude.core.data.GetHistoryOption
 import com.altude.core.data.TokenAmount
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
-import com.altude.core.model.SolanaKeypair
+import com.altude.gasstation.data.KeyPair
+import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
