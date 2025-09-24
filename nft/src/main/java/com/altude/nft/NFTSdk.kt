@@ -1,7 +1,6 @@
 package com.altude.nft
 
 import android.content.Context
-import com.altude.core.TransactionManager
 import com.altude.core.api.SendTransactionRequest
 import com.altude.core.api.TransactionResponse
 import com.altude.core.api.TransactionService
