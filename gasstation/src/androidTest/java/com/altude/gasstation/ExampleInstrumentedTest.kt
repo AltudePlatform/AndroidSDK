@@ -5,12 +5,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.MPLCore
-import com.altude.core.data.CloseAccountOption
-import com.altude.core.data.CreateAccountOption
+import com.altude.gasstation.data.CloseAccountOption
+import com.altude.gasstation.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.core.data.GetBalanceOption
 import com.altude.core.data.GetHistoryOption
-import com.altude.core.data.SendOptions
+import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.KeyPair
 import com.altude.core.model.Token

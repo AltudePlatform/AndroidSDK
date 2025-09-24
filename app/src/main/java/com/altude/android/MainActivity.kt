@@ -12,12 +12,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.altude.android.ui.theme.AltudesdkTheme
+import com.altude.core.model.KeyPair
 import com.altude.gasstation.Altude
+import kotlinx.coroutines.runBlocking
 
 
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override  fun onCreate(savedInstanceState: Bundle?) = runBlocking {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -41,7 +43,8 @@ class MainActivity : ComponentActivity() {
 //        val keyPair = Altude.generateKeyPair()
 
 
-
+        val keyPair = Altude.generateKeyPair()
+        //KeyPair.
         setContent {
             AltudesdkTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
