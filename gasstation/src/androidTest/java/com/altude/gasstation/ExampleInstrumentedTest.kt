@@ -7,8 +7,8 @@ import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.MPLCore
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
-import com.altude.core.data.GetAccountInfoOption
-import com.altude.core.data.GetBalanceOption
+import com.altude.gasstation.data.GetAccountInfoOption
+import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
@@ -46,16 +46,16 @@ class ExampleInstrumentedTest {
         Altude.setApiKey(context,"myAPIKey")
     }
 
-    @Test
-    fun testRPC()=runBlocking{
-        val res = QuickNodeRpc("https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/")
-        //res.getLatestBlockhash()
-        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey("EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"), PublicKey(Token.KIN.mint()))
-        println("blockhash: ${res.getLatestBlockhash()}")
-        println("getAccountInfo: ${res.getAccountInfo(ata.toBase58()).value?.data?.parsed?.info}")
-        println("getMinimumBalanceForRentExemption: ${res.getMinimumBalanceForRentExemption(165.toULong())}")
-
-    }
+//    @Test
+//    fun testRPC()=runBlocking{
+//        val res = QuickNodeRpc("https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/")
+//        //res.getLatestBlockhash()
+//        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey("EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"), PublicKey(Token.KIN.mint()))
+//        println("blockhash: ${res.getLatestBlockhash()}")
+//        println("getAccountInfo: ${res.getAccountInfo(ata.toBase58()).value?.data?.parsed?.info}")
+//        println("getMinimumBalanceForRentExemption: ${res.getMinimumBalanceForRentExemption(165.toULong())}")
+//
+//    }
     @Test
     fun testStorage()= runBlocking{
         Altude.saveMnemonic("bring record van away man person trouble clay rebuild review dust pond")
