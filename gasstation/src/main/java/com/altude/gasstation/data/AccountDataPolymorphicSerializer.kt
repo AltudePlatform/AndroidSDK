@@ -1,11 +1,8 @@
-package com.altude.core.helper
+package com.altude.gasstation.data
 
-import com.altude.core.data.AccountData
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -14,9 +11,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.bouncycastle.util.encoders.Base64
-
 
 object AccountDataPolymorphicSerializer : KSerializer<AccountData?> {
     override val descriptor: SerialDescriptor =
