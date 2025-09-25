@@ -6,10 +6,10 @@ import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.gasstation.data.AccountInfoValue
-import com.altude.core.data.GetBalanceOption
+import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
-import com.altude.core.data.GetAccountInfoOption
+import com.altude.gasstation.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.TokenAmount
