@@ -59,11 +59,3 @@ data class AccountParsedInfo(
     val tokenAmount: TokenAmount? = null
 )
 
-@Serializable
-data class TokenAmount(
-    val amount: String,
-    val decimals: Int,
-    val uiAmount: Double? = null,
-    val uiAmountString: String
-)
-
