@@ -5,14 +5,14 @@ import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.data.AccountInfoValue
+import com.altude.gasstation.data.AccountInfoValue
 import com.altude.core.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.core.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
-import com.altude.core.data.TokenAmount
+import com.altude.gasstation.data.TokenAmount
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
@@ -24,17 +24,12 @@ import com.altude.gasstation.data.TransactionResponse
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
-import retrofit2.Call
-import retrofit2.Response
-import retrofit2.Callback
 import retrofit2.await
 import java.lang.Error
-import kotlin.coroutines.resume
 
 
 object Altude {
@@ -97,7 +92,7 @@ object Altude {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createAccount(
-        options: CreateAccountOption
+        options: CreateAccountOption = CreateAccountOption()
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = GaslessManager.createAccount(options)

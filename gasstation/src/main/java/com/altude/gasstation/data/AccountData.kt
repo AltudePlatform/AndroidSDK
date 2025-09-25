@@ -1,6 +1,6 @@
-package com.altude.core.data
+package com.altude.gasstation.data
 
-import com.altude.core.helper.AccountDataPolymorphicSerializer
+import com.altude.gasstation.data.AccountDataPolymorphicSerializer
 import com.altude.core.helper.U64AsStringSerializer
 import kotlinx.serialization.Serializable
 
