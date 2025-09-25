@@ -272,36 +272,38 @@ class ExampleInstrumentedTest {
     fun testGetBalance() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey )
         val option = GetBalanceOption(
+            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
             token = Token.KIN.mint()
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.getBalance(option)?.amount
-        println(result)
+        val result = Altude.getBalance(option)
+        println("Balance: $result")
     }
     @Test
     fun testGetAccountInfo() = runBlocking {
 //        val pda1 = MPLCore.findTreeConfigPda(PublicKey("14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj"))
-//        val option = GetAccountInfoOption(
-//            account = pda1.toBase58(),
-//            useBase64 = true
-//        )
+        Altude.savePrivateKey(accountPrivateKey )
+        val option = GetAccountInfoOption(
+            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu"
+        )
 //
 // println("account:pda, ${pda1.toBase58()}" )
 //        // Wrap the callback in a suspendable way (like a suspendCoroutine)
-//        val result = Altude.getAccountInfo(option)
+        val result = Altude.getAccountInfo(option)
+        println("getAccountInfo: $result")
 //        println("account:pda, ${pda1.toBase58()}" )
 //        println("account:14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj, $result" )
 
-        val pda2 = MPLCore.findTreeConfigPda(PublicKey("7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb"))
-        val option2 = GetAccountInfoOption(
-            account = pda2.toBase58(),
-                useBase64 = true
-        )
-        println("account:pda, ${pda2.toBase58()}" )
-        // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result2 = Altude.getAccountInfo(option2)
-        println("account:7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb, $result2")
+//        val pda2 = MPLCore.findTreeConfigPda(PublicKey("7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb"))
+//        val option2 = GetAccountInfoOption(
+//            account = pda2.toBase58(),
+//                useBase64 = true
+//        )
+//        println("account:pda, ${pda2.toBase58()}" )
+//        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+//        val result2 = Altude.getAccountInfo(option2)
+//        println("account:7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb, $result2")
     }
 
     @Test

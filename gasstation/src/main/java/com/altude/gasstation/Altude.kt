@@ -2,6 +2,8 @@ package com.altude.gasstation
 
 import android.content.Context
 import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.api.GetAccountInfoRequest
+import com.altude.core.api.GetBalanceRequest
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
@@ -20,6 +22,8 @@ import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
 import com.altude.core.data.BatchTransactionRequest
 import com.altude.core.data.SendTransactionRequest
+import com.altude.gasstation.data.GetAccountResponse
+import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.TransactionResponse
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -146,26 +150,39 @@ object Altude {
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getBalance(
         option: GetBalanceOption
-    ): TokenAmount? {
-        val defaultWallet = GaslessManager.getKeyPair(option.account)
-        val owner = defaultWallet.publicKey.toBase58().let { option.account }
-        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey(owner), PublicKey(option.token))
-        val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
-        if (result == null) throw Error("No data found")
+    ): Result<GetBalanceResponse> = withContext(Dispatchers.IO)  {
+        try {
+            val defaultWallet = GaslessManager.getKeyPair(option.account)
 
-        return   result.data?.parsed?.info?.tokenAmount
+            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = GetBalanceRequest(account, option.token)
+
+            val res = service.getBalance(request).await()
+            Result.success(deCodeJson<GetBalanceResponse>(res))
+            //return   result.data?.parsed?.info?.tokenAmount
+        } catch (e: Exception) {
+            println("Error: $e")
+            return@withContext Result.failure(e)
+        }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
         option: GetAccountInfoOption = GetAccountInfoOption()
-    ): AccountInfoValue? {
-//        val defaultWallet = TransactionManager.getKeyPair(option.account)
-//        val owner = defaultWallet.publicKey.toBase58().let { option.account }
+    ): Result<GetAccountResponse> = withContext(Dispatchers.IO)  {
+        try {
+            val defaultWallet = GaslessManager.getKeyPair(option.account)
 
-        val result = Utility.getAccountInfo(option.account, option.useBase64)
-        //if (result == null) throw Error("No data found")
+            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = GetAccountInfoRequest(account)
 
-        return  result
+            val res = service.getAccountInfo(request).await()
+            Result.success(deCodeJson<GetAccountResponse>(res))
+        } catch (e: Exception) {
+            println("Error: $e")
+            return@withContext Result.failure(e)
+        }
     }
 
     suspend fun generateKeyPair(): SolanaKeypair {
@@ -177,6 +194,6 @@ object Altude {
     }
 
     private inline fun <reified T> deCodeJson(jsonElement: JsonElement): T{
-        return Json.decodeFromJsonElement<T>(jsonElement)
+        return json.decodeFromJsonElement<T>(jsonElement)
     }
 }
