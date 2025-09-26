@@ -1,9 +1,8 @@
-package com.altude.core.data
+package com.altude.gasstation.data
 
-import foundation.metaplex.rpc.Commitment
+import com.altude.gasstation.data.Commitment
 
-
-data class CreateAccountOption (
+data class CloseAccountOption (
     val account: String = "",
     val tokens: List<String>,
     val reference: String = "",

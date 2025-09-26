@@ -1,4 +1,4 @@
-package com.altude.core.model
+package com.altude.gasstation.data
 
 import com.altude.core.config.SdkConfig
 

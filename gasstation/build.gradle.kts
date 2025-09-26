@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    kotlin("plugin.serialization") version "2.2.0"
 }
 
 android {
@@ -44,11 +45,17 @@ dependencies {
     // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
 
     // Solana & Metaplex
-    implementation(libs.solana) {
+    api(libs.solana) {
         exclude(group = "com.ditchoom")
         exclude(group = "io.github.funkatronics", module = "kborsh")
+    }
+    // Serialization
+    implementation(libs.serialization.json) {
+        exclude(group = "com.ditchoom")
     }
 }
 

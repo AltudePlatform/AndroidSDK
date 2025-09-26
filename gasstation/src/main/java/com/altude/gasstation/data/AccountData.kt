@@ -1,6 +1,6 @@
-package com.altude.core.data
+package com.altude.gasstation.data
 
-import com.altude.core.helper.AccountDataPolymorphicSerializer
+import com.altude.gasstation.data.AccountDataPolymorphicSerializer
 import com.altude.core.helper.U64AsStringSerializer
 import kotlinx.serialization.Serializable
 
@@ -57,13 +57,5 @@ data class AccountParsedInfo(
     val isNative: Boolean? = null,
     val rentExemptReserve: TokenAmount? = null,
     val tokenAmount: TokenAmount? = null
-)
-
-@Serializable
-data class TokenAmount(
-    val amount: String,
-    val decimals: Int,
-    val uiAmount: Double? = null,
-    val uiAmountString: String
 )
 

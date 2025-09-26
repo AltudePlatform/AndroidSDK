@@ -5,18 +5,18 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.MPLCore
-import com.altude.core.data.CloseAccountOption
-import com.altude.core.data.CreateAccountOption
-import com.altude.core.data.GetAccountInfoOption
-import com.altude.core.data.GetBalanceOption
-import com.altude.core.data.GetHistoryOption
-import com.altude.core.data.SendOptions
+import com.altude.gasstation.data.CloseAccountOption
+import com.altude.gasstation.data.CreateAccountOption
+import com.altude.gasstation.data.GetAccountInfoOption
+import com.altude.gasstation.data.GetBalanceOption
+import com.altude.gasstation.data.GetHistoryOption
+import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
-import com.altude.core.model.Token
+import com.altude.gasstation.data.KeyPair
+import com.altude.gasstation.data.Token
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
-import foundation.metaplex.rpc.Commitment
+import com.altude.gasstation.data.Commitment
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
@@ -46,16 +46,16 @@ class ExampleInstrumentedTest {
         Altude.setApiKey(context,"myAPIKey")
     }
 
-    @Test
-    fun testRPC()=runBlocking{
-        val res = QuickNodeRpc("https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/")
-        //res.getLatestBlockhash()
-        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey("EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"), PublicKey(Token.KIN.mint()))
-        println("blockhash: ${res.getLatestBlockhash()}")
-        println("getAccountInfo: ${res.getAccountInfo(ata.toBase58()).value?.data?.parsed?.info}")
-        println("getMinimumBalanceForRentExemption: ${res.getMinimumBalanceForRentExemption(165.toULong())}")
-
-    }
+//    @Test
+//    fun testRPC()=runBlocking{
+//        val res = QuickNodeRpc("https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/")
+//        //res.getLatestBlockhash()
+//        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey("EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq"), PublicKey(Token.KIN.mint()))
+//        println("blockhash: ${res.getLatestBlockhash()}")
+//        println("getAccountInfo: ${res.getAccountInfo(ata.toBase58()).value?.data?.parsed?.info}")
+//        println("getMinimumBalanceForRentExemption: ${res.getMinimumBalanceForRentExemption(165.toULong())}")
+//
+//    }
     @Test
     fun testStorage()= runBlocking{
         Altude.saveMnemonic("bring record van away man person trouble clay rebuild review dust pond")
@@ -148,7 +148,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testCreateAccount() = runBlocking {
         //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
-        val keypair = KeyPair.generate()
+        val keypair = Altude.generateKeyPair()
         Altude.savePrivateKey(keypair.secretKey)
         val options = CreateAccountOption(
             account = keypair.publicKey.toBase58(),
@@ -236,12 +236,13 @@ class ExampleInstrumentedTest {
 
         val options =listOf(
             SendOptions(
+                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
                 toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
                 amount = 0.00001,
                 token = Token.KIN.mint(),
             ),
             SendOptions(
-                //account = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
+                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
                 toAddress = "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W",
                 amount = 0.00001,
                 token = Token.KIN.mint(),
@@ -271,36 +272,38 @@ class ExampleInstrumentedTest {
     fun testGetBalance() = runBlocking {
         Altude.savePrivateKey(accountPrivateKey )
         val option = GetBalanceOption(
+            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
             token = Token.KIN.mint()
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.getBalance(option)?.amount
-        println(result)
+        val result = Altude.getBalance(option)
+        println("Balance: $result")
     }
     @Test
     fun testGetAccountInfo() = runBlocking {
 //        val pda1 = MPLCore.findTreeConfigPda(PublicKey("14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj"))
-//        val option = GetAccountInfoOption(
-//            account = pda1.toBase58(),
-//            useBase64 = true
-//        )
+        Altude.savePrivateKey(accountPrivateKey )
+        val option = GetAccountInfoOption(
+            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu"
+        )
 //
 // println("account:pda, ${pda1.toBase58()}" )
 //        // Wrap the callback in a suspendable way (like a suspendCoroutine)
-//        val result = Altude.getAccountInfo(option)
+        val result = Altude.getAccountInfo(option)
+        println("getAccountInfo: $result")
 //        println("account:pda, ${pda1.toBase58()}" )
 //        println("account:14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj, $result" )
 
-        val pda2 = MPLCore.findTreeConfigPda(PublicKey("7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb"))
-        val option2 = GetAccountInfoOption(
-            account = pda2.toBase58(),
-                useBase64 = true
-        )
-        println("account:pda, ${pda2.toBase58()}" )
-        // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result2 = Altude.getAccountInfo(option2)
-        println("account:7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb, $result2")
+//        val pda2 = MPLCore.findTreeConfigPda(PublicKey("7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb"))
+//        val option2 = GetAccountInfoOption(
+//            account = pda2.toBase58(),
+//                useBase64 = true
+//        )
+//        println("account:pda, ${pda2.toBase58()}" )
+//        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+//        val result2 = Altude.getAccountInfo(option2)
+//        println("account:7GzoPkZRSCaHvH3yYFpFTfm2pQGhdXZ8Tp1rTB3ughBb, $result2")
     }
 
     @Test
@@ -309,7 +312,8 @@ class ExampleInstrumentedTest {
         val options = GetHistoryOption(
             account = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
             limit = 1,
-            offset =2
+            offset = 2,
+            walletAddress = ""
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)

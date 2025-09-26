@@ -26,7 +26,7 @@ class ExampleInstrumentedTest {
     private lateinit var context: Context
 
     @Before
-    fun setup() {
+    fun setup()= runBlocking {
         context = ApplicationProvider.getApplicationContext()
         NFTSdk.setApiKey(context,"myAPIKey")
     }
