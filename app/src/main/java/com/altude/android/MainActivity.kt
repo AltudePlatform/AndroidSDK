@@ -12,11 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.altude.android.ui.theme.AltudesdkTheme
+import kotlinx.coroutines.runBlocking
 
 
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override  fun onCreate(savedInstanceState: Bundle?) = runBlocking {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -35,6 +36,9 @@ class MainActivity : ComponentActivity() {
 //                    .onFailure { println("❌ Failed: ${it.message}") }
 //            }
 //        }
+
+//        Altude .setApiKey(this,"myAPIKey")
+
         setContent {
             AltudesdkTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

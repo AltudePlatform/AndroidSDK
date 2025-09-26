@@ -1,11 +1,6 @@
 package com.altude.core.Programs
 
-import com.altude.core.config.SdkConfig
-import com.altude.core.data.AccountInfoValue
-import com.altude.core.data.ConcurrentMerkleTreeHeaderDataSerializer
 import com.altude.core.data.KtSerializer
-import com.altude.core.data.MerkleTreeAccountData
-import com.altude.core.network.QuickNodeRpc
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ChangeLog
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ConcurrentMerkleTree
 import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.Path
@@ -38,7 +33,6 @@ object  Utility {
     val MPL_NOOP                 = PublicKey("mnoopTCrg4p8ry25e4bcWA9XZjbNjMTfgYVGGEdRsf3") // mplNoop
 
     //
-    val QUICKNODE_URL = SdkConfig.apiConfig.rpcUrl//"https://cold-holy-dinghy.solana-devnet.quiknode.pro/8cc52fd5faf72bedbc72d9448fba5640cd728ace/"//"https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/" //change this with envi variable
 
 
 
@@ -48,13 +42,7 @@ object  Utility {
         }
     }
 
-    suspend fun getTokenDecimals(mintAddress: String): Int {
-        val response = getAccountInfo(mintAddress)
 
-        val decimals = response?.data?.parsed?.info?.decimals
-
-        return decimals ?: throw Exception("Unable to parse token decimals from mint: $mintAddress")
-    }
 
 
 
@@ -76,10 +64,7 @@ object  Utility {
         return buffer.array()
     }
 
-    suspend fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
-        val rpc = QuickNodeRpc(QUICKNODE_URL)
-        return  rpc.getAccountInfo(publicKey).value
-    }
+
 
 
 
@@ -90,26 +75,14 @@ object  Utility {
         return pubKey to privKey
     }
 
-    suspend fun ataExists(publicKey: String = ""): Boolean {
-        val response = getAccountInfo(publicKey)
-        return response != null
-    }
+
 
 //    fun getAtaOwner(publicKey: String): String? {
 //        val response = getAccountInfo(publicKey)
 //        return response?.data.parse?.owner
 //    }
 
-    suspend fun validateAta(publicKey: String, expectedOwner: String) {
-        val response = getAccountInfo(publicKey)
-        val value = response
-            ?: throw Error("Associated token account does not exist!")
 
-        val actualOwner = value.data?.parsed?.info?.owner
-        if (expectedOwner != actualOwner) {
-            throw Error("Authorized owner is $actualOwner, expected $expectedOwner")
-        }
-    }
     fun getRawQuantity(quantity: Double, decimals: Int): Long {
         return (quantity * 10.0.pow(decimals)).toLong()
     }
@@ -122,16 +95,7 @@ object  Utility {
         val programid = METADATA_PROGRAM_ID
         return PublicKey.findProgramAddress(seeds, programid).address
     }
-    suspend fun findMasterEditionPda(mint: PublicKey): PublicKey {
-        val seeds = listOf(
-            "metadata".toByteArray(),
-            METADATA_PROGRAM_ID.toByteArray(),
-            mint.toByteArray(),
-            "edition".toByteArray(Charsets.UTF_8)
-        )
-        val programid = METADATA_PROGRAM_ID
-        return PublicKey.findProgramAddress(seeds, programid).address
-    }
+
 
 
     // --- Borsh helpers ---
@@ -432,69 +396,6 @@ object  Utility {
         bytes[2] = ((this.toInt() shr 16) and 0xFF).toByte()
         bytes[3] = ((this.toInt() shr 24) and 0xFF).toByte()
         return bytes
-    }
-
-    fun getMerkleTreeAccountDataV1Serializer(
-        maxDepth: Int,
-        maxBufferSize: Int,
-        totalAccountSize: Int // full Solana account data size
-    ): KtSerializer<MerkleTreeAccountData> {
-        val headerSerializer = ConcurrentMerkleTreeHeaderDataSerializer
-        val treeSerializer = getConcurrentMerkleTreeSerializer(maxDepth, maxBufferSize)
-
-        return object : KtSerializer<MerkleTreeAccountData> {
-
-            override fun serialize(value: MerkleTreeAccountData): ByteArray {
-                val buffer = mutableListOf<Byte>()
-
-                // discriminator (u8)
-                buffer.add(value.discriminator.toByte())
-
-                // tree header
-                buffer.addAll(headerSerializer.serialize(value.treeHeader).toList())
-
-                // tree
-                buffer.addAll(treeSerializer.serialize(value.tree).toList())
-
-                // canopy
-                value.canopy.forEach { pk ->
-                    buffer.addAll(pk.toByteArray().toList())
-                }
-
-                return buffer.toByteArray()
-            }
-
-            override fun deserialize(data: ByteArray): MerkleTreeAccountData {
-                var offset = 0
-
-                val discriminator = data[offset].toUByte()
-                offset += 1
-
-                val headerSize = headerSerializer.size()
-                val treeHeader = headerSerializer.deserialize(data.copyOfRange(offset, offset + headerSize))
-                offset += headerSize
-
-                val treeSize = treeSerializer.size()
-                val tree = treeSerializer.deserialize(data.copyOfRange(offset, offset + treeSize))
-                offset += treeSize
-
-                // canopy = remaining bytes, each PublicKey is 32 bytes
-                val canopyBytes = data.copyOfRange(offset, data.size)
-                val canopy = canopyBytes.toList().chunked(32).map { bytes ->
-                    PublicKey(bytes.toByteArray())
-                }
-
-                return MerkleTreeAccountData(discriminator, treeHeader, tree, canopy)
-            }
-
-            override fun size(): Int {
-                // Fixed part: discriminator + header + tree
-                val fixedSize = 1 + headerSerializer.size() + treeSerializer.size()
-                // Canopy is variable, but if totalAccountSize provided, canopySize = remainder
-                val canopySize = totalAccountSize - fixedSize
-                return fixedSize + canopySize
-            }
-        }
     }
 
 

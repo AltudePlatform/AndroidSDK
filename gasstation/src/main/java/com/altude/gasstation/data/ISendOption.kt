@@ -1,6 +1,4 @@
-package com.altude.core.data
-
-import foundation.metaplex.rpc.Commitment
+package com.altude.gasstation.data
 
 interface ISendOption {
     val account: String

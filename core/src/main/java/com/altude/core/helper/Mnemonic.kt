@@ -1,9 +1,8 @@
 package com.altude.core.helper
 
-import com.altude.core.helper.WordList
-import com.altude.core.model.KeyPair
-import com.altude.core.model.SolanaKeypair
 
+import foundation.metaplex.solanaeddsa.Keypair
+import foundation.metaplex.solanaeddsa.SolanaEddsa
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
@@ -122,13 +121,13 @@ class Mnemonic (
 //        val entropy = generateEntropy(wordCount)
 //        mnemonic(wordList, entropy)
 //    }
-    suspend fun getKeyPair(): SolanaKeypair {
+    suspend fun getKeyPair(): Keypair {
         if(seedPhrase == "")
            throw Error("Please enter a seed phrase; Ex. val mnemonic =  Mnemonic(\"word word word word word word word word word word word word\")")
         mnemonic(seedPhrase, wordList)
         //val bip32 = HMac(SHA512Digest())
         val (privateKey, _) = Ed25519Bip32(deriveSeed(passphrase)).derivePath("m/44'/501'/0'/0'")
-        val solanaKeypair = KeyPair.solanaKeyPairFromPrivateKey(privateKey)
+        val solanaKeypair = SolanaEddsa.createKeypairFromSecretKey(privateKey.copyOfRange(0,32))
         return  solanaKeypair
     }
 

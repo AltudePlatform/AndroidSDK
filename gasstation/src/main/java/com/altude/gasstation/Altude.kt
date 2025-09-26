@@ -2,33 +2,37 @@ package com.altude.gasstation
 
 import android.content.Context
 import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.Utility
-import com.altude.core.TransactionManager
-import com.altude.core.api.BatchTransactionRequest
-import com.altude.core.api.SendTransactionRequest
-import com.altude.core.api.TransactionResponse
+import com.altude.core.api.GetAccountInfoRequest
+import com.altude.core.api.GetBalanceRequest
+import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.core.data.AccountInfoValue
-import com.altude.core.data.GetBalanceOption
-import com.altude.core.data.CloseAccountOption
-import com.altude.core.data.CreateAccountOption
-import com.altude.core.data.GetAccountInfoOption
-import com.altude.core.data.GetHistoryData
-import com.altude.core.data.GetHistoryOption
-import com.altude.core.data.TokenAmount
-import com.altude.core.data.SendOptions
+import com.altude.gasstation.data.AccountInfoValue
+import com.altude.gasstation.data.GetBalanceOption
+import com.altude.gasstation.data.CloseAccountOption
+import com.altude.gasstation.data.CreateAccountOption
+import com.altude.gasstation.data.GetAccountInfoOption
+import com.altude.gasstation.data.GetHistoryData
+import com.altude.gasstation.data.GetHistoryOption
+import com.altude.gasstation.data.TokenAmount
+import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.KeyPair
+import com.altude.gasstation.data.KeyPair
+import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
+import com.altude.core.data.BatchTransactionRequest
+import com.altude.core.data.SendTransactionRequest
+import com.altude.gasstation.data.GetAccountResponse
+import com.altude.gasstation.data.GetBalanceResponse
+import com.altude.gasstation.data.TransactionResponse
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import retrofit2.Call
-import retrofit2.Response
-import retrofit2.Callback
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import retrofit2.await
 import java.lang.Error
 
 
@@ -46,42 +50,28 @@ object Altude {
         StorageService.storePrivateKeyByteArray(  byteArraySecretKey)
     }
 
+    val json = Json {
+        ignoreUnknownKeys = true   // don’t crash if backend adds new fields
+        isLenient = true           // accept non-strict JSON (unquoted keys, etc.)
+        encodeDefaults = true      // include default values in request bodies
+        explicitNulls = false      // don’t send nulls unless explicitly set
+    }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun send(
         options: SendOptions
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.transferToken(options)
-
+            val result = GaslessManager.transferToken(options)
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = SendTransactionRequest(signedTransaction)
 
-            suspendCancellableCoroutine { cont ->
-                service.sendTransaction(request)
-                    .enqueue(object : Callback<TransactionResponse> {
-                        override fun onResponse(
-                            call: Call<TransactionResponse>,
-                            response: Response<TransactionResponse>
-                        ) {
-                            val body = response.body()
-                            if (response.isSuccessful && body != null) {
-                                cont.resume(Result.success(body), onCancellation = null)
-                            } else {
-                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
-                                cont.resume(Result.failure(error), onCancellation = null)
-                            }
-                        }
-
-                        override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
-                            cont.resume(Result.failure(t), onCancellation = null)
-                        }
-                    })
-            }
+            val res = service.sendTransaction(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
-            return@withContext Result.failure(e)
+            Result.failure(e)
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -89,7 +79,7 @@ object Altude {
         options: List<SendOptions>
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.batchTransferToken(options)
+            val result = GaslessManager.batchTransferToken(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -97,27 +87,8 @@ object Altude {
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = BatchTransactionRequest(signedTransaction)
 
-            suspendCancellableCoroutine { cont ->
-                service.sendBatchTransaction(request)
-                    .enqueue(object : Callback<TransactionResponse> {
-                        override fun onResponse(
-                            call: Call<TransactionResponse>,
-                            response: Response<TransactionResponse>
-                        ) {
-                            val body = response.body()
-                            if (response.isSuccessful && body != null) {
-                                cont.resume(Result.success(body), onCancellation = null)
-                            } else {
-                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
-                                cont.resume(Result.failure(error), onCancellation = null)
-                            }
-                        }
-
-                        override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
-                            cont.resume(Result.failure(t), onCancellation = null)
-                        }
-                    })
-            }
+            val res = service.sendBatchTransaction(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         }
@@ -125,10 +96,10 @@ object Altude {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createAccount(
-        options: CreateAccountOption
+        options: CreateAccountOption = CreateAccountOption()
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.createAccount(options)
+            val result = GaslessManager.createAccount(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -136,27 +107,8 @@ object Altude {
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = SendTransactionRequest(signedTransaction)
 
-            suspendCancellableCoroutine { cont ->
-                service.createAccount(request)
-                    .enqueue(object : Callback<TransactionResponse> {
-                        override fun onResponse(
-                            call: Call<TransactionResponse>,
-                            response: Response<TransactionResponse>
-                        ) {
-                            val body = response.body()
-                            if (response.isSuccessful && body != null) {
-                                cont.resume(Result.success(body), onCancellation = null)
-                            } else {
-                                val error = Throwable("Error: ${response.code()} - ${response.message()}")
-                                cont.resume(Result.failure(error), onCancellation = null)
-                            }
-                        }
-
-                        override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
-                            cont.resume(Result.failure(t), onCancellation = null)
-                        }
-                    })
-            }
+            val res = service.createAccount(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         }
@@ -166,7 +118,7 @@ object Altude {
         options: CloseAccountOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = TransactionManager.closeAccount(options)
+            val result = GaslessManager.closeAccount(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
@@ -174,28 +126,8 @@ object Altude {
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = SendTransactionRequest(signedTransaction)
 
-            suspendCancellableCoroutine { cont ->
-                service.closeAccount(request)
-                    .enqueue(object : Callback<TransactionResponse> {
-                        override fun onResponse(
-                            call: Call<TransactionResponse>,
-                            response: Response<TransactionResponse>
-                        ) {
-                            val body = response.body()
-                            if (response.isSuccessful && body != null) {
-                                cont.resume(Result.success(body), onCancellation = null)
-                            } else {
-                                val error =
-                                    Throwable("Error: ${response.code()} - ${response.message()}")
-                                cont.resume(Result.failure(error), onCancellation = null)
-                            }
-                        }
-
-                        override fun onFailure(call: Call<TransactionResponse>, t: Throwable) {
-                            cont.resume(Result.failure(t), onCancellation = null)
-                        }
-                    })
-            }
+            val res = service.closeAccount(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         }
@@ -205,38 +137,12 @@ object Altude {
         options: GetHistoryOption
     ): Result<GetHistoryData> = withContext(Dispatchers.IO) {
         try {
-            //val result = TransactionManager.closeAccount(options)
-
-            //if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
-
-            //val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
-            //val request = SendTransactionRequest(signedTransaction)
 
-            suspendCancellableCoroutine { cont ->
-                service.getHistory(options.offset.toString(),options.limit.toString(),options.account)
-                    .enqueue(object : Callback<GetHistoryData> {
-                        override fun onResponse(
-                            call: Call<GetHistoryData>,
-                            response: Response<GetHistoryData>
-                        ) {
-                            val body = response.body()
-                            if (response.isSuccessful && body != null) {
-                                cont.resume(Result.success(body), onCancellation = null)
-                            } else {
-                                val error =
-                                    Throwable("Error: ${response.code()} - ${response.message()}")
-                                cont.resume(Result.failure(error), onCancellation = null)
-                            }
-                        }
-
-                        override fun onFailure(call: Call<GetHistoryData>, t: Throwable) {
-                            cont.resume(Result.failure(t), onCancellation = null)
-                        }
-                    })
-            }
+            val res = service.getHistory(options.offset.toString(),options.limit.toString(),options.account).await()
+            Result.success(deCodeJson<GetHistoryData>(res))
         } catch (e: Exception) {
-            println(e)
+            println("Error: $e")
             return@withContext Result.failure(e)
         }
     }
@@ -244,25 +150,50 @@ object Altude {
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getBalance(
         option: GetBalanceOption
-    ): TokenAmount? {
-        val defaultWallet = TransactionManager.getKeyPair(option.account)
-        val owner = defaultWallet.publicKey.toBase58().let { option.account }
-        val ata = AssociatedTokenAccountProgram.deriveAtaAddress(PublicKey(owner), PublicKey(option.token))
-        val result: AccountInfoValue? = Utility.getAccountInfo(ata.toBase58())
-        if (result == null) throw Error("No data found")
+    ): Result<GetBalanceResponse> = withContext(Dispatchers.IO)  {
+        try {
+            val defaultWallet = GaslessManager.getKeyPair(option.account)
 
-        return   result.data?.parsed?.info?.tokenAmount
+            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = GetBalanceRequest(account, option.token)
+
+            val res = service.getBalance(request).await()
+            Result.success(deCodeJson<GetBalanceResponse>(res))
+            //return   result.data?.parsed?.info?.tokenAmount
+        } catch (e: Exception) {
+            println("Error: $e")
+            return@withContext Result.failure(e)
+        }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
         option: GetAccountInfoOption = GetAccountInfoOption()
-    ): AccountInfoValue? {
-//        val defaultWallet = TransactionManager.getKeyPair(option.account)
-//        val owner = defaultWallet.publicKey.toBase58().let { option.account }
+    ): Result<GetAccountResponse> = withContext(Dispatchers.IO)  {
+        try {
+            val defaultWallet = GaslessManager.getKeyPair(option.account)
 
-        val result = Utility.getAccountInfo(option.account, option.useBase64)
-        //if (result == null) throw Error("No data found")
+            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = GetAccountInfoRequest(account)
 
-        return  result
+            val res = service.getAccountInfo(request).await()
+            Result.success(deCodeJson<GetAccountResponse>(res))
+        } catch (e: Exception) {
+            println("Error: $e")
+            return@withContext Result.failure(e)
+        }
+    }
+
+    suspend fun generateKeyPair(): SolanaKeypair {
+        val keypair = KeyPair.generate()
+        return SolanaKeypair(keypair.publicKey,keypair.secretKey)
+    }
+    fun storedWallet():List<String>{
+        return StorageService.listStoredWalletAddresses()
+    }
+
+    private inline fun <reified T> deCodeJson(jsonElement: JsonElement): T{
+        return json.decodeFromJsonElement<T>(jsonElement)
     }
 }
