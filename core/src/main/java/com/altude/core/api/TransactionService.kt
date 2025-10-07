@@ -99,7 +99,7 @@ interface TransactionService {
         @Body body: ISendTransactionRequest
     ): Call<JsonElement>
 
-    @GET("api/auth/token")
+    @GET("api/auth/tokenkeyvault")
     suspend fun getQuickNodeJWTToken(): JsonElement
 
     @GET("api/transaction/config")

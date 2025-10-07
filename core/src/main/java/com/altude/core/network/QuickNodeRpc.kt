@@ -36,7 +36,7 @@ class QuickNodeRpc(val endpoint: String) {
             ignoreUnknownKeys = true
         }
         //temp token for 3 days
-        var token: String = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJxdWlja25vZGUtY2xpZW50IiwibmJmIjoxNzU4NTkxMzI2LCJleHAiOjE3NjExODM0NDYsImlhdCI6MTc1ODU5MTMyNn0.Z0Z3ym9b-OxUiYP4FKfD8eeoMsMJdVhtFaTZY3daTCnAn_elWZg-y5uTTCD5NzqzVmzrXDcqrAIBu26M0SmPKH8NQuGxF6aqsFwpXe4UhpxxJg26uboXTBmdj1j_qNr6TFefr1OK1_0zKleTJqK1Ia0FTZ2Tc5H-yf3xsCrDQS1uEB-I3YXDHBW-Q3O7Hjc4Wki_zZfiTVNEdvIogx1aN_Is6l7kWchsHjeeTsd7DRKgNM_geRjGCxLNWvysEGBpu8Myin3k4QMxE87erIKkvSwCM96JWcUL8HdjelBVJl3OlaycmuP-pi-ncStBB8pL9Zmyz3g5wq9EH7G6hlSOXg"
+        var token: String = ""
         private var expiry: Long = 0
 
         suspend fun getValidToken(): String? {
@@ -46,7 +46,6 @@ class QuickNodeRpc(val endpoint: String) {
 
         fun saveToken(newToken: String , expiresIn: Long) { // expiresIn seconds
             token = newToken
-            println("token: $token")
             expiry = (System.currentTimeMillis() / 1000) + expiresIn
         }
         suspend fun setToken() : String? = withContext(Dispatchers.IO) {
@@ -54,16 +53,17 @@ class QuickNodeRpc(val endpoint: String) {
             try {
 
 
-            val response = service.getQuickNodeJWTToken()
-            token = json.decodeFromJsonElement<QuickNodeResponse>(response).token
-            token
+                val response = service.getQuickNodeJWTToken()
+                val restoken = json.decodeFromJsonElement<QuickNodeResponse>(response).token
+                //token
+
+                if (restoken.isNotEmpty()) {
+                    saveToken( restoken, 60)
+                    token
+                } else {
+                    null
+                }
             }catch (e: Exception){ null }
-//            if (response.isSuccessful) {
-//                saveToken( response.body()?.token.toString(), 60)
-//                token
-//            } else {
-//                null
-//            }
         }
 
     }
@@ -104,7 +104,6 @@ class QuickNodeRpc(val endpoint: String) {
             params =  JsonArray(content = params)
         )
         val jsonBody = json.encodeToString(rpcRequest)
-        println(">>> RPC Request: $jsonBody")
         val resp: RpcResponse<Long> = rpcService.callRpcTyped(json,"Bearer $token", rpcRequest)
 
         if (resp.error != null) {
@@ -129,7 +128,6 @@ class QuickNodeRpc(val endpoint: String) {
             params =  JsonArray(content = params)
         )
         val jsonBody = json.encodeToString(rpcRequest)
-        println(">>> RPC Request: $jsonBody")
         val resp: RpcResponse<T> = rpcService.callRpcTyped(json,"Bearer $token", rpcRequest)
 
         if (resp.error != null) {

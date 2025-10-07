@@ -43,7 +43,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"myAPIKey")
+        Altude.setApiKey(context,"ak_myAPIKey")
     }
 
 //    @Test
@@ -108,7 +108,7 @@ class ExampleInstrumentedTest {
             commitment = Commitment.finalized,
 
             )
-
+        Altude.storedWallet()
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
         val result = Altude.createAccount(options)
 
