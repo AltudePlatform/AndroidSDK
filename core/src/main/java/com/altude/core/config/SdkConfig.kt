@@ -28,8 +28,8 @@ import javax.net.ssl.X509TrustManager
 object SdkConfig {
 
 
-    private var baseUrl: String = "https://api.altude.so" //"http://10.0.2.2:63192" //
-    private var apiKey: String = ""
+    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:63192"//
+    var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
 
@@ -94,7 +94,7 @@ object SdkConfig {
             val builder = original.newBuilder()
 
             apiKey.let {
-                builder.addHeader("x-api-key", it)
+                builder.addHeader("X-API-Key", it)
             }
 
             val request = builder.build()

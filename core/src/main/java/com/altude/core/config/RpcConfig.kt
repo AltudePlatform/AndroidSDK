@@ -1,6 +1,9 @@
+import com.altude.core.config.SdkConfig
+import com.altude.core.config.SdkConfig.apiKey
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -36,6 +39,7 @@ object RpcConfig {
         }
 
         val client = OkHttpClient.Builder()
+            .addInterceptor(provideApiKeyInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)   // increase timeouts
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
@@ -52,6 +56,19 @@ object RpcConfig {
             throw IllegalStateException("RpcConfig must be initialized first")
         }
         return retrofit.create(service)
+    }
+    private fun provideApiKeyInterceptor(): Interceptor {
+        return Interceptor { chain ->
+            val original = chain.request()
+            val builder = original.newBuilder()
+
+            apiKey.let {
+                builder.addHeader("X-API-Key", it)
+            }
+
+            val request = builder.build()
+            chain.proceed(request)
+        }
     }
 }
 
