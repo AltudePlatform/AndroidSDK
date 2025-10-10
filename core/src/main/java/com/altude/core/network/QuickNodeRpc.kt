@@ -20,8 +20,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
+import retrofit2.await
 import kotlin.random.Random
 import kotlin.random.nextUInt
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 
 class QuickNodeRpc(val endpoint: String) {
@@ -36,33 +40,34 @@ class QuickNodeRpc(val endpoint: String) {
             ignoreUnknownKeys = true
         }
         //temp token for 3 days
-        var token: String = ""
+        var token: String = SdkConfig.apiConfig.token
         private var expiry: Long = 0
 
+        @OptIn(ExperimentalTime::class)
         suspend fun getValidToken(): String? {
-            val now = System.currentTimeMillis() / 1000
-            return if (token != "" && now < expiry) token else setToken()
+            val token = SdkConfig.apiConfig.token
+            val expiry: Instant? = SdkConfig.apiConfig.tokenExpiration
+            val now = Clock.System.now()
+
+            return if (token.isNotBlank() && expiry != null && now < expiry) {
+                // ✅ Token is valid
+                token
+            } else {
+                println("Token expired or missing, refreshing...")
+                setToken() // 🔄 your suspend function that fetches a new token
+            }
         }
 
-        fun saveToken(newToken: String , expiresIn: Long) { // expiresIn seconds
-            token = newToken
-            expiry = (System.currentTimeMillis() / 1000) + expiresIn
-        }
+//        fun saveToken(newToken: String , expiresIn: Long) { // expiresIn seconds
+//            token = newToken
+//            expiry = (System.currentTimeMillis() / 1000) + expiresIn
+//        }
         suspend fun setToken() : String? = withContext(Dispatchers.IO) {
             val service = SdkConfig.createService(TransactionService::class.java)
             try {
-
-
-                val response = service.getQuickNodeJWTToken()
-                val restoken = json.decodeFromJsonElement<QuickNodeResponse>(response).token
-                //token
-
-                if (restoken.isNotEmpty()) {
-                    saveToken( restoken, 60)
-                    token
-                } else {
-                    null
-                }
+                SdkConfig.apiConfig = service.getConfig().await()
+                token = SdkConfig.apiConfig.token
+                token
             }catch (e: Exception){ null }
         }
 
@@ -70,6 +75,7 @@ class QuickNodeRpc(val endpoint: String) {
 
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun getLatestBlockhash(commitment: String = "finalized"): BlockhashValue {
+        token = getValidToken()?: error("No valid token")
 // Create a list to hold JSON elements for RPC request parameters
         val params: MutableList<JsonElement> = mutableListOf()
 
@@ -77,7 +83,6 @@ class QuickNodeRpc(val endpoint: String) {
 
         params.add(json.encodeToJsonElement(CommitmentParam(commitment)))
 
-        getValidToken()
         val rpcRequest = JsonRpc20Request(
             jsonrpc = "2.0",
             method = "getLatestBlockhash",
@@ -95,7 +100,7 @@ class QuickNodeRpc(val endpoint: String) {
 
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun getMinimumBalanceForRentExemption(usize: ULong): Long {
-        getValidToken()
+        token = getValidToken()?: error("No valid token")
         val params: MutableList<JsonElement> = mutableListOf()
         params.add(json.encodeToJsonElement(usize))
         val rpcRequest = JsonRpc20Request(
@@ -103,7 +108,6 @@ class QuickNodeRpc(val endpoint: String) {
             method = "getMinimumBalanceForRentExemption",
             params =  JsonArray(content = params)
         )
-        val jsonBody = json.encodeToString(rpcRequest)
         val resp: RpcResponse<Long> = rpcService.callRpcTyped(json,"Bearer $token", rpcRequest)
 
         if (resp.error != null) {
@@ -114,7 +118,7 @@ class QuickNodeRpc(val endpoint: String) {
     }
     @OptIn(ExperimentalSerializationApi::class)
     suspend inline fun <reified T>getAccountInfo(publicKey:String): T {
-        getValidToken()
+        token = getValidToken()?: error("No valid token")
         val params: MutableList<JsonElement> = mutableListOf()
         params.add(json.encodeToJsonElement(publicKey))
 
@@ -127,7 +131,6 @@ class QuickNodeRpc(val endpoint: String) {
             method = "getAccountInfo",
             params =  JsonArray(content = params)
         )
-        val jsonBody = json.encodeToString(rpcRequest)
         val resp: RpcResponse<T> = rpcService.callRpcTyped(json,"Bearer $token", rpcRequest)
 
         if (resp.error != null) {
@@ -136,37 +139,6 @@ class QuickNodeRpc(val endpoint: String) {
 
         return resp.result ?: error("No result returned")
     }
-//    suspend fun callRpc(endpoint: String, jwtToken: String, method: String, params: Any): String {
-//        var rpc = RPC(endpoint,)
-//        rpc.getMinimumBalanceForRentExemption(111.toULong())
-////        rpc.getAccountInfo(
-////            Utility.MPL_NOOP,
-////            configuration = RpcGetAccountInfoConfiguration(),
-////            serializer = SolanaResponseSerializer(
-////                BlockhashResponse.serializer()
-////            )
-////        )
-//        val requestJson = """
-//            {
-//              "jsonrpc":"2.0",
-//              "id":1,
-//              "method":"$method",
-//              "params":$params
-//            }
-//        """.trimIndent()
-//
-//        val body = requestJson.toRequestBody("application/json".toMediaType())
-//
-//        val request = Request.Builder()
-//            .url(endpoint)
-//            .addHeader("Authorization", "Bearer $jwtToken")
-//            .post(body)
-//            .build()
-//
-//        client.newCall(request).execute().use { response ->
-//            if (!response.isSuccessful) throw Exception("Unexpected code $response")
-//            return response.body.string()
-//        }
-//    }
+
 }
 

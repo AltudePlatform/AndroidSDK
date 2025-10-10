@@ -24,6 +24,7 @@ import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlin.time.ExperimentalTime
 
 object SdkConfig {
 
@@ -33,6 +34,7 @@ object SdkConfig {
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
 
+    @OptIn(ExperimentalTime::class)
     var apiConfig = ConfigResponse()
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
