@@ -24,6 +24,7 @@ import retrofit2.await
 import kotlin.random.Random
 import kotlin.random.nextUInt
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -49,7 +50,7 @@ class QuickNodeRpc(val endpoint: String) {
             val expiry: Instant? = SdkConfig.apiConfig.tokenExpiration
             val now = Clock.System.now()
 
-            return if (token.isNotBlank() && expiry != null && now < expiry) {
+            return if (token.isNotBlank() && expiry != null && now < expiry.minus(30.seconds)) {
                 // ✅ Token is valid
                 token
             } else {
