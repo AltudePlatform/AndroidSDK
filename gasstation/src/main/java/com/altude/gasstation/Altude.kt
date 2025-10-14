@@ -115,7 +115,7 @@ object Altude {
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun closeAccount(
-        options: CloseAccountOption
+        options: CloseAccountOption = CloseAccountOption()
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
             val result = GaslessManager.closeAccount(options)

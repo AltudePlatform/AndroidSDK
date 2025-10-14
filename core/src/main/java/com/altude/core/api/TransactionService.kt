@@ -3,6 +3,7 @@ package com.altude.core.api
 import com.altude.core.data.BatchTransactionRequest
 import com.altude.core.data.MintData
 import com.altude.core.data.SendTransactionRequest
+import kotlinx.serialization.Contextual
 import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -10,6 +11,11 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZonedDateTime
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 interface ISendTransactionRequest{
     val SignedTransaction: String
@@ -46,9 +52,12 @@ data class QuickNodeResponse(
     val token: String,
 )
 @Serializable
-data class ConfigResponse(
+data class ConfigResponse @OptIn(ExperimentalTime::class) constructor(
     val feePayer: String = "",
     val rpcUrl: String  = "",
+    val token: String = "",
+    @Contextual
+    val tokenExpiration: Instant? = null
 )
 interface TransactionService {
 
@@ -98,9 +107,6 @@ interface TransactionService {
     fun postCreateCollectionNft(
         @Body body: ISendTransactionRequest
     ): Call<JsonElement>
-
-    @GET("api/auth/token")
-    suspend fun getQuickNodeJWTToken(): JsonElement
 
     @GET("api/transaction/config")
     fun getConfig(): Call<ConfigResponse>
