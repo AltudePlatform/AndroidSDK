@@ -14,16 +14,10 @@
       <SelectionState runConfigName="testCreateandCloseAccount()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testCreateandCloseAccount() (1)">
+      <SelectionState runConfigName="testLatencySample()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testBatchTransferToken()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="testGetAccountInfo()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="testGetBalance()">
+      <SelectionState runConfigName="testCreateAccount()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

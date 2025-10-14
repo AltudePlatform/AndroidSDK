@@ -24,15 +24,17 @@ import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlin.time.ExperimentalTime
 
 object SdkConfig {
 
 
-    private var baseUrl: String = "https://api.altude.so" //"http://10.0.2.2:63192" //
-    private var apiKey: String = ""
+    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:63192"//
+    var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
 
+    @OptIn(ExperimentalTime::class)
     var apiConfig = ConfigResponse()
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
@@ -94,7 +96,7 @@ object SdkConfig {
             val builder = original.newBuilder()
 
             apiKey.let {
-                builder.addHeader("x-api-key", it)
+                builder.addHeader("X-API-Key", it)
             }
 
             val request = builder.build()

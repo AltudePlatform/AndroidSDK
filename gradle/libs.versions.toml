@@ -25,6 +25,7 @@ hdwallet = "0.1.15"
 securityCrypto = "1.1.0-alpha06"
 jwt = "4.4.0"
 retrofitSerialization = "0.8.0"
+monitor = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -65,6 +66,7 @@ hdwallet-bip39 = { group = "io.provenance.hdwallet", name = "hdwallet-bip39", ve
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 jwt = { group = "com.auth0", name = "java-jwt", version.ref = "jwt" }
 retrofit-serialization = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version.ref = "retrofitSerialization" }
+androidx-monitor = { group = "androidx.test", name = "monitor", version.ref = "monitor" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
