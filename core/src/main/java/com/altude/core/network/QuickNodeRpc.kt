@@ -41,35 +41,50 @@ class QuickNodeRpc(val endpoint: String) {
             ignoreUnknownKeys = true
         }
         //temp token for 3 days
-        var token: String = SdkConfig.apiConfig.token
+        var token: String = SdkConfig.apiConfig.Token
         private var expiry: Long = 0
 
         @OptIn(ExperimentalTime::class)
-        suspend fun getValidToken(): String? {
-            val token = SdkConfig.apiConfig.token
-            val expiry: Instant? = SdkConfig.apiConfig.tokenExpiration
+        suspend fun getValidToken(): String {
+            val token = SdkConfig.apiConfig.Token
+            val expiry = SdkConfig.apiConfig.TokenExpiration
             val now = Clock.System.now()
-
-            return if (token.isNotBlank() && expiry != null && now < expiry.minus(30.seconds)) {
-                // ✅ Token is valid
-                token
-            } else {
-                println("Token expired or missing, refreshing...")
-                setToken() // 🔄 your suspend function that fetches a new token
+            println("now: $now")
+            println("expiry: $expiry")
+            if (token.isNotBlank() && expiry != null && now < expiry.minus(30.seconds)) {
+                return token
             }
+
+            println("Token expired or missing, refreshing...")
+            val newToken = setToken()
+            return newToken ?: error("Failed to refresh token")
         }
 
-//        fun saveToken(newToken: String , expiresIn: Long) { // expiresIn seconds
+
+        //        fun saveToken(newToken: String , expiresIn: Long) { // expiresIn seconds
 //            token = newToken
 //            expiry = (System.currentTimeMillis() / 1000) + expiresIn
 //        }
-        suspend fun setToken() : String? = withContext(Dispatchers.IO) {
+        @OptIn(ExperimentalTime::class)
+        suspend fun setToken(): String? = withContext(Dispatchers.IO) {
             val service = SdkConfig.createService(TransactionService::class.java)
             try {
-                SdkConfig.apiConfig = service.getConfig().await()
-                token = SdkConfig.apiConfig.token
+                val config = service.getConfig().await()
+
+                // Prevent overwriting with empty response
+                if (config.Token.isBlank()) {
+                    println("Warning: Received empty token from backend")
+                    return@withContext null
+                }
+
+                SdkConfig.apiConfig = config
+                token = config.Token
+                println("✅ Token refreshed: expires at ${config.TokenExpiration}")
                 token
-            }catch (e: Exception){ null }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
         }
 
     }
