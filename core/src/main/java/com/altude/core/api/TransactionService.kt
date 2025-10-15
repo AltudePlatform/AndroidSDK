@@ -53,11 +53,11 @@ data class QuickNodeResponse(
 )
 @Serializable
 data class ConfigResponse @OptIn(ExperimentalTime::class) constructor(
-    val feePayer: String = "",
-    val rpcUrl: String  = "",
-    val token: String = "",
+    val FeePayer: String = "",
+    val RpcUrl: String  = "",
+    val Token: String = "",
     @Contextual
-    val tokenExpiration: Instant? = null
+    val TokenExpiration: Instant? = null
 )
 interface TransactionService {
 

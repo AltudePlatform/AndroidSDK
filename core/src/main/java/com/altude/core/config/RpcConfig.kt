@@ -40,7 +40,7 @@ object RpcConfig {
 
         val client = OkHttpClient.Builder()
             .addInterceptor(provideApiKeyInterceptor())
-            .connectTimeout(30, TimeUnit.SECONDS)   // increase timeouts
+            .connectTimeout(60, TimeUnit.SECONDS)   // increase timeouts
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(logging)
