@@ -23,9 +23,9 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    private val rpc = QuickNodeRpc(SdkConfig.apiConfig.rpcUrl)
+    private val rpc = QuickNodeRpc(SdkConfig.apiConfig.RpcUrl)
     val feePayerPubKey =
-        PublicKey(SdkConfig.apiConfig.feePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
+        PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
 
 
