@@ -29,7 +29,7 @@ import kotlin.time.ExperimentalTime
 object SdkConfig {
 
 
-    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:63192"//
+    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:5000/"//
     var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true
@@ -75,7 +75,7 @@ object SdkConfig {
         okHttpClient = client
             .addInterceptor(provideApiKeyInterceptor())
             .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)   // increase timeouts
+            .connectTimeout(60, TimeUnit.SECONDS)   // increase timeouts
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
@@ -87,7 +87,7 @@ object SdkConfig {
             .client(okHttpClient)
             .build()
         val service = retrofit.create(TransactionService::class.java)
-        apiConfig = service.getConfig().await()
+        this.apiConfig = service.getConfig().await()
     }
 
     private fun provideApiKeyInterceptor(): Interceptor {

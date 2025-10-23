@@ -26,6 +26,7 @@ securityCrypto = "1.1.0-alpha06"
 jwt = "4.4.0"
 retrofitSerialization = "0.8.0"
 monitor = "1.8.0"
+protoliteWellKnownTypes = "18.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -67,6 +68,7 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 jwt = { group = "com.auth0", name = "java-jwt", version.ref = "jwt" }
 retrofit-serialization = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version.ref = "retrofitSerialization" }
 androidx-monitor = { group = "androidx.test", name = "monitor", version.ref = "monitor" }
+protolite-well-known-types = { group = "com.google.firebase", name = "protolite-well-known-types", version.ref = "protoliteWellKnownTypes" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
