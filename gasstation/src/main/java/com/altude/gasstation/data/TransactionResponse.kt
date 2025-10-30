@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class TransactionResponse(
-    override val status: String,
-    override val message: String,
-    override val signature: String
+    override val Status: String,
+    override val Message: String,
+    override val Signature: String
 ) : ITransactionResponse
