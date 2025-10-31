@@ -3,6 +3,7 @@ package com.altude.core.api
 import com.altude.core.data.BatchTransactionRequest
 import com.altude.core.data.MintData
 import com.altude.core.data.SendTransactionRequest
+import com.altude.core.data.SwapTransactionRequest
 import kotlinx.serialization.Contextual
 import retrofit2.Call
 import retrofit2.http.Body
@@ -65,6 +66,10 @@ interface TransactionService {
     fun sendTransaction(
         @Body body: SendTransactionRequest
     ): Call<JsonElement>
+    @POST("api/transaction/swap")
+    fun swapTransaction(
+        @Body body: SwapTransactionRequest
+    ): Call<JsonElement>
 
     @POST("api/transaction/sendbatch")
     fun sendBatchTransaction(
@@ -107,7 +112,10 @@ interface TransactionService {
     fun postCreateCollectionNft(
         @Body body: ISendTransactionRequest
     ): Call<JsonElement>
-
+    @POST("api/jupiter/swap")
+    fun jupiterSwap(
+        @Body body: JsonElement
+    ): Call<JsonElement>
     @GET("api/transaction/config")
     fun getConfig(): Call<ConfigResponse>
 }

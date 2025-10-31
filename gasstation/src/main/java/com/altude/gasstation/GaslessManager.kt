@@ -2,21 +2,26 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.Programs.Jupiter
 import com.altude.core.Programs.TokenProgram
+import com.altude.core.api.TransactionService
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
+import com.altude.core.data.JupiterSwapResponse
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
-import com.altude.core.model.EmptySignature
 import com.altude.core.model.HotSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
+import com.altude.core.data.SwapRequest
+import com.altude.gasstation.data.SwapOption
+import com.altude.gasstation.data.Token
 import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
@@ -24,6 +29,12 @@ import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNamingStrategy
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import retrofit2.await
 import java.lang.Error
 
 object GaslessManager {
@@ -31,7 +42,14 @@ object GaslessManager {
     private val rpc = QuickNodeRpc(SdkConfig.apiConfig.RpcUrl)
     val feePayerPubKey =
         PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
-
+    @OptIn(ExperimentalSerializationApi::class)
+    val json = Json {
+        ignoreUnknownKeys = true   // don’t crash if backend adds new fields
+        isLenient = true           // accept non-strict JSON (unquoted keys, etc.)
+        encodeDefaults = true      // include default values in request bodies
+        explicitNulls = false      // don’t send nulls unless explicitly set
+        decodeEnumsCaseInsensitive = true
+            }
     suspend fun transferToken(option: ISendOption): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val pubKeyMint = PublicKey(option.token)
@@ -295,6 +313,47 @@ object GaslessManager {
         }
     }
 
+    suspend fun jupiterSwap(
+        option: SwapOption
+    ): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            var defaultWallet = getKeyPair(option.account)
+
+            var service = SdkConfig.createService(TransactionService::class.java)
+            val swapRequest = SwapRequest(
+                UserPublicKey = option.account,
+                InputMint = option.inputMint,
+                OutputMint =option.outputMint,
+                Amount = option.amount,
+                SlippageBps = option.slippageBps
+            )
+
+            val response = service.jupiterSwap(json.encodeToJsonElement(swapRequest)).await()
+            val txInstructions = Jupiter.buildJupiterTransaction( Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response))
+
+
+            val blockhashInfo = rpc.getLatestBlockhash(
+                commitment = option.commitment.name
+            )
+
+            val tx = AltudeTransactionBuilder()
+                .setFeePayer(feePayerPubKey)
+                .addRangeInstruction(txInstructions)
+                .setRecentBlockHash(blockhashInfo.blockhash)
+                .setSigners(listOf(HotSigner(defaultWallet)))
+                .build()
+
+            //val sign = Core.SignTransaction(privateKeyBytes,message)
+            val serialized = Base64.encodeToString(
+                tx.serialize(SerializeConfig(requireAllSignatures = false)),
+                Base64.NO_WRAP
+            )
+            Result.success(serialized)
+        } catch (e: Exception) {
+            Result.failure(e)
+
+        }
+    }
     suspend fun getKeyPair(account: String = ""): Keypair {
         val seedData = StorageService.getDecryptedSeed(account)
         if (seedData != null) {
