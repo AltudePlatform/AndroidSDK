@@ -22,8 +22,10 @@ import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
 import com.altude.core.data.BatchTransactionRequest
 import com.altude.core.data.SendTransactionRequest
+import com.altude.core.data.SwapTransactionRequest
 import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
+import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.TransactionResponse
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
@@ -127,6 +129,25 @@ object Altude {
             val request = SendTransactionRequest(signedTransaction)
 
             val res = service.closeAccount(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun swap(
+        options: SwapOption
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.jupiterSwap(options)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SwapTransactionRequest(signedTransaction)
+
+            val res = service.swapTransaction(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
             return@withContext Result.failure(e)
