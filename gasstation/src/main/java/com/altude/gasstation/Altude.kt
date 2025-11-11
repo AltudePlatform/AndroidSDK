@@ -1,20 +1,16 @@
 package com.altude.gasstation
 
 import android.content.Context
-import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.api.GetAccountInfoRequest
 import com.altude.core.api.GetBalanceRequest
-import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.gasstation.data.AccountInfoValue
 import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
-import com.altude.gasstation.data.TokenAmount
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
@@ -27,7 +23,6 @@ import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.TransactionResponse
-import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
@@ -35,7 +30,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import retrofit2.await
-import java.lang.Error
 
 
 object Altude {
@@ -139,7 +133,7 @@ object Altude {
         options: SwapOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
-            val result = GaslessManager.jupiterSwap(options)
+            val result = GaslessManager.swap(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 

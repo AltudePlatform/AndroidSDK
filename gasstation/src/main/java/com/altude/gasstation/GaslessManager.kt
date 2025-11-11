@@ -4,10 +4,13 @@ import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.Jupiter
 import com.altude.core.Programs.TokenProgram
-import com.altude.core.api.TransactionService
+import com.altude.core.api.JupiterService
+import com.altude.core.config.JupiterConfig
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.data.JupiterSwapResponse
+import com.altude.core.data.QuoteResponse
+import com.altude.core.data.SwapInstructionRequest
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
@@ -21,7 +24,6 @@ import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
 import com.altude.gasstation.data.SwapOption
-import com.altude.gasstation.data.Token
 import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
@@ -31,9 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNamingStrategy
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import retrofit2.await
 import java.lang.Error
 
@@ -313,22 +313,28 @@ object GaslessManager {
         }
     }
 
-    suspend fun jupiterSwap(
+    suspend fun swap(
         option: SwapOption
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             var defaultWallet = getKeyPair(option.account)
 
-            var service = SdkConfig.createService(TransactionService::class.java)
+            var service = JupiterConfig.createService(JupiterService::class.java)
             val swapRequest = SwapRequest(
-                UserPublicKey = option.account,
-                InputMint = option.inputMint,
-                OutputMint =option.outputMint,
-                Amount = option.amount,
-                SlippageBps = option.slippageBps
+                userPublicKey = option.account,
+                inputMint = option.inputMint,
+                outputMint =option.outputMint,
+                amount = option.amount,
+                slippageBps = option.slippageBps
             )
 
-            val response = service.jupiterSwap(json.encodeToJsonElement(swapRequest)).await()
+            val quoteResponse = service.quote(swapRequest).await()
+            var swapInstructionRequest = SwapInstructionRequest(
+                quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse),
+                userPublicKey = option.account
+            )
+
+            val response = service.swap(swapInstructionRequest).await()
             val txInstructions = Jupiter.buildJupiterTransaction( Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response))
 
 
