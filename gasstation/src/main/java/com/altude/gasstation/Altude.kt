@@ -17,8 +17,10 @@ import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
 import com.altude.core.data.BatchTransactionRequest
+import com.altude.core.data.QuoteResponse
 import com.altude.core.data.SendTransactionRequest
 import com.altude.core.data.SwapTransactionRequest
+import com.altude.core.data.TokenInfo
 import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.SwapOption
@@ -147,6 +149,51 @@ object Altude {
             return@withContext Result.failure(e)
         }
     }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun quote(
+        options: SwapOption
+    ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.quote(options)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            Result.success(result.getOrThrow())
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun searchToken(
+        token: String
+    ): Result<TokenInfo> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.searchToken(token)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            Result.success(result.getOrThrow())
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun shield(
+        mint: String
+    ): Result<Any> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.shield(mint)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            Result.success(result.getOrThrow())
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getHistory(
         options: GetHistoryOption

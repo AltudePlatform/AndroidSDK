@@ -16,7 +16,6 @@ data class SwapInstructionRequest(
 
 @Serializable
 data class SwapRequest(
-    val userPublicKey: String,
     /**
      * The input token mint address.
      */
@@ -89,13 +88,35 @@ data class SwapRequest(
      * Instruction version: "V1" or "V2".
      * Default is "V1".
      */
-    val InstructionVersion: String = "V1",
+    val instructionVersion: String = "V1",
 
     /**
      * No longer applicable (used for /swap only). Default false.
      */
-    val DynamicSlippage: Boolean = false
+    val dynamicSlippage: Boolean = false
 )
+
+fun SwapRequest.toQueryMap(): Map<String, Any> {
+    val map = mutableMapOf<String, Any>(
+        "inputMint" to inputMint,
+        "outputMint" to outputMint,
+        "amount" to amount,
+        "slippageBps" to slippageBps,
+        "swapMode" to swapMode,
+        "restrictIntermediateTokens" to restrictIntermediateTokens,
+        "onlyDirectRoutes" to onlyDirectRoutes,
+        "asLegacyTransaction" to asLegacyTransaction,
+        "maxAccounts" to maxAccounts,
+        "instructionVersion" to instructionVersion
+    )
+
+    dexes?.takeIf { it.isNotEmpty() }?.let { map["dexes"] = it.joinToString(",") }
+    excludeDexes?.takeIf { it.isNotEmpty() }?.let { map["excludeDexes"] = it.joinToString(",") }
+    platformFeeBps?.let { map["platformFeeBps"] = it }
+    if (dynamicSlippage) map["dynamicSlippage"] = dynamicSlippage
+
+    return map
+}
 
 @Serializable
 data class QuoteResponse(
