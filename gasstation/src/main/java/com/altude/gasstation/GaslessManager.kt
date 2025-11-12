@@ -23,6 +23,8 @@ import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
+import com.altude.core.data.TokenInfo
+import com.altude.core.data.toQueryMap
 import com.altude.gasstation.data.SwapOption
 import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
@@ -321,14 +323,13 @@ object GaslessManager {
 
             var service = JupiterConfig.createService(JupiterService::class.java)
             val swapRequest = SwapRequest(
-                userPublicKey = option.account,
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
                 amount = option.amount,
                 slippageBps = option.slippageBps
             )
 
-            val quoteResponse = service.quote(swapRequest).await()
+            val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
             var swapInstructionRequest = SwapInstructionRequest(
                 quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse),
                 userPublicKey = option.account
@@ -355,6 +356,55 @@ object GaslessManager {
                 Base64.NO_WRAP
             )
             Result.success(serialized)
+        } catch (e: Exception) {
+            Result.failure(e)
+
+        }
+    }
+    suspend fun quote(
+        option: SwapOption
+    ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+
+            var service = JupiterConfig.createService(JupiterService::class.java)
+            val swapRequest = SwapRequest(
+                inputMint = option.inputMint,
+                outputMint =option.outputMint,
+                amount = option.amount,
+                slippageBps = option.slippageBps
+            )
+
+            val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
+
+            Result.success(Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse))
+        } catch (e: Exception) {
+            Result.failure(e)
+
+        }
+    }
+    suspend fun searchToken(
+        token: String
+    ): Result<TokenInfo> = withContext(Dispatchers.IO) {
+        return@withContext try {
+
+            val service = JupiterConfig.createService(JupiterService::class.java)
+            val response = service.search(token).await()
+
+            Result.success(Altude.json.decodeFromJsonElement<TokenInfo>(response))
+        } catch (e: Exception) {
+            Result.failure(e)
+
+        }
+    }
+    suspend fun shield(
+        mints: String
+    ): Result<Any> = withContext(Dispatchers.IO) {
+        return@withContext try {
+
+            val service = JupiterConfig.createService(JupiterService::class.java)
+            val response = service.search(mints).await()
+
+            Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
 

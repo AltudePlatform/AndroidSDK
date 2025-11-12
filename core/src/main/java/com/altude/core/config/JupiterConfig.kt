@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 object JupiterConfig {
     private lateinit var retrofit: Retrofit
-    var rpcBaseUrl = "https://lite-api.jup.ag/swap/v1/"
+    var rpcBaseUrl = "https://lite-api.jup.ag"
 
 //    @OptIn(ExperimentalSerializationApi::class)
 //    fun initialize(rpcBaseUrl: String) {

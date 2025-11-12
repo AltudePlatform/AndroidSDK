@@ -291,7 +291,14 @@ class ExampleInstrumentedTest {
             // Wrap the callback in a suspendable way (like a suspendCoroutine)
             val result = Altude.swap(option)
             println("Balance: $result")
-        }
+    }
+    @Test
+    fun testSearchToken() = runBlocking {
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.searchToken("")
+        println("Balance: $result")
+    }
+
     @Test
     fun testGetAccountInfo() = runBlocking {
 //        val pda1 = MPLCore.findTreeConfigPda(PublicKey("14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj"))
