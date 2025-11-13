@@ -9,6 +9,8 @@ import com.altude.core.config.JupiterConfig
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.data.JupiterSwapResponse
+import com.altude.core.data.PrioritizationFeeLamports
+import com.altude.core.data.PriorityLevelWithMaxLamports
 import com.altude.core.data.QuoteResponse
 import com.altude.core.data.SwapInstructionRequest
 import com.altude.gasstation.data.CloseAccountOption
@@ -319,25 +321,46 @@ object GaslessManager {
         option: SwapOption
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            var defaultWallet = getKeyPair(option.account)
+            val defaultWallet = getKeyPair(option.account)
 
-            var service = JupiterConfig.createService(JupiterService::class.java)
+            val service = JupiterConfig.createService(JupiterService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
                 amount = option.amount,
-                slippageBps = option.slippageBps
+                slippageBps = option.slippageBps,
+                swapMode = option.swapMode,
+                dexes =  option.dexes,
+                excludeDexes = option.excludeDexes,
+                restrictIntermediateTokens = option.restrictIntermediateTokens,
+                onlyDirectRoutes = option.onlyDirectRoutes,
+                asLegacyTransaction = option.asLegacyTransaction,
+                platformFeeBps = option.platformFeeBps,
+                maxAccounts = option.maxAccounts,
+                instructionVersion = option.instructionVersion,
+                dynamicSlippage = option.dynamicSlippage
             )
 
             val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
-            var swapInstructionRequest = SwapInstructionRequest(
+            val swapInstructionRequest = SwapInstructionRequest(
                 quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse),
-                userPublicKey = option.account
+                userPublicKey = option.account,
+                payer = feePayerPubKey.toBase58(),
+                prioritizationFeeLamports = if (option.priorityLevelWithMaxLamports != null){
+                    PrioritizationFeeLamports(
+                        priorityLevelWithMaxLamports = PriorityLevelWithMaxLamports(
+                            priorityLevel = option.priorityLevelWithMaxLamports .priorityLevel,
+                            global = option.priorityLevelWithMaxLamports.global,
+                            maxLamports = option.priorityLevelWithMaxLamports.maxLamports
+                        )
+                    )
+                } else {
+                    null
+                }
             )
 
             val response = service.swap(swapInstructionRequest).await()
             val txInstructions = Jupiter.buildJupiterTransaction( Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response))
-
 
             val blockhashInfo = rpc.getLatestBlockhash(
                 commitment = option.commitment.name
@@ -373,13 +396,11 @@ object GaslessManager {
                 amount = option.amount,
                 slippageBps = option.slippageBps
             )
-
             val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
 
             Result.success(Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse))
         } catch (e: Exception) {
             Result.failure(e)
-
         }
     }
     suspend fun searchToken(
