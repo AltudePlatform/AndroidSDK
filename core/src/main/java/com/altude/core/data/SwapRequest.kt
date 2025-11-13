@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 @Serializable
 data class SwapInstructionRequest(
     val userPublicKey: String,
+    val payer: String,
     val quoteResponse: QuoteResponse,
     val prioritizationFeeLamports: PrioritizationFeeLamports? = null,
     val dynamicComputeUnitLimit: Boolean = false,

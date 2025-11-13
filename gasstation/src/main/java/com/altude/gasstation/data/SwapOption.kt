@@ -80,6 +80,7 @@ data class SwapOption(
      * No longer applicable (used for /swap only). Default false.
      */
     val dynamicSlippage: Boolean = false,
+    val priorityLevelWithMaxLamports : PriorityLevelWithMaxLamports? = null,
     val commitment: Commitment
 )
 
@@ -87,5 +88,9 @@ enum class SwapMode{
     ExactIn,
     ExactOut
 }
-
+data class PriorityLevelWithMaxLamports(
+    val maxLamports: Long,
+    val priorityLevel: String,
+    val global: Boolean
+)
 
