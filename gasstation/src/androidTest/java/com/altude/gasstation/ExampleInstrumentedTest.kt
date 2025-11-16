@@ -3,8 +3,6 @@ package com.altude.gasstation
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.MPLCore
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.GetAccountInfoOption
@@ -14,10 +12,8 @@ import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.Token
-import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.altude.gasstation.data.Commitment
-import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 
@@ -43,7 +39,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"ak_acGsSti_GD9jaIisAf1a2_PhtOD5cJ3qq1u-PGYZo7k")
+        Altude.setApiKey(context,"ak_7KRePt6yFlsv_DYkuNGznpzpKFJTecsagXZwwSB0U2o")
     }
 
 //    @Test
@@ -115,7 +111,7 @@ class ExampleInstrumentedTest {
         result
             .onSuccess {
                 println("✅ Sent: $it")
-                assert(it.signature.isNotEmpty())
+                assert(it.Signature.isNotEmpty())
             }
             .onFailure {
                 println("❌ Failed: ${it.message}")
@@ -136,7 +132,7 @@ class ExampleInstrumentedTest {
         closeresult
             .onSuccess {
                 println("✅ Sent: $it")
-                assert(it.signature.isNotEmpty())
+                assert(it.Signature.isNotEmpty())
             }
             .onFailure {
                 println("❌ Failed: ${it.message}")
@@ -221,7 +217,7 @@ class ExampleInstrumentedTest {
         val result = Altude.send(options)
 
         result
-            .onSuccess { println("✅ Sent: ${it.signature}") }
+            .onSuccess { println("✅ Sent: ${it.Signature}") }
             .onFailure {
                 println("❌ Failed: ${it.message}")
             }
@@ -259,7 +255,7 @@ class ExampleInstrumentedTest {
         val result = Altude.sendBatch(options)
 
         result
-            .onSuccess { println("✅ Sent: ${it.signature}") }
+            .onSuccess { println("✅ Sent: ${it.Signature}") }
             .onFailure {
                 println("❌ Failed: ${it.message}")
             }
