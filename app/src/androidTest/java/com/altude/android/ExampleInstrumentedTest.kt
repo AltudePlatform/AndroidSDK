@@ -53,7 +53,7 @@ class ExampleInstrumentedTest {
         result
             .onSuccess {
                 println("✅ Sent: $it")
-                assert(it.signature.isNotEmpty())
+                assert(it.Signature.isNotEmpty())
             }
             .onFailure {
                 println("❌ Failed: ${it.message}")
@@ -74,7 +74,7 @@ class ExampleInstrumentedTest {
         closeresult
             .onSuccess {
                 println("✅ Sent: $it")
-                assert(it.signature.isNotEmpty())
+                assert(it.Signature.isNotEmpty())
             }
             .onFailure {
                 println("❌ Failed: ${it.message}")
