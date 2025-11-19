@@ -27,6 +27,7 @@ import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.TokenInfo
 import com.altude.core.data.toQueryMap
+import com.altude.core.model.MessageAddressTableLookup
 import com.altude.gasstation.data.SwapOption
 import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
@@ -360,7 +361,41 @@ object GaslessManager {
             )
 
             val response = service.swap(swapInstructionRequest).await()
-            val txInstructions = Jupiter.buildJupiterTransaction( Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response))
+            val jupiterSwapResponse = Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response)
+            val txInstructions = Jupiter.buildJupiterTransaction( jupiterSwapResponse)
+            // Fetch the lookup table from RPC
+            val tableAddress = jupiterSwapResponse.addressLookupTableAddresses?.get(0) ?: error("No table")
+//            val tableAccount = rpc.getAddressLookupTable(tableAddress)
+//
+//            // Map table addresses to MessageAddressTableLookup with correct indexes
+            val lookupTables = jupiterSwapResponse.addressLookupTableAddresses?.map { lookupTableAddress ->
+//                val tablePubkeys = tableAccount.addresses.map { PublicKey(it) }
+//
+//                // Compute indexes of the accounts used in instructions
+//                val writableIndexes = txInstructions.flatMap { it.keys }
+//                    .mapNotNull { meta ->
+//                        val idx = tablePubkeys.indexOf(meta.publicKey)
+//                        if (idx >= 0 && meta.isWritable) idx else null
+//                    }
+//
+//                val readonlyIndexes = txInstructions.flatMap { it.keys }
+//                    .mapNotNull { meta ->
+//                        val idx = tablePubkeys.indexOf(meta.publicKey)
+//                        if (idx >= 0 && !meta.isWritable) idx else null
+//                    }
+//
+//                MessageAddressTableLookup(
+//                    accountKey = PublicKey(lookupTableAddress),
+//                    writableIndexes = writableIndexes,
+//                    readonlyIndexes = readonlyIndexes
+//                )
+                MessageAddressTableLookup(
+                    accountKey = PublicKey(tableAddress),
+                    writableIndexes = listOf(0, 1), // indices of accounts that will be written
+                    readonlyIndexes = listOf(2, 3)  // indices of accounts only read
+                )
+            }
+
 
             val blockhashInfo = rpc.getLatestBlockhash(
                 commitment = option.commitment.name
@@ -370,8 +405,11 @@ object GaslessManager {
                 .setFeePayer(feePayerPubKey)
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
+                .addLookUpTables(lookupTables)
                 .setSigners(listOf(HotSigner(defaultWallet)))
+
                 .build()
+
 
             //val sign = Core.SignTransaction(privateKeyBytes,message)
             val serialized = Base64.encodeToString(

@@ -156,5 +156,56 @@ class QuickNodeRpc(val endpoint: String) {
         return resp.result ?: error("No result returned")
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun getAddressLookupTable(
+        lookupTableAddress: String,
+        commitment: String = "finalized"
+    ): AddressLookupTableAccount {
+        token = getValidToken() ?: error("No valid token")
+
+        val params: MutableList<JsonElement> = mutableListOf()
+        params.add(json.encodeToJsonElement(listOf(lookupTableAddress)))
+        params.add(json.encodeToJsonElement(CommitmentParam(commitment)))
+
+        val rpcRequest = JsonRpc20Request(
+            jsonrpc = "2.0",
+            method = "getAddressLookupTable",
+            params = JsonArray(content = params),
+            id = "${Random.nextUInt()}"
+        )
+
+        val response: RpcResponse<GetAddressLookupTableResult> = rpcService.callRpcTyped(
+            json,
+            "Bearer $token",
+            rpcRequest
+        )
+
+        val table = response.result?.value?.state ?: error("Lookup table not found")
+        return table
+    }
+
+    // --- Data classes for the RPC response ---
+    @kotlinx.serialization.Serializable
+    data class GetAddressLookupTableResult(
+        val context: RpcContext,
+        val value: AddressLookupTableValue?
+    )
+
+    @kotlinx.serialization.Serializable
+    data class AddressLookupTableValue(
+        val state: AddressLookupTableAccount
+    )
+
+    @kotlinx.serialization.Serializable
+    data class AddressLookupTableAccount(
+        val deactivationSlot: Long,
+        val lastExtendedSlot: Long,
+        val lastExtendedSlotStartIndex: Int,
+        val authority: String?,
+        val addresses: List<String> // these are the pubkeys inside the table
+    )
+
+    @kotlinx.serialization.Serializable
+    data class RpcContext(val slot: Long)
 }
 

@@ -16,4 +16,8 @@ interface TransactionBuilder {
 
     // Add this:
     fun setFeePayer(publicKey: PublicKey): TransactionBuilder
+    // Add this:
+    fun addLookUpTable(lookupTable: MessageAddressTableLookup): TransactionBuilder
+    fun addLookUpTables(lookupTables: List<MessageAddressTableLookup>?): TransactionBuilder
 }
+
