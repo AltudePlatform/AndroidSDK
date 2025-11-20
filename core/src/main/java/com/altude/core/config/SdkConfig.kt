@@ -29,7 +29,7 @@ import kotlin.time.ExperimentalTime
 object SdkConfig {
 
 
-    private var baseUrl: String =  "http://10.0.2.2:5000/"//"https://api.altude.so" //
+    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:5000/"//
     var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = true

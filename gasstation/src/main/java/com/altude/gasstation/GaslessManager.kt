@@ -2,13 +2,13 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.Jupiter
+import com.altude.core.Programs.Swap
 import com.altude.core.Programs.TokenProgram
-import com.altude.core.api.JupiterService
-import com.altude.core.config.JupiterConfig
+import com.altude.core.api.SwapService
+import com.altude.core.config.SwapConfig
 import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
-import com.altude.core.data.JupiterSwapResponse
+import com.altude.core.data.SwapResponse
 import com.altude.core.data.PrioritizationFeeLamports
 import com.altude.core.data.PriorityLevelWithMaxLamports
 import com.altude.core.data.QuoteResponse
@@ -25,7 +25,6 @@ import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.network.QuickNodeRpc
 import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
-import com.altude.core.data.TokenInfo
 import com.altude.core.data.toQueryMap
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.gasstation.data.SwapOption
@@ -324,7 +323,7 @@ object GaslessManager {
         return@withContext try {
             val defaultWallet = getKeyPair(option.account)
 
-            val service = JupiterConfig.createService(JupiterService::class.java)
+            val service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
@@ -361,14 +360,14 @@ object GaslessManager {
             )
 
             val response = service.swap(swapInstructionRequest).await()
-            val jupiterSwapResponse = Altude.json.decodeFromJsonElement<JupiterSwapResponse>(response)
-            val txInstructions = Jupiter.buildJupiterTransaction( jupiterSwapResponse)
+            val swapResponse = Altude.json.decodeFromJsonElement<SwapResponse>(response)
+            val txInstructions = Swap.buildSwapTransaction( swapResponse)
             // Fetch the lookup table from RPC
-            val tableAddress = jupiterSwapResponse.addressLookupTableAddresses?.get(0) ?: error("No table")
+            val tableAddress = swapResponse.addressLookupTableAddresses?.get(0) ?: error("No table")
 //            val tableAccount = rpc.getAddressLookupTable(tableAddress)
 //
 //            // Map table addresses to MessageAddressTableLookup with correct indexes
-            val lookupTables = jupiterSwapResponse.addressLookupTableAddresses?.map { lookupTableAddress ->
+            val lookupTables = swapResponse.addressLookupTableAddresses?.map { lookupTableAddress ->
 //                val tablePubkeys = tableAccount.addresses.map { PublicKey(it) }
 //
 //                // Compute indexes of the accounts used in instructions
@@ -427,7 +426,7 @@ object GaslessManager {
     ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
         return@withContext try {
 
-            var service = JupiterConfig.createService(JupiterService::class.java)
+            var service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
@@ -441,34 +440,7 @@ object GaslessManager {
             Result.failure(e)
         }
     }
-    suspend fun searchToken(
-        token: String
-    ): Result<TokenInfo> = withContext(Dispatchers.IO) {
-        return@withContext try {
 
-            val service = JupiterConfig.createService(JupiterService::class.java)
-            val response = service.search(token).await()
-
-            Result.success(Altude.json.decodeFromJsonElement<TokenInfo>(response))
-        } catch (e: Exception) {
-            Result.failure(e)
-
-        }
-    }
-    suspend fun shield(
-        mints: String
-    ): Result<Any> = withContext(Dispatchers.IO) {
-        return@withContext try {
-
-            val service = JupiterConfig.createService(JupiterService::class.java)
-            val response = service.search(mints).await()
-
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
-
-        }
-    }
     suspend fun getKeyPair(account: String = ""): Keypair {
         val seedData = StorageService.getDecryptedSeed(account)
         if (seedData != null) {

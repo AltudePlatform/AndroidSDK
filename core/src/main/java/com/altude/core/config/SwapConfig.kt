@@ -11,27 +11,11 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 
-object JupiterConfig {
+object SwapConfig {
     private lateinit var retrofit: Retrofit
-    var rpcBaseUrl = "https://lite-api.jup.ag"
+    var baseUrl = "https://lite-api.jup.ag/swap/v1/"
 
-//    @OptIn(ExperimentalSerializationApi::class)
-//    fun initialize(rpcBaseUrl: String) {
-//        val json = Json { ignoreUnknownKeys = true }
-//        val logging = HttpLoggingInterceptor().apply {
-//            level = HttpLoggingInterceptor.Level.BODY
-//        }
-//
-//        val client = OkHttpClient.Builder()
-//            .addInterceptor(logging)
-//            .build()
-//
-//        retrofit = Retrofit.Builder()
-//            .baseUrl(rpcBaseUrl.ensureTrailingSlash()) // 🔑 must end with /
-//            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-//            .client(client)
-//            .build()
-//    }
+
 
     @OptIn(ExperimentalSerializationApi::class)
     fun <T> createService( service: Class<T>): T {
@@ -49,7 +33,7 @@ object JupiterConfig {
             .build()
 
         retrofit = Retrofit.Builder()
-            .baseUrl(rpcBaseUrl.ensureTrailingSlash()) // ()) // 🔑 must end with /
+            .baseUrl(baseUrl.ensureTrailingSlash()) // ()) // 🔑 must end with /
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .client(client)
             .build()

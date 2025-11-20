@@ -2,24 +2,24 @@ package com.altude.core.data
 import  kotlinx.serialization.Serializable
 
 @Serializable
-data class JupiterSwapResponse(
-    val otherInstructions: List<JupiterInstruction>? = null,
-    val computeBudgetInstructions: List<JupiterInstruction>? = null,
-    val setupInstructions: List<JupiterInstruction>? = null,
-    val swapInstruction: JupiterInstruction? = null,
-    val cleanupInstruction: JupiterInstruction? = null,
+data class SwapResponse(
+    val otherInstructions: List<SwapInstruction>? = null,
+    val computeBudgetInstructions: List<SwapInstruction>? = null,
+    val setupInstructions: List<SwapInstruction>? = null,
+    val swapInstruction: SwapInstruction? = null,
+    val cleanupInstruction: SwapInstruction? = null,
     val addressLookupTableAddresses: List<String>? = null
 )
 
 @Serializable
-data class JupiterInstruction(
+data class SwapInstruction(
     val programId: String,
-    val accounts: List<JupiterAccountMeta>,
+    val accounts: List<SwapAccountMeta>,
     val data: String
 )
 
 @Serializable
-data class JupiterAccountMeta(
+data class SwapAccountMeta(
     val pubkey: String,
     val isSigner: Boolean,
     val isWritable: Boolean

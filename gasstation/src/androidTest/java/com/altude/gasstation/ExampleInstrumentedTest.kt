@@ -40,7 +40,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"ak_7KRePt6yFlsv_DYkuNGznpzpKFJTecsagXZwwSB0U2o")
+        Altude.setApiKey(context,"")
     }
 
 //    @Test
