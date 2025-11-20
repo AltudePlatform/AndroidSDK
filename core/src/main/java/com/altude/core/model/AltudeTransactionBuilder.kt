@@ -3,7 +3,6 @@ package com.altude.core.model
 import com.ditchoom.buffer.PlatformBuffer
 import com.ditchoom.buffer.allocate
 import com.metaplex.signer.Signer
-import foundation.metaplex.base58.decodeBase58
 import foundation.metaplex.base58.encodeToBase58String
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.Blockhash
