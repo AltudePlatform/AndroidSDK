@@ -2,12 +2,9 @@ package com.altude.core.Programs
 
 import android.os.Build
 import androidx.annotation.RequiresApi
-import com.altude.core.data.JupiterInstruction
-import com.altude.core.data.JupiterSwapResponse
-import com.altude.core.model.AltudeTransactionBuilder
-import com.altude.core.network.QuickNodeRpc
+import foundation.metaplex.base58.decodeBase58
 import foundation.metaplex.solana.transactions.AccountMeta
-import foundation.metaplex.solana.transactions.Transaction
+import foundation.metaplex.solana.transactions.SolanaTransaction
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
 import okio.ByteString.Companion.decodeBase64
