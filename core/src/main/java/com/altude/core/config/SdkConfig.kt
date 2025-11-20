@@ -47,16 +47,17 @@ object SdkConfig {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
-        val trustAllCerts: Array<TrustManager> = arrayOf<TrustManager>(@SuppressLint("CustomX509TrustManager")
-        object : X509TrustManager {
-            @SuppressLint("TrustAllX509TrustManager")
-            override fun checkClientTrusted(chain: Array<X509Certificate?>?, authType: String?) {}
-            @SuppressLint("TrustAllX509TrustManager")
-            override fun checkServerTrusted(chain: Array<X509Certificate?>?, authType: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate?>? {
-                return arrayOfNulls<X509Certificate>(0)
+        val trustAllCerts: Array<TrustManager> = arrayOf<TrustManager>(
+            @SuppressLint("CustomX509TrustManager")
+            object : X509TrustManager {
+                @SuppressLint("TrustAllX509TrustManager")
+                override fun checkClientTrusted(chain: Array<X509Certificate?>?, authType: String?) {}
+                @SuppressLint("TrustAllX509TrustManager")
+                override fun checkServerTrusted(chain: Array<X509Certificate?>?, authType: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate?>? {
+                    return arrayOfNulls<X509Certificate>(0)
+                }
             }
-        }
         )
 
         val sslContext = SSLContext.getInstance("SSL")

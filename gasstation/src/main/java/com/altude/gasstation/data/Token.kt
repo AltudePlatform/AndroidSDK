@@ -8,11 +8,11 @@ enum class Token(val mainnet: String, val devnet: String) {
         devnet  = "So11111111111111111111111111111111111111112"
     ),
     USDT(
-        mainnet = "Es9vMFrzaCERGFF3rT97sC5LMiRWqgmT2o7qC1xNNjXG",
-        devnet  = "" // no official devnet USDT
+        mainnet = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+        devnet  = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" // no official devnet USDT
     ),
     USDC(
-        mainnet = "EPjFWdd5AufqSSqeM2qSX2mVesERs85x3n5wjLWe1RtK",
+        mainnet = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         devnet  = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
     ),
     LINK(
