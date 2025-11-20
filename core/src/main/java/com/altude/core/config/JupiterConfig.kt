@@ -49,7 +49,7 @@ object JupiterConfig {
             .build()
 
         retrofit = Retrofit.Builder()
-            .baseUrl(rpcBaseUrl.ensureTrailingSlash()) // ()) // 🔑 must end with /
+            .baseUrl(rpcBaseUrl.ensureTrailingSlash()) // 🔑 must end with /
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .client(client)
             .build()
