@@ -54,9 +54,9 @@ object JupiterConfig {
             .client(client)
             .build()
 
-        if (!::retrofit.isInitialized) {
-            throw IllegalStateException("RpcConfig must be initialized first")
-        }
+        
+        
+        
         return retrofit.create(service)
     }
     private fun provideApiKeyInterceptor(): Interceptor {
