@@ -7,7 +7,6 @@ import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.SolanaTransaction
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
-import okio.ByteString.Companion.decodeBase64
 import java.util.Base64
 
 object Jupiter {
