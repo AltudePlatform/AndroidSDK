@@ -667,27 +667,6 @@ class VersionedSolanaTransaction (
 
 //        val signatureCount = Shortvec.encodeLength(versioned.signatures.count())
 //        val transactionLength = signatureCount.count() + versioned.signatures.count() * 64 + signData.count()
-//        val wireTransaction = PlatformBuffer.allocate(transactionLength)
-//        require(versioned.signatures.count() < 256)
-//        wireTransaction.writeBytes(signatureCount)
-//        versioned.signatures.forEach { (signature, _) ->
-//            when {
-//                signature !== null -> {
-//                    require(signature.count() == 64) { "signature has invalid length" }
-//                    wireTransaction.writeBytes(signature)
-//                }
-//                else -> {
-//                    wireTransaction.writeBytes(ByteArray(SIGNATURE_LENGTH))
-//                }
-//            }
-//        }
-//        wireTransaction.writeBytes(signData)
-//        wireTransaction.resetForRead()
-//        val out = wireTransaction.readByteArray(transactionLength)
-//        require(out.count() <= PACKET_DATA_SIZE) {
-//            "Transaction too large: ${out.count()} > $PACKET_DATA_SIZE"
-//        }
-//        return out
     }
 
     override fun serializeMessage(): SerializedTransactionMessage =
