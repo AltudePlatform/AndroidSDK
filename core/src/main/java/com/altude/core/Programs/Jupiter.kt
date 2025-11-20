@@ -7,7 +7,6 @@ import com.altude.core.data.JupiterSwapResponse
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.network.QuickNodeRpc
 import foundation.metaplex.solana.transactions.AccountMeta
-import foundation.metaplex.solana.transactions.SolanaTransaction
 import foundation.metaplex.solana.transactions.Transaction
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
