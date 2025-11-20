@@ -327,7 +327,7 @@ object GaslessManager {
             val service = JupiterConfig.createService(JupiterService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
-                outputMint =option.outputMint,
+                outputMint = option.outputMint,
                 amount = option.amount,
                 slippageBps = option.slippageBps,
                 swapMode = option.swapMode,
