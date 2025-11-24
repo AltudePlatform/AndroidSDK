@@ -121,17 +121,21 @@ fun SwapRequest.toQueryMap(): Map<String, Any> {
 
 @Serializable
 data class QuoteResponse(
-    val inputMint: String,
-    val inAmount: String,
-    val outputMint: String,
-    val outAmount: String,
-    val otherAmountThreshold: String,
-    val swapMode: String,
-    val slippageBps: Int,
+    val inputMint: String? = null,
+    val inAmount: String? = null,
+    val outputMint: String? = null,
+    val outAmount: String? = null,
+    val otherAmountThreshold: String? = null,
+    val swapMode: String? = null,
+    val slippageBps: Int? = null,
     val platformFee: JsonElement? = null,
-    val priceImpactPct: String,
-    val routePlan: List<RoutePlan>
-)
+    val priceImpactPct: String? = null,
+    val routePlan: List<RoutePlan>? = null,
+    val error: String? = null
+) {
+    val isError: Boolean
+        get() = error != null && error != ""
+}
 
 @Serializable
 data class RoutePlan(

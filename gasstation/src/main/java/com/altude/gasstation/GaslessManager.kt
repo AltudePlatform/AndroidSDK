@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
+import retrofit2.HttpException
 import retrofit2.await
 import java.lang.Error
 
@@ -340,10 +341,17 @@ object GaslessManager {
                 instructionVersion = option.instructionVersion,
                 dynamicSlippage = option.dynamicSlippage
             )
+            val quote =  try{ val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
+                Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)}catch (e: HttpException){
+                val raw = e.response()?.errorBody()?.string()
+                val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
+                Altude.json.decodeFromJsonElement<QuoteResponse>(errorJson)
+            }
 
-            val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
+            if(quote.isError)
+                throw Exception(quote.error)
             val swapInstructionRequest = SwapInstructionRequest(
-                quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse),
+                quoteResponse = quote,
                 userPublicKey = option.account,
                 payer = feePayerPubKey.toBase58(),
                 prioritizationFeeLamports = if (option.priorityLevelWithMaxLamports != null){
@@ -359,8 +367,14 @@ object GaslessManager {
                 }
             )
 
-            val response = service.swap(swapInstructionRequest).await()
-            val swapResponse = Altude.json.decodeFromJsonElement<SwapResponse>(response)
+            val swapResponse = try{ val response = service.swap(swapInstructionRequest).await()
+                Altude.json.decodeFromJsonElement<SwapResponse>(response)} catch (e: HttpException){
+                val raw = e.response()?.errorBody()?.string()
+                val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
+                Altude.json.decodeFromJsonElement<SwapResponse>(errorJson)
+            }
+            if(swapResponse.isError)
+                throw Exception(swapResponse.error)
             val txInstructions = Swap.buildSwapTransaction( swapResponse)
             // Fetch the lookup table from RPC
             val tableAddress = swapResponse.addressLookupTableAddresses?.get(0) ?: error("No table")
@@ -418,7 +432,6 @@ object GaslessManager {
             Result.success(serialized)
         } catch (e: Exception) {
             Result.failure(e)
-
         }
     }
     suspend fun quote(
@@ -426,16 +439,17 @@ object GaslessManager {
     ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
         return@withContext try {
 
-            var service = SwapConfig.createService(SwapService::class.java)
+            val service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
                 amount = option.amount,
                 slippageBps = option.slippageBps
             )
-            val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
-
-            Result.success(Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse))
+            val quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(service.quote(swapRequest.toQueryMap()).await())
+            if(quoteResponse.isError)
+                Result.failure<String>(Exception(quoteResponse.error))
+            Result.success(quoteResponse)
         } catch (e: Exception) {
             Result.failure(e)
         }
