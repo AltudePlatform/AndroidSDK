@@ -13,6 +13,7 @@ import com.altude.core.service.StorageService
 import com.altude.nft.data.KeyPair
 import com.altude.nft.data.SolanaKeypair
 import foundation.metaplex.rpc.Commitment
+import foundation.metaplex.solana.transactions.Message
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey

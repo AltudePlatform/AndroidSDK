@@ -51,7 +51,7 @@ object Altude {
         ignoreUnknownKeys = true   // don’t crash if backend adds new fields
         isLenient = true           // accept non-strict JSON (unquoted keys, etc.)
         encodeDefaults = true      // include default values in request bodies
-        explicitNulls = false      // don’t send nulls unless explicitly set
+
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun send(
@@ -172,6 +172,7 @@ object Altude {
             val service = SdkConfig.createService(TransactionService::class.java)
 
             val res = service.getHistory(options.offset.toString(),options.limit.toString(),options.account).await()
+
             Result.success(deCodeJson<GetHistoryData>(res))
         } catch (e: Exception) {
             println("Error: $e")
