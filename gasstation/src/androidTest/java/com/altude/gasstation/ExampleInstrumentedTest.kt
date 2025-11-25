@@ -14,6 +14,7 @@ import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.Token
 import com.altude.core.service.StorageService
 import com.altude.gasstation.data.Commitment
+import com.altude.gasstation.data.SwapOption
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 
@@ -39,7 +40,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"ak_7KRePt6yFlsv_DYkuNGznpzpKFJTecsagXZwwSB0U2o")
+        Altude.setApiKey(context,"")
     }
 
 //    @Test
@@ -276,6 +277,28 @@ class ExampleInstrumentedTest {
         val result = Altude.getBalance(option)
         println("Balance: $result")
     }
+    @Test
+    fun testSwap() = runBlocking {
+            Altude.savePrivateKey(accountPrivateKey )
+            val option = SwapOption(
+                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
+                inputMint = Token.SOL.mint(),
+                outputMint = Token.USDT.mint(),
+                amount = 100,
+                commitment = Commitment.finalized
+            )
+
+            // Wrap the callback in a suspendable way (like a suspendCoroutine)
+            val result = Altude.swap(option)
+            println("Balance: $result")
+    }
+    @Test
+    fun testSearchToken() = runBlocking {
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.searchToken("")
+        println("Balance: $result")
+    }
+
     @Test
     fun testGetAccountInfo() = runBlocking {
 //        val pda1 = MPLCore.findTreeConfigPda(PublicKey("14QSPv5BtZCh8itGrUCu2j7e7A88fwZo3cAjxi4R5Fgj"))

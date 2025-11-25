@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.Commitment
 import com.altude.gasstation.data.CreateAccountOption
+import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.gasstation.data.Token
 import kotlinx.coroutines.runBlocking
@@ -23,7 +24,7 @@ class ExampleLatencyTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"myAPIKey")
+        Altude.setApiKey(context,"ak_7KRePt6yFlsv_DYkuNGznpzpKFJTecsagXZwwSB0U2o")
     }
     suspend fun <T>measureLatency(label: String, action: suspend () -> T): Long {
         val start = System.currentTimeMillis()
@@ -88,6 +89,31 @@ class ExampleLatencyTest {
         println("Max: ${send.maxOrNull()} ms")
 
 
+        assertEquals(4, 2 + 2)
+    }
+
+    @Test
+    fun tesGetHistorytLatencySample() = runBlocking {
+
+        val requestFrequency = 10
+        val getHistory = mutableListOf<Long>()
+
+        for (i in 0..requestFrequency) { // includes requestFrequency
+            getHistory.add(measureLatency("createAccount"){
+                val options = GetHistoryOption(
+                    limit = 100,
+                    offset = 0,
+                    walletAddress = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
+                    account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
+                )
+                Altude .getHistory(options)
+            })
+
+        }
+        println("Create Account: $getHistory")
+        println("Average: ${getHistory.average()} ms")
+        println("Min: ${getHistory.minOrNull()} ms")
+        println("Max: ${getHistory.maxOrNull()} ms")
         assertEquals(4, 2 + 2)
     }
 }
