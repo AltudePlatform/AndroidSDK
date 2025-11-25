@@ -1,31 +1,29 @@
 package com.altude.gasstation
 
 import android.content.Context
-import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.api.GetAccountInfoRequest
 import com.altude.core.api.GetBalanceRequest
-import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
-import com.altude.gasstation.data.AccountInfoValue
 import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
-import com.altude.gasstation.data.TokenAmount
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
 import com.altude.core.data.BatchTransactionRequest
+import com.altude.core.data.QuoteResponse
 import com.altude.core.data.SendTransactionRequest
+import com.altude.core.data.SwapTransactionRequest
 import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
+import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.TransactionResponse
-import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
@@ -33,7 +31,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import retrofit2.await
-import java.lang.Error
 
 
 object Altude {
@@ -54,7 +51,7 @@ object Altude {
         ignoreUnknownKeys = true   // don’t crash if backend adds new fields
         isLenient = true           // accept non-strict JSON (unquoted keys, etc.)
         encodeDefaults = true      // include default values in request bodies
-        explicitNulls = false      // don’t send nulls unless explicitly set
+
     }
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun send(
@@ -133,6 +130,41 @@ object Altude {
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun swap(
+        options: SwapOption
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.swap(options)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SwapTransactionRequest(signedTransaction)
+
+            val res = service.swapTransaction(request).await()
+            Result.success(deCodeJson<TransactionResponse>(res))
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun quote(
+        options: SwapOption
+    ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.quote(options)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            Result.success(result.getOrThrow())
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getHistory(
         options: GetHistoryOption
     ): Result<GetHistoryData> = withContext(Dispatchers.IO) {
@@ -140,6 +172,7 @@ object Altude {
             val service = SdkConfig.createService(TransactionService::class.java)
 
             val res = service.getHistory(options.offset.toString(),options.limit.toString(),options.account).await()
+
             Result.success(deCodeJson<GetHistoryData>(res))
         } catch (e: Exception) {
             println("Error: $e")

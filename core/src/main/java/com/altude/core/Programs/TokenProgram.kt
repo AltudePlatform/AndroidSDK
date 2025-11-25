@@ -3,8 +3,10 @@ package com.altude.core.Programs
 import com.altude.core.Programs.Utility.TOKEN_PROGRAM_ID
 import com.altude.core.Programs.Utility.buildSetAuthorityData
 import foundation.metaplex.solana.transactions.AccountMeta
+import foundation.metaplex.solana.transactions.SolanaTransactionBuilder
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
+import org.bitcoinj.core.VersionMessage
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -34,6 +36,7 @@ object TokenProgram {
         accounts += signers.map { pubKey ->
             AccountMeta(pubKey, isSigner = true, isWritable = false)
         }
+
         return TransactionInstruction(
             programId = TOKEN_PROGRAM_ID,
             keys = accounts,
