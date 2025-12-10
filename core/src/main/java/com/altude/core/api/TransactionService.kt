@@ -3,7 +3,6 @@ package com.altude.core.api
 import com.altude.core.data.BatchTransactionRequest
 import com.altude.core.data.MintData
 import com.altude.core.data.SendTransactionRequest
-import com.altude.core.data.SwapRequest
 import com.altude.core.data.SwapTransactionRequest
 import kotlinx.serialization.Contextual
 import retrofit2.Call
@@ -13,9 +12,6 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.Serializable
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZonedDateTime
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -58,6 +54,7 @@ data class ConfigResponse @OptIn(ExperimentalTime::class) constructor(
     val FeePayer: String = "",
     val RpcUrl: String  = "",
     val Token: String = "",
+    val RpcEnvironment: String = "",
     @Contextual
     val TokenExpiration: Instant? = null
 )

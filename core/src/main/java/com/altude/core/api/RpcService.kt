@@ -2,8 +2,6 @@ package com.altude.core.api
 
 import com.altude.core.data.JsonRpc20Request
 import com.altude.core.data.RpcResponse
-import com.funkatronics.rpccore.RpcRequest
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -14,7 +12,7 @@ import retrofit2.http.POST
 
 
 
-interface QuickNodeRpcService {
+interface RpcService {
     @POST(".")
     suspend fun callRpc(
         @Header("Authorization") bearerToken: String,
@@ -22,7 +20,7 @@ interface QuickNodeRpcService {
     ): JsonElement
 }
 
-suspend inline fun <reified T> QuickNodeRpcService.callRpcTyped(
+suspend inline fun <reified T> RpcService.callRpcTyped(
     json: Json,
     bearerToken: String,
     body: JsonRpc20Request<JsonElement>
