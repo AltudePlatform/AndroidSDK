@@ -22,13 +22,12 @@ import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.HotSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
-import com.altude.core.network.QuickNodeRpc
+import com.altude.core.network.AltudeRpc
 import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.toQueryMap
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.core.model.TransactionVersion
-import com.altude.core.model.VersionedTransaction
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.parseLookupTableAccountBase64
 import com.metaplex.signer.Signer
@@ -47,7 +46,7 @@ import java.lang.Error
 
 object GaslessManager {
 
-    private val rpc = QuickNodeRpc(SdkConfig.apiConfig.RpcUrl)
+    private val rpc = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
     val feePayerPubKey =
         PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
     @OptIn(ExperimentalSerializationApi::class)
