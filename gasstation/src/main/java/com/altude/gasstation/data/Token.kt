@@ -44,7 +44,7 @@ enum class Token(val mainnet: String, val devnet: String) {
         devnet  = ""
     ),
     KIN(
-        mainnet = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX",
+        mainnet = "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6",
         devnet  = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
     ),
     SRM(
@@ -86,5 +86,5 @@ enum class Token(val mainnet: String, val devnet: String) {
         devnet  = ""
     );
 
-    fun mint(): String = if (SdkConfig.isDevnet) (devnet.ifEmpty { mainnet }) else mainnet
+    fun mint(): String = if (SdkConfig.apiConfig.Cluster == "devnet") (devnet.ifEmpty { mainnet }) else mainnet
 }

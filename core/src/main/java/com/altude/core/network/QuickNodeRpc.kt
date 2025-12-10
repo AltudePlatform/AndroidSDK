@@ -133,13 +133,14 @@ class QuickNodeRpc(val endpoint: String) {
         return resp.result ?: error("No result returned")
     }
     @OptIn(ExperimentalSerializationApi::class)
-    suspend inline fun <reified T>getAccountInfo(publicKey:String): T {
-        token = getValidToken()?: error("No valid token")
+    suspend inline fun <reified T>getAccountInfo(publicKey:String, isBase64: Boolean = false): T {
+        token = getValidToken()
         val params: MutableList<JsonElement> = mutableListOf()
         params.add(json.encodeToJsonElement(publicKey))
 
         val options = buildJsonObject {
-            put("encoding", "jsonParsed")
+            if(!isBase64)put("encoding", "jsonParsed")
+            else put("encoding", "base64")
         }
         params.add(options)
         val rpcRequest = JsonRpc20Request(
