@@ -1,6 +1,7 @@
 package com.altude.core.model
 
 import com.metaplex.signer.Signer
+import com.solana.transaction.AddressTableLookup
 import foundation.metaplex.solana.transactions.Blockhash
 import foundation.metaplex.solana.transactions.Transaction
 import foundation.metaplex.solana.transactions.TransactionInstruction

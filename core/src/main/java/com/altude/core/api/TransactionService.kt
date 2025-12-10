@@ -58,6 +58,7 @@ data class ConfigResponse @OptIn(ExperimentalTime::class) constructor(
     val FeePayer: String = "",
     val RpcUrl: String  = "",
     val Token: String = "",
+    val Cluster: String = "",
     @Contextual
     val TokenExpiration: Instant? = null
 )

@@ -2,7 +2,7 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.Swap
+import com.altude.core.Programs.SwapHelper
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.api.SwapService
 import com.altude.core.config.SwapConfig
@@ -27,7 +27,10 @@ import com.altude.core.service.StorageService
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.toQueryMap
 import com.altude.core.model.MessageAddressTableLookup
+import com.altude.core.model.TransactionVersion
+import com.altude.core.model.VersionedTransaction
 import com.altude.gasstation.data.SwapOption
+import com.altude.gasstation.data.parseLookupTableAccountBase64
 import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
@@ -226,9 +229,11 @@ object GaslessManager {
                     }
                 }
                 if (txInstructions.count() == 0) {
-                    if (option.tokens.count() > 1)
-                        throw Error("All Token accounts already created")
-                    throw Error("Token account already created")
+                    if (option.tokens.count() > 1) {
+                        return@withContext  Result.failure(Error("All Token accounts already created"))
+
+                    }
+                    return@withContext Result.failure( Error("Token account already created"))
                 }
                 val authorizedSigner = HotSigner(SolanaKeypair(ownerKey, defaultWallet.secretKey))
 
@@ -274,25 +279,28 @@ object GaslessManager {
                 val ataInfo = Utility.getAccountInfo(ata.toBase58())
                 if (ataInfo != null) {
                     val parsed = ataInfo.data?.parsed?.info
-                    if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
-                        authorized = feePayerPubKey
-                    else {
-                        authorized = defaultWallet.publicKey
-                        isOwnerRequiredSignature = true
+                    val balance = parsed?.tokenAmount?.UiAmount ?: 0.0
+                    if(balance == 0.0){
+                        if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
+                            authorized = feePayerPubKey
+                        else {
+                            authorized = defaultWallet.publicKey
+                            isOwnerRequiredSignature = true
+                        }
+                        val instruction = TokenProgram.closeAtaAccount(
+                            ata = ata,
+                            destination = feePayerPubKey,
+                            authority = authorized
+                        )
+                        txInstructions.add(instruction)
                     }
-                    val instruction = TokenProgram.closeAtaAccount(
-                        ata = ata,
-                        destination = feePayerPubKey,
-                        authority = authorized
-                    )
-                    txInstructions.add(instruction)
 
                 }
             }
             if (txInstructions.count() == 0) {
                 if (option.tokens.count() > 1)
-                    throw Error("All Token accounts already closed")
-                throw Error("Token account already closed")
+                    return@withContext Result.failure( Error("All token accounts have balance, or are already closed."))
+                return@withContext Result.failure( Error("The token account has a balance or is already closed."))
             }
 
             val blockhashInfo = rpc.getLatestBlockhash(
@@ -375,46 +383,51 @@ object GaslessManager {
             }
             if(swapResponse.isError)
                 throw Exception(swapResponse.error)
-            val txInstructions = Swap.buildSwapTransaction( swapResponse)
-            // Fetch the lookup table from RPC
-            val tableAddress = swapResponse.addressLookupTableAddresses?.get(0) ?: error("No table")
-//            val tableAccount = rpc.getAddressLookupTable(tableAddress)
-//
-//            // Map table addresses to MessageAddressTableLookup with correct indexes
-            val lookupTables = swapResponse.addressLookupTableAddresses?.map { lookupTableAddress ->
-//                val tablePubkeys = tableAccount.addresses.map { PublicKey(it) }
-//
-//                // Compute indexes of the accounts used in instructions
-//                val writableIndexes = txInstructions.flatMap { it.keys }
-//                    .mapNotNull { meta ->
-//                        val idx = tablePubkeys.indexOf(meta.publicKey)
-//                        if (idx >= 0 && meta.isWritable) idx else null
-//                    }
-//
-//                val readonlyIndexes = txInstructions.flatMap { it.keys }
-//                    .mapNotNull { meta ->
-//                        val idx = tablePubkeys.indexOf(meta.publicKey)
-//                        if (idx >= 0 && !meta.isWritable) idx else null
-//                    }
-//
-//                MessageAddressTableLookup(
-//                    accountKey = PublicKey(lookupTableAddress),
-//                    writableIndexes = writableIndexes,
-//                    readonlyIndexes = readonlyIndexes
-//                )
-                MessageAddressTableLookup(
-                    accountKey = PublicKey(tableAddress),
-                    writableIndexes = listOf(0, 1), // indices of accounts that will be written
-                    readonlyIndexes = listOf(2, 3)  // indices of accounts only read
-                )
-            }
 
+            val result = Altude.createAccount(
+                CreateAccountOption(
+                    account = option.account,
+                    tokens = listOf(option.inputMint,option.outputMint)
+                )
+            )
+
+            val txInstructions = SwapHelper.buildSwapTransaction( swapResponse)
+
+            val mainKeys = swapResponse.swapInstruction?.accounts?.map { it.pubkey } ?: emptyList()
+
+            val lookupTables = swapResponse.addressLookupTableAddresses?.map { tablePubkey ->
+
+                val accountInfo = Utility .getLookUpTable(tablePubkey)
+                val dataBase64 = accountInfo?.data?.get(0) as? String ?: ""
+
+                val alt = parseLookupTableAccountBase64(dataBase64)
+                val tableAddresses = alt.addresses.map { it.toBase58() }
+
+                val writableIdx = mutableListOf<Int>()
+                val readonlyIdx = mutableListOf<Int>()
+
+                swapResponse.swapInstruction?.accounts?.forEach { meta ->
+                    val idx = tableAddresses.indexOf(meta.pubkey)
+
+                    // ✅ skip if already in mainKeys
+                    if (idx >= 0 && !mainKeys.contains(meta.pubkey)) {
+                        if (meta.isWritable) writableIdx += idx
+                        else readonlyIdx += idx
+                    }
+                }
+
+                MessageAddressTableLookup(
+                    accountKey = PublicKey(tablePubkey),
+                    writableIndexes = writableIdx.distinct(),
+                    readonlyIndexes = readonlyIdx.distinct()
+                )
+            }?.filter { it.writableIndexes.isNotEmpty() || it.readonlyIndexes.isNotEmpty() } ?: emptyList()
 
             val blockhashInfo = rpc.getLatestBlockhash(
                 commitment = option.commitment.name
             )
 
-            val tx = AltudeTransactionBuilder()
+            val tx = AltudeTransactionBuilder(TransactionVersion.V0)
                 .setFeePayer(feePayerPubKey)
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)

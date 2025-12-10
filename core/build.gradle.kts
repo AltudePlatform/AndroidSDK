@@ -102,4 +102,5 @@ dependencies {
 
     // Auth
     implementation(libs.jwt)
+    implementation("com.solanamobile:web3-solana:0.2.5")
 }

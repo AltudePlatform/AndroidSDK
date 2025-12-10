@@ -4,6 +4,8 @@ import com.altude.core.config.SdkConfig
 import com.altude.gasstation.data.AccountInfoResult
 import com.altude.gasstation.data.AccountInfoValue
 import com.altude.core.network.QuickNodeRpc
+import com.altude.gasstation.data.LookUpTableResult
+import com.altude.gasstation.data.LookUpTableValue
 
 
 object  Utility {
@@ -11,6 +13,10 @@ object  Utility {
     suspend fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
         val rpc = QuickNodeRpc(QUICKNODE_URL)
         return  rpc.getAccountInfo<AccountInfoResult>(publicKey).value
+    }
+    suspend fun getLookUpTable(publicKey: String, useBase64: Boolean = true): LookUpTableValue? {
+        val rpc = QuickNodeRpc(QUICKNODE_URL)
+        return  rpc.getAccountInfo<LookUpTableResult>(publicKey, useBase64).value
     }
     suspend fun ataExists(publicKey: String = ""): Boolean {
         val response = getAccountInfo(publicKey)
