@@ -8,12 +8,10 @@ import com.altude.core.data.MintOption
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.HotSigner
-import com.altude.core.network.QuickNodeRpc
+import com.altude.core.network.AltudeRpc
 import com.altude.core.service.StorageService
 import com.altude.nft.data.KeyPair
-import com.altude.nft.data.SolanaKeypair
 import foundation.metaplex.rpc.Commitment
-import foundation.metaplex.solana.transactions.Message
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
@@ -24,7 +22,7 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    private val rpc = QuickNodeRpc(SdkConfig.apiConfig.RpcUrl)
+    private val rpc = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
     val feePayerPubKey =
         PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
 
