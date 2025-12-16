@@ -350,6 +350,14 @@ object GaslessManager {
                 instructionVersion = option.instructionVersion,
                 dynamicSlippage = option.dynamicSlippage
             )
+
+            val result = Altude.createAccount(
+                CreateAccountOption(
+                    account = option.account,
+                    tokens = listOf(option.inputMint,option.outputMint)
+                )
+            )
+
             val quote =  try{ val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
                 Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)}catch (e: HttpException){
                 val raw = e.response()?.errorBody()?.string()
@@ -384,13 +392,6 @@ object GaslessManager {
             }
             if(swapResponse.isError)
                 throw Exception(swapResponse.error)
-
-            val result = Altude.createAccount(
-                CreateAccountOption(
-                    account = option.account,
-                    tokens = listOf(option.inputMint,option.outputMint)
-                )
-            )
 
             val txInstructions = SwapHelper.buildSwapTransaction( swapResponse)
 
