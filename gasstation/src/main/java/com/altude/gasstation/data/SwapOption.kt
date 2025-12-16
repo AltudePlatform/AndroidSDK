@@ -17,7 +17,7 @@ data class SwapOption(
      * Input amount if swapMode = ExactIn.
      * Output amount if swapMode = ExactOut.
      */
-    val amount: Long,
+    val amount: Double,
 
     /**
      * Slippage threshold in basis points. Default is 50 (0.5%).
@@ -68,7 +68,7 @@ data class SwapOption(
      * Maximum number of accounts used in the quote.
      * Default is 64.
      */
-    val maxAccounts: Int = 64,
+    val maxAccounts: Int = 32,
 
     /**
      * Instruction version: "V1" or "V2".

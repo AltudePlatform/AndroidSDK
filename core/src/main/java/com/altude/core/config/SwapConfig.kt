@@ -1,6 +1,5 @@
 package com.altude.core.config
 
-import com.altude.core.config.SdkConfig.apiKey
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -13,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 object SwapConfig {
     private lateinit var retrofit: Retrofit
-    var baseUrl = "https://lite-api.jup.ag/swap/v1/"
+    var baseUrl = "https://lite-api.jup.ag/swap/v1"//"https://api.jup.ag/swap/v1" "https://lite-api.jup.ag/swap/v1/"
 
 
 
@@ -25,7 +24,7 @@ object SwapConfig {
         }
 
         val client = OkHttpClient.Builder()
-            .addInterceptor(provideApiKeyInterceptor())
+            //.addInterceptor(provideApiKeyInterceptor())
             .connectTimeout(60, TimeUnit.SECONDS)   // increase timeouts
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
@@ -48,9 +47,9 @@ object SwapConfig {
             val original = chain.request()
             val builder = original.newBuilder()
 
-            apiKey.let {
-                builder.addHeader("X-API-Key", it)
-            }
+//            "".let {
+//                builder.addHeader("X-API-Key", it)
+//            }
 
             val request = builder.build()
             chain.proceed(request)
