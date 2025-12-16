@@ -300,7 +300,7 @@ class VersionedSolanaTransaction (
     val versioned: VersionedTransaction
         get() {
             if (!::message.isInitialized) {
-                message = compileVerionedMessage()
+                message = compileVersionedMessage()
             }
             return VersionedTransaction(message, signatures)
         }
@@ -323,7 +323,7 @@ class VersionedSolanaTransaction (
         sign(signer.toList())
     }
     private fun compile(): Message {
-        val message = compileVerionedMessage()
+        val message = compileVersionedMessage()
         this.versioned.message = message
         val signedKeys = message.accounts.slice(
             0 until message.signatureCount.toByte()
@@ -534,7 +534,7 @@ class VersionedSolanaTransaction (
     private fun toSolanaPublicKey(publicKey: PublicKey): SolanaPublicKey{
         return SolanaPublicKey.from(publicKey.toBase58())
     }
-    fun compileVerionedMessage(): Message {
+    fun compileVersionedMessage(): Message {
         this.nonceInfo?.let { nonceInfo ->
             if (instructions.first() != nonceInfo.nonceInstruction) {
                 recentBlockhash = nonceInfo.nonce

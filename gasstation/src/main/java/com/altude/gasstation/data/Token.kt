@@ -84,7 +84,12 @@ enum class Token(val mainnet: String, val devnet: String) {
     HADES(
         mainnet = "HadesWrTPLE6q8sL1oN4zXkUciVHh24vMKTbTPV85Us",
         devnet  = ""
+    ),
+    CASH(
+        mainnet = "CASHx9KJUStyftLFWGvEVf59SGeG9sh5FfcnZMVPCASH",
+        devnet  = ""
     );
 
-    fun mint(): String = if (SdkConfig.apiConfig.Cluster == "devnet") (devnet.ifEmpty { mainnet }) else mainnet
+
+    fun mint(): String = if (SdkConfig.apiConfig.RpcEnvironment.lowercase() == "devnet") (devnet.ifEmpty { mainnet }) else mainnet
 }

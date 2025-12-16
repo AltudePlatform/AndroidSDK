@@ -145,8 +145,7 @@ object Altude {
             val res = service.swapTransaction(request).await()
 
             //try to close account after swap
-            closeAccount(CloseAccountOption(options.account, listOf(options.inputMint)))
-            closeAccount(CloseAccountOption(options.account, listOf(options.outputMint)))
+            closeAccount(CloseAccountOption(options.account, listOf(options.inputMint))).getOrNull()
 
             Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {

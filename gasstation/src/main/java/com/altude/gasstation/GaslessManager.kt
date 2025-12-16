@@ -43,6 +43,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import retrofit2.HttpException
 import retrofit2.await
 import java.lang.Error
+import kotlin.math.pow
 
 object GaslessManager {
 
@@ -278,7 +279,7 @@ object GaslessManager {
                 val ataInfo = Utility.getAccountInfo(ata.toBase58())
                 if (ataInfo != null) {
                     val parsed = ataInfo.data?.parsed?.info
-                    val balance = parsed?.tokenAmount?.UiAmount ?: 0.0
+                    val balance = parsed?.tokenAmount?.uiAmount ?: 0.0
                     if(balance == 0.0){
                         if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
                             authorized = feePayerPubKey
@@ -288,7 +289,7 @@ object GaslessManager {
                         }
                         val instruction = TokenProgram.closeAtaAccount(
                             ata = ata,
-                            destination = feePayerPubKey,
+                            destination = authorized,
                             authority = authorized
                         )
                         txInstructions.add(instruction)
@@ -330,12 +331,13 @@ object GaslessManager {
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val defaultWallet = getKeyPair(option.account)
-
+            val decimals = Utility.getTokenDecimals(option.inputMint)
+            val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint = option.outputMint,
-                amount = option.amount,
+                amount = rawAmount,
                 slippageBps = option.slippageBps,
                 swapMode = option.swapMode,
                 dexes =  option.dexes,
@@ -407,7 +409,7 @@ object GaslessManager {
 
                 swapResponse.swapInstruction?.accounts?.forEach { meta ->
                     val idx = tableAddresses.indexOf(meta.pubkey)
-
+                    val metaKey = meta.pubkey
                     // ✅ skip if already in mainKeys
                     if (idx >= 0 && !mainKeys.contains(meta.pubkey)) {
                         if (meta.isWritable) writableIdx += idx
@@ -450,12 +452,13 @@ object GaslessManager {
         option: SwapOption
     ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
         return@withContext try {
-
+            val decimals = Utility.getTokenDecimals(option.inputMint)
+            val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
                 outputMint =option.outputMint,
-                amount = option.amount,
+                amount = rawAmount,
                 slippageBps = option.slippageBps
             )
             val quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(service.quote(swapRequest.toQueryMap()).await())

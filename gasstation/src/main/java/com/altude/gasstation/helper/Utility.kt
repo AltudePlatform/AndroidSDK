@@ -4,6 +4,7 @@ import com.altude.core.config.SdkConfig
 import com.altude.gasstation.data.AccountInfoResult
 import com.altude.gasstation.data.AccountInfoValue
 import com.altude.core.network.AltudeRpc
+import com.altude.gasstation.data.AccountInfoResponse
 import com.altude.gasstation.data.LookUpTableResult
 import com.altude.gasstation.data.LookUpTableValue
 
@@ -33,10 +34,15 @@ object  Utility {
         }
     }
     suspend fun getTokenDecimals(mintAddress: String): Int {
-        val response = getAccountInfo(mintAddress)
+        try {
 
-        val decimals = response?.data?.parsed?.info?.decimals
+            val response = getAccountInfo(mintAddress)
 
-        return decimals ?: throw Exception("Unable to parse token decimals from mint: $mintAddress")
+            val decimals = response?.data?.parsed?.info?.decimals
+
+            return decimals ?: throw Exception("Unable to parse token decimals from mint: $mintAddress")
+        }catch (e: Exception){
+            throw Exception("Unable to parse token decimals from mint: $mintAddress")
+        }
     }
 }
