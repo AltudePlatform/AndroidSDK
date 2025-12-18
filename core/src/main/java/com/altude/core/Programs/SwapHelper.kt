@@ -31,6 +31,11 @@ object SwapHelper {
             instructions.add(parseInstruction(it))
         }
 
+        // 2️⃣ Add setup instructions
+        swapResponse.setupInstructions?.forEach {
+            instructions.add(parseInstruction(it))
+        }
+
         // 3️⃣ Add swap instruction
         swapResponse.swapInstruction?.let {
             instructions.add(parseInstruction(it))

@@ -88,6 +88,10 @@ enum class Token(val mainnet: String, val devnet: String) {
     CASH(
         mainnet = "CASHx9KJUStyftLFWGvEVf59SGeG9sh5FfcnZMVPCASH",
         devnet  = ""
+    ),
+    PIPPIN(
+        mainnet = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+        devnet  = ""
     );
 
 
