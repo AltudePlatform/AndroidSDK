@@ -448,10 +448,6 @@ object GaslessManager {
                 tx.serialize(SerializeConfig(requireAllSignatures = false)),
                 Base64.NO_WRAP
             )
-//            val tx = AltudeTransaction(swapResponse.swapTransaction ?: "")
-//                .partialSign(listOf(HotSigner(defaultWallet), EmptySignature(feePayerPubKey)))
-//
-//            val serialized = tx.serialize()
 
             Result.success(serialized)
         } catch (e: Exception) {
