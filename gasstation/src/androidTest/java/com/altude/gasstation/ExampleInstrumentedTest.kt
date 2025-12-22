@@ -281,7 +281,8 @@ class ExampleInstrumentedTest {
     @Test
     fun testSwap() = runBlocking {
         //Altude.savePrivateKey(accountPrivateKey )
-        Altude.saveMnemonic("")
+        val testMnemonic = System.getProperty("TEST_MNEMONIC") ?: ""
+        Altude.saveMnemonic(testMnemonic)
         val option = SwapOption(
             account = "BG8ttfjfSdUVxJB5saKq59gfFdtpvDBeVTwg1X3ZBUyS",
             inputMint = Token.SOL.mint(),
