@@ -671,7 +671,7 @@ class VersionedSolanaTransaction (
             instruction.accountIndices.forEach { keyIndex -> require(keyIndex >= 0) }
         }
         // 4. Return Message
-        return (when (transacionVersion) {
+        return (when (transactionVersion) {
             TransactionVersion.V0 -> VersionedMessage(
                 version = VERSION_BIT.toByte(),
                 signatureCount = numRequiredSignatures.toUByte(),
