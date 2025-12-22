@@ -155,7 +155,7 @@ object Altude {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun swap2(
+    suspend fun swapUsingServerTransaction(
         options: SwapOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
