@@ -51,18 +51,6 @@ class AltudeTransaction (base64:String)  {
         )
         return this
     }
-//    private fun _addSignature(pubkey: PublicKey, signature: TransactionSignature) {
-//        require(signature.count() == 64)
-//
-//        val index = versioned.signatures.indexOfFirst { sigpair ->
-//            pubkey.equals(sigpair.publicKey)
-//        }
-//        if (index < 0) {
-//            throw Error("unknown signer: $pubkey")
-//        }
-//
-//        versioned.signatures[index].signature = signature
-//    }
     fun  serialize(): String {
         return Base64.toBase64String(transaction.serialize())
     }
