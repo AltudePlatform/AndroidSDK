@@ -302,8 +302,8 @@ object GaslessManager {
             }
             if (txInstructions.count() == 0) {
                 if (option.tokens.count() > 1)
-                    return@withContext Result.failure( Error("All token accounts have balance, or are already closed."))
-                return@withContext Result.failure( Error("The token account has a balance or is already closed."))
+                    return@withContext Result.failure(Error("All selected token accounts either have a balance or are already closed."))
+                return@withContext Result.failure(Error("The selected token account either has a balance or is already closed."))
             }
 
             val blockhashInfo = rpc.getLatestBlockhash(
