@@ -3,12 +3,14 @@ package com.altude.core.model
 import com.ditchoom.buffer.PlatformBuffer
 import com.ditchoom.buffer.allocate
 import com.metaplex.signer.Signer
-import foundation.metaplex.base58.encodeToBase58String
+import com.solana.publickey.SolanaPublicKey
+import com.solana.transaction.AddressTableLookup
+import com.solana.transaction.Instruction
+import com.solana.transaction.LegacyMessage
+import com.solana.transaction.Message
+import com.solana.transaction.VersionedMessage
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.Blockhash
-import foundation.metaplex.solana.transactions.CompiledInstruction
-import foundation.metaplex.solana.transactions.Message
-import foundation.metaplex.solana.transactions.MessageHeader
 import foundation.metaplex.solana.transactions.NonceInformation
 import foundation.metaplex.solana.transactions.PACKET_DATA_SIZE
 import foundation.metaplex.solana.transactions.SIGNATURE_LENGTH
@@ -25,8 +27,10 @@ import foundation.metaplex.solanapublickeys.PublicKey
 import java.lang.Error
 import kotlin.collections.count
 
-class AltudeTransactionBuilder : TransactionBuilder {
-    private val transaction: VersionedSolanaTransaction = VersionedSolanaTransaction()
+class AltudeTransactionBuilder(transactionVersion: TransactionVersion = TransactionVersion.Legacy) : TransactionBuilder {
+
+    private val transaction: VersionedSolanaTransaction = VersionedSolanaTransaction(transactionVersion)
+
     override fun addInstruction(transactionInstruction: TransactionInstruction): TransactionBuilder {
         transaction.add(transactionInstruction)
         return this
@@ -57,12 +61,22 @@ class AltudeTransactionBuilder : TransactionBuilder {
     }
 
     override fun addLookUpTable(lookupTable: MessageAddressTableLookup): TransactionBuilder {
-        transaction.addMessageAddressTableLookup(lookupTable)
+        transaction.addMessageAddressTableLookup(AddressTableLookup(
+            account = SolanaPublicKey.from(lookupTable.accountKey.toBase58()),
+            writableIndexes = lookupTable.writableIndexes.map { it -> it.toUByte() },
+            readOnlyIndexes = lookupTable.readonlyIndexes.map { it -> it.toUByte() }
+        ))
         return this
     }
 
     override fun addLookUpTables(lookupTables: List<MessageAddressTableLookup>?): TransactionBuilder {
-        transaction.addMessageAddressTableLookups(lookupTables)
+        transaction.addMessageAddressTableLookups(lookupTables?.map { lookupTable ->
+            AddressTableLookup(
+                account = SolanaPublicKey.from(lookupTable.accountKey.toBase58()),
+                writableIndexes = lookupTable.writableIndexes.map { it -> it.toUByte() },
+                readOnlyIndexes = lookupTable.readonlyIndexes.map { it -> it.toUByte() }
+            )
+        })
         return this
     }
 }
@@ -75,6 +89,12 @@ private const val VERSION_V0: Int = 0
 const val PACKET_DATA_SIZE = 1280 - 40 - 8
 
 const val SIGNATURE_LENGTH = 64
+
+enum class TransactionVersion {
+    V0,
+    Legacy
+}
+
 
 /**
  * A lookup entry for a MessageV0 describing which indices (u8) in the lookup table
@@ -145,190 +165,13 @@ data class MessageAddressTableLookup(
     }
 }
 
-/**
- * A V0 message: header + accountKeys + recentBlockhash + instructions + addressTableLookups
- */
-class MessageV0(
-    override val header: MessageHeader,
-    override val accountKeys: List<PublicKey>,
-    override val recentBlockhash: String,
-    override val instructions: List<CompiledInstruction>,
-    val addressTableLookups: List<MessageAddressTableLookup>,
-
-    private var indexToProgramIds: MutableMap<Int, PublicKey> = mutableMapOf()
-) : Message {
-    override fun isAccountSigner(index: Int): Boolean {
-        return index < this.header.numRequiredSignatures
-    }
-
-    override fun isAccountWritable(index: Int): Boolean {
-        return index < header.numRequiredSignatures - header.numReadonlySignedAccounts ||
-                (index >= header.numRequiredSignatures &&
-                        index < accountKeys.count() - header.numReadonlyUnsignedAccounts)
-    }
-
-    override fun isProgramId(index: Int): Boolean {
-        return indexToProgramIds.containsKey(index)
-    }
-
-    override fun nonProgramIds(): List<PublicKey> {
-        return this.accountKeys.filterIndexed { index, _ -> !this.isProgramId(index) }
-    }
-
-    override fun programIds(): List<PublicKey> {
-        return indexToProgramIds.values.toList()
-    } // inherits behavior if you have common functions in Message
-    override fun serialize(): ByteArray {
-        val acctCountEnc = Shortvec.encodeLength(accountKeys.size)
-        val instrCountEnc = Shortvec.encodeLength(instructions.size)
-        val lookupCountEnc = Shortvec.encodeLength(addressTableLookups.size)
-
-        // Serialize instructions
-        val instrSerialized = instructions.map { instr ->
-            val accIdxEnc = Shortvec.encodeLength(instr.accounts.size)
-            val dataBytes = instr.data.decodeBase58()
-            val dataLenEnc = Shortvec.encodeLength(dataBytes.size)
-
-            val out = ByteArray(
-                1 + accIdxEnc.size +
-                        instr.accounts.size +
-                        dataLenEnc.size +
-                        dataBytes.size
-            )
-            var pos = 0
-            out[pos++] = instr.programIdIndex.toByte()
-            accIdxEnc.forEach { out[pos++] = it }
-            instr.accounts.forEach { out[pos++] = it.toByte() }
-            dataLenEnc.forEach { out[pos++] = it }
-            dataBytes.forEach { out[pos++] = it }
-            out
-        }
-
-        // Serialize lookups
-        val lookupSerialized = addressTableLookups.map { it.serialize() }
-
-        val totalInner = 3 +
-                acctCountEnc.size +
-                accountKeys.size * 32 +
-                32 + // blockhash
-                instrCountEnc.size +
-                instrSerialized.sumOf { it.size } +
-                lookupCountEnc.size +
-                lookupSerialized.sumOf { it.size }
-
-        val outBuf = PlatformBuffer.allocate(totalInner)
-
-        // Header
-        outBuf.writeByte(header.numRequiredSignatures)
-        outBuf.writeByte(header.numReadonlySignedAccounts)
-        outBuf.writeByte(header.numReadonlyUnsignedAccounts)
-
-        // Account keys
-        outBuf.writeBytes(acctCountEnc)
-        accountKeys.forEach { outBuf.writeBytes(it.toByteArray()) }
-
-        // Recent blockhash
-        val blockhashBytes = recentBlockhash.decodeBase58()
-        require(blockhashBytes.size == 32) { "recentBlockhash must decode to 32 bytes" }
-        outBuf.writeBytes(blockhashBytes)
-
-        // Instructions
-        outBuf.writeBytes(instrCountEnc)
-        instrSerialized.forEach { outBuf.writeBytes(it) }
-
-        // Lookups
-        outBuf.writeBytes(lookupCountEnc)
-        lookupSerialized.forEach { outBuf.writeBytes(it) }
-
-        // Read inner bytes
-        outBuf.resetForRead()
-        val inner = outBuf.readByteArray(totalInner)
-
-        // --- ADD VERSION BYTE HERE ---
-        val finalBytes = ByteArray(1 + inner.size)
-        finalBytes[0] = VERSION_BIT.toByte()        // VERSION 0 FLAG
-        System.arraycopy(inner, 0, finalBytes, 1, inner.size)
-
-        return finalBytes
-    }
-
-    override fun setFeePayer(publicKey: PublicKey) {
-        //this.feePayer = publicKey
-    }
-
-    companion object {
-        fun from(bytes: ByteArray): Pair<MessageV0, ByteArray> {
-            var b = bytes
-            // header 3
-            val numRequiredSignatures = b[0]
-            val numReadonlySigned = b[1]
-            val numReadonlyUnsigned = b[2]
-            val header = MessageHeader().apply {
-                this.numRequiredSignatures = numRequiredSignatures
-                this.numReadonlySignedAccounts = numReadonlySigned
-                this.numReadonlyUnsignedAccounts = numReadonlyUnsigned
-            }
-            b = b.drop(3).toByteArray()
-
-            val acctLen = Shortvec.decodeLength(b)
-            b = acctLen.second
-            val accountKeys = mutableListOf<PublicKey>()
-            for (i in 0 until acctLen.first) {
-                val keyBytes = b.slice(0 until 32).toByteArray()
-                accountKeys.add(PublicKey(keyBytes))
-                b = b.drop(32).toByteArray()
-            }
-
-            val blockhashBytes = b.slice(0 until 32).toByteArray()
-            val recentBlockhash = blockhashBytes.encodeToBase58String()
-            b = b.drop(32).toByteArray()
-
-            val instrLen = Shortvec.decodeLength(b)
-            b = instrLen.second
-            val instructions = mutableListOf<CompiledInstruction>()
-            for (i in 0 until instrLen.first) {
-                val programIdIndex = b[0].toInt() and 0xff
-                b = b.drop(1).toByteArray()
-                val accLen = Shortvec.decodeLength(b)
-                b = accLen.second
-                val accounts = mutableListOf<Int>()
-                for (j in 0 until accLen.first) {
-                    accounts.add(b[0].toInt() and 0xff)
-                    b = b.drop(1).toByteArray()
-                }
-                val dataLen = Shortvec.decodeLength(b)
-                b = dataLen.second
-                val data = b.slice(0 until dataLen.first).toByteArray()
-                b = b.drop(dataLen.first).toByteArray()
-                instructions.add(
-                    CompiledInstruction(
-                        programIdIndex = programIdIndex,
-                        accounts = accounts,
-                        data = data.encodeToBase58String()
-                    )
-                )
-            }
-
-            val lookupLen = Shortvec.decodeLength(b)
-            b = lookupLen.second
-            val lookups = mutableListOf<MessageAddressTableLookup>()
-            for (i in 0 until lookupLen.first) {
-                val (lookup, remainder) = MessageAddressTableLookup.deserialize(b)
-                lookups.add(lookup)
-                b = remainder
-            }
-
-            return Pair(MessageV0(header, accountKeys, recentBlockhash, instructions, lookups), b)
-        }
-    }
-}
 
 /**
  * A full versioned transaction wrapper. On-wire format:
  * [versionedPrefixByte][messageV0 bytes]  (for v0 prefix = 0x80 | 0)
  */
 class VersionedTransaction(
-    var message: MessageV0,
+    var message: Message,
     val signatures: MutableList<SignaturePubkeyPair> // each 64 bytes; use null signature for partial
 ) {
     // ... other fields/methods remain the same ...
@@ -362,47 +205,47 @@ class VersionedTransaction(
         return buf.readByteArray(total)
     }
 
-    companion object {
-        fun deserialize(buffer: ByteArray): VersionedTransaction {
-            require(buffer.isNotEmpty())
-
-            val prefix = buffer[0].toInt() and 0xff
-            require((prefix and VERSION_BIT) != 0) { "Not a versioned transaction" }
-            require((prefix and 0x7f) == VERSION_V0) { "Unsupported version" }
-
-            val tail = buffer.copyOfRange(1, buffer.size)
-
-            // --- Shortvec decode ---
-            val (sigCount, afterLen) = Shortvec.decodeLength(tail)
-
-            // bytes consumed by shortvec
-            val shortvecLen = tail.size - afterLen.size
-            var pos = shortvecLen
-
-            // --- Signatures ---
-            val requiredBytes = pos + sigCount * SIGNATURE_LENGTH
-            require(tail.size >= requiredBytes) {
-                "Not enough bytes for $sigCount signatures"
-            }
-
-            val sigs = mutableListOf<SignaturePubkeyPair>()
-            val placeholder = PublicKey(ByteArray(32))
-
-            repeat(sigCount) {
-                val sig = tail.copyOfRange(pos, pos + SIGNATURE_LENGTH)
-                pos += SIGNATURE_LENGTH
-                sigs.add(SignaturePubkeyPair(sig, placeholder))
-            }
-
-            // --- Remaining bytes = message ---
-            val messageBytes = tail.copyOfRange(pos, tail.size)
-
-            val (message, leftover) = MessageV0.from(messageBytes)
-            require(leftover.isEmpty()) { "Unexpected trailing data after message" }
-
-            return VersionedTransaction(message, sigs)
-        }
-    }
+//    companion object {
+//        fun deserialize(buffer: ByteArray): VersionedTransaction {
+//            require(buffer.isNotEmpty())
+//
+//            val prefix = buffer[0].toInt() and 0xff
+//            require((prefix and VERSION_BIT) != 0) { "Not a versioned transaction" }
+//            require((prefix and 0x7f) == VERSION_V0) { "Unsupported version" }
+//
+//            val tail = buffer.copyOfRange(1, buffer.size)
+//
+//            // --- Shortvec decode ---
+//            val (sigCount, afterLen) = Shortvec.decodeLength(tail)
+//
+//            // bytes consumed by shortvec
+//            val shortvecLen = tail.size - afterLen.size
+//            var pos = shortvecLen
+//
+//            // --- Signatures ---
+//            val requiredBytes = pos + sigCount * SIGNATURE_LENGTH
+//            require(tail.size >= requiredBytes) {
+//                "Not enough bytes for $sigCount signatures"
+//            }
+//
+//            val sigs = mutableListOf<SignaturePubkeyPair>()
+//            val placeholder = PublicKey(ByteArray(32))
+//
+//            repeat(sigCount) {
+//                val sig = tail.copyOfRange(pos, pos + SIGNATURE_LENGTH)
+//                pos += SIGNATURE_LENGTH
+//                sigs.add(SignaturePubkeyPair(sig, placeholder))
+//            }
+//
+//            // --- Remaining bytes = message ---
+//            val messageBytes = tail.copyOfRange(pos, tail.size)
+//
+//            val (message, leftover) = MessageV0.from(messageBytes)
+//            require(leftover.isEmpty()) { "Unexpected trailing data after message" }
+//
+//            return VersionedTransaction(message, sigs)
+//        }
+//    }
 }
 
 /**
@@ -430,14 +273,16 @@ class VersionedTransaction(
  * You can expand this to match your Transaction API (signing, partialSign etc).
  */
 class VersionedSolanaTransaction (
+    val transacionVersion: TransactionVersion = TransactionVersion.Legacy
 ) : Transaction {
+
     var signatures = mutableListOf<SignaturePubkeyPair>()
     val signature: ByteArray?
         get() = signatures.firstOrNull()?.signature
 
     private lateinit var serializedMessage: ByteArray
     var feePayer: PublicKey? = null
-    var addressTableLookups = mutableListOf<MessageAddressTableLookup>()
+    var addressTableLookups = mutableListOf<AddressTableLookup>()
     val instructions = mutableListOf<TransactionInstruction>()
     lateinit var recentBlockhash: String
     var nonceInfo: NonceInformation? = null
@@ -451,11 +296,11 @@ class VersionedSolanaTransaction (
 //            VersionedSolanaTransaction(vtx)
 //    }
 
-    private lateinit var message: MessageV0
+    private lateinit var message: Message
     val versioned: VersionedTransaction
         get() {
             if (!::message.isInitialized) {
-                message = compileMessage() as MessageV0
+                message = compileVersionedMessage()
             }
             return VersionedTransaction(message, signatures)
         }
@@ -463,10 +308,10 @@ class VersionedSolanaTransaction (
         instructions.addAll(instruction)
         return this
     }
-    fun addMessageAddressTableLookup (lookupTable: MessageAddressTableLookup) {
+    fun addMessageAddressTableLookup (lookupTable: AddressTableLookup) {
         addressTableLookups.add(lookupTable)
     }
-    fun addMessageAddressTableLookups (lookupTables: List<MessageAddressTableLookup>?) {
+    fun addMessageAddressTableLookups (lookupTables: List<AddressTableLookup>?) {
         if (lookupTables != null)
             addressTableLookups.addAll(lookupTables)
     }
@@ -478,16 +323,16 @@ class VersionedSolanaTransaction (
         sign(signer.toList())
     }
     private fun compile(): Message {
-        val message = compileMessage()
-        this.versioned.message = message as MessageV0
-        val signedKeys = message.accountKeys.slice(
-            0 until message.header.numRequiredSignatures
+        val message = compileVersionedMessage()
+        this.versioned.message = message
+        val signedKeys = message.accounts.slice(
+            0 until message.signatureCount.toByte()
         )
 
         if (this.signatures.count() == signedKeys.count()) {
             var valid = true
             this.signatures.forEachIndexed { index, pair ->
-                if (!signedKeys[index].equals(pair.publicKey)) {
+                if (!signedKeys[index].equals(toSolanaPublicKey(pair.publicKey))) {
                     valid = false
                     return@forEachIndexed
                 }
@@ -498,7 +343,7 @@ class VersionedSolanaTransaction (
         this.signatures = signedKeys.map { publicKey ->
             SignaturePubkeyPair(
                 signature = null,
-                publicKey = publicKey
+                publicKey = PublicKey(publicKey.bytes)
             )
         }.toMutableList()
 
@@ -540,7 +385,7 @@ class VersionedSolanaTransaction (
         val seen = mutableSetOf<String>()
         val uniqueSigners = mutableListOf<Signer>()
         for (signer in signers) {
-            val key = signer.publicKey.toString()
+            val key = signer.publicKey.toBase58()
             if (seen.contains(key)) {
                 continue
             } else {
@@ -634,35 +479,28 @@ class VersionedSolanaTransaction (
     }
 
     override suspend fun serialize(signData: ByteArray): SerializedTransactionMessage {
-        val sigCount = Shortvec.encodeLength(versioned.signatures.size)
-
-        // 2️⃣ Total length = sig count + sigs (64 bytes each) + message bytes
-        val total = sigCount.size + versioned.signatures.size * 64 + signData.size
-
-        val buf = PlatformBuffer.allocate(total)
-
-        // 3️⃣ Write signature count
-        buf.writeBytes(sigCount)
-
-        // 4️⃣ Write each signature (64 bytes)
-        versioned.signatures.forEach { (signature, _) ->
-            if (signature != null) {
-                require(signature.size == 64) { "Signature must be 64 bytes" }
-                buf.writeBytes(signature)
-            } else {
-                buf.writeBytes(ByteArray(64)) // placeholder for null signature
+        val signatureCount = Shortvec.encodeLength(signatures.count())
+        val transactionLength = signatureCount.count() + signatures.count() * 64 + signData.count()
+        val wireTransaction = PlatformBuffer.allocate(transactionLength)
+        require(signatures.count() < 256)
+        wireTransaction.writeBytes(signatureCount)
+        signatures.forEach { (signature, _) ->
+            when {
+                signature !== null -> {
+                    require(signature.count() == 64) { "signature has invalid length" }
+                    wireTransaction.writeBytes(signature)
+                }
+                else -> {
+                    wireTransaction.writeBytes(ByteArray(SIGNATURE_LENGTH))
+                }
             }
         }
-
-        // 5️⃣ Write the message bytes
-        buf.writeBytes(signData)
-
-        // 6️⃣ Reset for reading
-        buf.resetForRead()
-
-        val out = buf.readByteArray(total)
-        require(out.size <= PACKET_DATA_SIZE) { "Transaction too large: ${out.size}" }
-
+        wireTransaction.writeBytes(signData)
+        wireTransaction.resetForRead()
+        val out = wireTransaction.readByteArray(transactionLength)
+        require(out.count() <= PACKET_DATA_SIZE) {
+            "Transaction too large: ${out.count()} > $PACKET_DATA_SIZE"
+        }
         return out
 
 //        val signatureCount = Shortvec.encodeLength(versioned.signatures.count())
@@ -676,6 +514,11 @@ class VersionedSolanaTransaction (
         compile() // Ensure signatures array is populated
         _addSignature(pubkey, signature)
     }
+
+    override fun compileMessage(): foundation.metaplex.solana.transactions.Message {
+        TODO("Not yet implemented")
+    }
+
     private fun _addSignature(pubkey: PublicKey, signature: TransactionSignature) {
         require(signature.count() == 64)
 
@@ -688,7 +531,10 @@ class VersionedSolanaTransaction (
 
         versioned.signatures[index].signature = signature
     }
-    override fun compileMessage(): Message {
+    private fun toSolanaPublicKey(publicKey: PublicKey): SolanaPublicKey{
+        return SolanaPublicKey.from(publicKey.toBase58())
+    }
+    fun compileVersionedMessage(): Message {
         this.nonceInfo?.let { nonceInfo ->
             if (instructions.first() != nonceInfo.nonceInstruction) {
                 recentBlockhash = nonceInfo.nonce
@@ -791,17 +637,17 @@ class VersionedSolanaTransaction (
         var numReadonlyUnsignedAccounts = 0
 
         // Split out signing from non-signing keys and count header values
-        val signedKeys = mutableListOf<PublicKey>()
-        val unsignedKeys = mutableListOf<PublicKey>()
+        val signedKeys = mutableListOf<SolanaPublicKey>()
+        val unsignedKeys = mutableListOf<SolanaPublicKey>()
         uniqueMetas.forEach {
             if (it.isSigner) {
-                signedKeys.add(it.publicKey)
+                signedKeys.add(toSolanaPublicKey( it.publicKey))
                 numRequiredSignatures += 1
                 if (!it.isWritable) {
                     numReadonlySignedAccounts += 1
                 }
             } else {
-                unsignedKeys.add(it.publicKey)
+                unsignedKeys.add(toSolanaPublicKey( it.publicKey))
                 if (!it.isWritable) {
                     numReadonlyUnsignedAccounts += 1
                 }
@@ -809,37 +655,43 @@ class VersionedSolanaTransaction (
         }
 
         val accountKeys = signedKeys.plus(unsignedKeys)
-        val instructions: List<CompiledInstruction> = instructions.map { instruction ->
+        val instructions: List<Instruction> = instructions.map { instruction ->
             val (programId, _, data) = instruction
-            CompiledInstruction(
-                programIdIndex = accountKeys.indexOf(programId),
-                accounts = instruction.keys.map { meta ->
-                    accountKeys.indexOf(meta.publicKey)
-                },
-                data = data.encodeToBase58String()
+            Instruction(
+                programIdIndex = accountKeys.indexOf(SolanaPublicKey.from(programId.toBase58())).toUByte(),
+                accountIndices = instruction.keys.map { meta ->
+                    accountKeys.indexOf(SolanaPublicKey.from(meta.publicKey.toBase58())).toByte()
+                }.toByteArray(),
+                data = data
             )
         }
 
         for (instruction in instructions) {
-            require(instruction.programIdIndex >= 0)
-            instruction.accounts.forEach { keyIndex -> require(keyIndex >= 0) }
+            require(instruction.programIdIndex >= 0.toUByte())
+            instruction.accountIndices.forEach { keyIndex -> require(keyIndex >= 0) }
         }
-        // 3. Build message header
-        val header = MessageHeader(
-            numRequiredSignatures = numRequiredSignatures.toByte(), // payer only for now
-            numReadonlySignedAccounts = numReadonlySignedAccounts.toByte(),
-            numReadonlyUnsignedAccounts = numReadonlyUnsignedAccounts.toByte()
-        )
-
-        // 4. Return MessageV0
-        return MessageV0(
-            header = header,
-            accountKeys = accountKeys,
-            recentBlockhash = recentBlockhash,
-            instructions = instructions,
-            addressTableLookups = addressTableLookups
-        )
+        // 4. Return Message
+        return (when (transactionVersion) {
+            TransactionVersion.V0 -> VersionedMessage(
+                version = VERSION_BIT.toByte(),
+                signatureCount = numRequiredSignatures.toUByte(),
+                readOnlyAccounts = numReadonlySignedAccounts.toUByte(),
+                readOnlyNonSigners = numReadonlyUnsignedAccounts.toUByte(),
+                accounts = accountKeys,
+                blockhash = SolanaPublicKey.from(recentBlockhash),
+                instructions = instructions,
+                addressTableLookups = addressTableLookups
+            )
+            TransactionVersion.Legacy -> return LegacyMessage(
+                numRequiredSignatures.toUByte() ,
+                numReadonlySignedAccounts.toUByte(),
+                numReadonlyUnsignedAccounts.toUByte(),
+                accountKeys.toList(),
+                SolanaPublicKey.from(recentBlockhash),
+                instructions
+            )
+        })
     }
 
-    fun getMessageV0(): MessageV0 = versioned.message
+    fun getMessageV0(): Message = versioned.message
 }

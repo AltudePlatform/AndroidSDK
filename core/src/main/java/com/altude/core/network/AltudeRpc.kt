@@ -1,7 +1,6 @@
 package com.altude.core.network
 
-import com.altude.core.api.QuickNodeResponse
-import com.altude.core.api. QuickNodeRpcService
+import com.altude.core.api. RpcService
 import com.altude.core.api.TransactionService
 import com.altude.core.api.callRpcTyped
 import com.altude.core.config.SdkConfig
@@ -17,7 +16,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import retrofit2.await
@@ -26,12 +24,11 @@ import kotlin.random.nextUInt
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 
-class QuickNodeRpc(val endpoint: String) {
+class AltudeRpc(val endpoint: String) {
 
-    val rpcService = RpcConfig.createService(endpoint, QuickNodeRpcService::class.java)
+    val rpcService = RpcConfig.createService(endpoint, RpcService::class.java)
 
     companion object{
         val json = Json {
@@ -133,13 +130,14 @@ class QuickNodeRpc(val endpoint: String) {
         return resp.result ?: error("No result returned")
     }
     @OptIn(ExperimentalSerializationApi::class)
-    suspend inline fun <reified T>getAccountInfo(publicKey:String): T {
-        token = getValidToken()?: error("No valid token")
+    suspend inline fun <reified T>getAccountInfo(publicKey:String, isBase64: Boolean = false): T {
+        token = getValidToken()
         val params: MutableList<JsonElement> = mutableListOf()
         params.add(json.encodeToJsonElement(publicKey))
 
         val options = buildJsonObject {
-            put("encoding", "jsonParsed")
+            if(!isBase64)put("encoding", "jsonParsed")
+            else put("encoding", "base64")
         }
         params.add(options)
         val rpcRequest = JsonRpc20Request(

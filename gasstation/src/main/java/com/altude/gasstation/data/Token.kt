@@ -44,7 +44,7 @@ enum class Token(val mainnet: String, val devnet: String) {
         devnet  = ""
     ),
     KIN(
-        mainnet = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX",
+        mainnet = "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6",
         devnet  = "KinDesK3dYWo3R2wDk6Ucaf31tvQCCSYyL8Fuqp33GX"
     ),
     SRM(
@@ -84,7 +84,16 @@ enum class Token(val mainnet: String, val devnet: String) {
     HADES(
         mainnet = "HadesWrTPLE6q8sL1oN4zXkUciVHh24vMKTbTPV85Us",
         devnet  = ""
+    ),
+    CASH(
+        mainnet = "CASHx9KJUStyftLFWGvEVf59SGeG9sh5FfcnZMVPCASH",
+        devnet  = ""
+    ),
+    PIPPIN(
+        mainnet = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+        devnet  = ""
     );
 
-    fun mint(): String = if (SdkConfig.isDevnet) (devnet.ifEmpty { mainnet }) else mainnet
+
+    fun mint(): String = if (SdkConfig.apiConfig.RpcEnvironment.lowercase() == "devnet") (devnet.ifEmpty { mainnet }) else mainnet
 }

@@ -10,6 +10,7 @@ data class SwapResponse(
     val swapInstruction: SwapInstruction? = null,
     val cleanupInstruction: SwapInstruction? = null,
     val addressLookupTableAddresses: List<String>? = null,
+    val swapTransaction: String? = null,
     val error: String? = null
 ){
     val isError: Boolean
