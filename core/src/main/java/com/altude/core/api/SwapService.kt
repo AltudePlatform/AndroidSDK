@@ -14,8 +14,11 @@ interface SwapService {
         @QueryMap params: Map<String, @JvmSuppressWildcards Any>
     ): Call<JsonElement>
     @POST("swap-instructions")
+    fun swapInstruction(
+        @Body body: SwapInstructionRequest
+    ): Call<JsonElement>
+    @POST("swap")
     fun swap(
         @Body body: SwapInstructionRequest
     ): Call<JsonElement>
-
 }

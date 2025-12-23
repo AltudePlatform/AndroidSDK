@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AccountInfoResponse(
-    val result: AccountInfoResult
+    val result: AccountInfoResult? = null
 )
 
 @Serializable
@@ -52,10 +52,22 @@ data class AccountParsedInfo(
     val owner: String? = null,
     val closeAuthority: String? = null,
     val delegate: String? = null,
-    val delegatedAmount: TokenAmount? = null,
+    val delegatedAmount: RpcTokenAmount? = null,
     val state: String? = null,
     val isNative: Boolean? = null,
-    val rentExemptReserve: TokenAmount? = null,
-    val tokenAmount: TokenAmount? = null
+    val rentExemptReserve: RpcTokenAmount? = null,
+    val tokenAmount: RpcTokenAmount? = null,
+    val mint: String? = null
+)
+
+@Serializable
+data class RpcTokenAmount(
+    val amount: Long? = null,
+    val decimals: Int? = null,
+    val uiAmount: Double? = null,
+    val uiAmountString: String? = null,
+    val amountUlong: Long? = null,
+    val amountDecimal: Double? = null,
+    val amountDouble: Double? = null
 )
 

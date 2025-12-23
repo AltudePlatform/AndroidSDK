@@ -12,5 +12,5 @@ class HotSigner(private val keyPair: Keypair) : Signer {
 
 class EmptySignature(publicKey: PublicKey) : Signer {
     override val publicKey: PublicKey = publicKey
-    override suspend fun signMessage(message: ByteArray): ByteArray = ByteArray(64){100}
+    override suspend fun signMessage(message: ByteArray): ByteArray = ByteArray(64){0}
 }

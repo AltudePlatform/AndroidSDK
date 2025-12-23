@@ -23,6 +23,7 @@ import com.altude.core.data.SwapTransactionRequest
 import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.SwapOption
+import com.altude.gasstation.data.Token
 import com.altude.gasstation.data.TransactionResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -134,6 +135,30 @@ object Altude {
         options: SwapOption
     ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
         try {
+            val result = GaslessManager.swapInstruction(options)
+
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SwapTransactionRequest(signedTransaction)
+
+            val res = service.swapTransaction(request).await()
+
+            //try to unwrap sol token after swap
+            closeAccount(CloseAccountOption(options.account, listOf(Token.SOL.mint(), options.inputMint).distinct())).getOrNull()
+
+            Result.success(deCodeJson<TransactionResponse>(res))
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun swapUsingServerTransaction(
+        options: SwapOption
+    ): Result<TransactionResponse> = withContext(Dispatchers.IO) {
+        try {
             val result = GaslessManager.swap(options)
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
@@ -143,6 +168,7 @@ object Altude {
             val request = SwapTransactionRequest(signedTransaction)
 
             val res = service.swapTransaction(request).await()
+
             Result.success(deCodeJson<TransactionResponse>(res))
         } catch (e: Exception) {
             return@withContext Result.failure(e)

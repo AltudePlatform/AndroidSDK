@@ -1,15 +1,12 @@
 package com.altude.core.Programs
 
-import com.altude.core.data.ChangeLog
 import com.altude.core.data.MintV2InstructionData
-import com.altude.core.network.QuickNodeRpc
-import com.funkatronics.kborsh.BorshEncoder
+import com.altude.core.network.AltudeRpc
 import foundation.metaplex.mplbubblegum.generated.bubblegum.Collection
 import foundation.metaplex.mplbubblegum.generated.bubblegum.Creator
 import foundation.metaplex.mplbubblegum.generated.bubblegum.MetadataArgs
 import foundation.metaplex.mplbubblegum.generated.bubblegum.TokenProgramVersion
 import foundation.metaplex.mplbubblegum.generated.bubblegum.TokenStandard
-import foundation.metaplex.mplbubblegum.generated.bubblegum.hook.ConcurrentMerkleTreeHeaderData
 import foundation.metaplex.rpc.RPC
 import foundation.metaplex.solana.programs.SystemProgram
 import foundation.metaplex.solana.transactions.AccountMeta
@@ -18,7 +15,6 @@ import foundation.metaplex.solanapublickeys.PublicKey
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
-import kotlin.math.pow
 
 object MPLCore {
     private const val PUBKEY_BYTES = 32
@@ -418,7 +414,7 @@ object MPLCore {
         return listOf(createTreeIx, createTreeConfigV2Ix)
     }
     suspend fun createTreeV2(
-        rpc: QuickNodeRpc,
+        rpc: AltudeRpc,
         payer: PublicKey,
         merkleTree: PublicKey,
         treeCreator: PublicKey,

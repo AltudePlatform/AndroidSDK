@@ -277,27 +277,41 @@ class ExampleInstrumentedTest {
         val result = Altude.getBalance(option)
         println("Balance: $result")
     }
+    
     @Test
     fun testSwap() = runBlocking {
-            Altude.savePrivateKey(accountPrivateKey )
-            val option = SwapOption(
-                account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu",
-                inputMint = Token.SOL.mint(),
-                outputMint = Token.USDT.mint(),
-                amount = 100,
-                commitment = Commitment.finalized
-            )
+        //Altude.savePrivateKey(accountPrivateKey )
+        val testMnemonic = System.getProperty("TEST_MNEMONIC") ?: ""
+        Altude.saveMnemonic(testMnemonic)
+        val option = SwapOption(
+            account = "BG8ttfjfSdUVxJB5saKq59gfFdtpvDBeVTwg1X3ZBUyS",
+            inputMint = Token.SOL.mint(),
+            outputMint = Token.USDC.mint(),
+            amount = 0.0000034,
+            commitment = Commitment.finalized,
+            //slippageBps = 50
+        )
 
-            // Wrap the callback in a suspendable way (like a suspendCoroutine)
-            val result = Altude.swap(option)
-            println("Balance: $result")
-    }
-    @Test
-    fun testSearchToken() = runBlocking {
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.searchToken("")
-        println("Balance: $result")
+        val result = Altude.swap(option)
+        result
+            .onSuccess { println("✅ Sent: ${it.Signature}") }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+//            val result2 = Altude.swap2(option)
+//            result
+//                .onSuccess { println("✅ Sent: ${it.Signature}") }
+//                .onFailure {
+//                    println("❌ Failed: ${it.message}")
+//                }
+
+        assert(result.isSuccess)
+        assert(result.isSuccess)
+
     }
+
 
     @Test
     fun testGetAccountInfo() = runBlocking {
