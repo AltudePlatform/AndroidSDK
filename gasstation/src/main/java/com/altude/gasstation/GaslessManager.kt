@@ -283,19 +283,20 @@ object GaslessManager {
                 if (ataInfo != null) {
                     val parsed = ataInfo.data?.parsed?.info
                     val balance = parsed?.tokenAmount?.uiAmount ?: 0.0
-
-                    if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
-                        authorized = feePayerPubKey
-                    else {
-                        authorized = defaultWallet.publicKey
-                        isOwnerRequiredSignature = true
+                    if(balance == 0.0 || token == Token.SOL.mint()){
+                        if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
+                            authorized = feePayerPubKey
+                        else {
+                            authorized = defaultWallet.publicKey
+                            isOwnerRequiredSignature = true
+                        }
+                        val instruction = TokenProgram.closeAtaAccount(
+                            ata = ata,
+                            destination = authorized,
+                            authority = authorized
+                        )
+                        txInstructions.add(instruction)
                     }
-                    val instruction = TokenProgram.closeAtaAccount(
-                        ata = ata,
-                        destination = authorized,
-                        authority = authorized
-                    )
-                    txInstructions.add(instruction)
 
 
                 }

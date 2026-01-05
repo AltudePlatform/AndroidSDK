@@ -58,6 +58,9 @@ dependencies {
     implementation(libs.serialization.json) {
         exclude(group = "com.ditchoom")
     }
+//    implementation("com.solanamobile:web3-solana:0.2.5") {
+//        exclude(group = "com.ditchoom.buffer")
+//    }
 }
 
 
