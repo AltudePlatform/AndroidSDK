@@ -40,7 +40,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"")
+        Altude.setApiKey(context,"ak_f8AEgOp8_hLocOBr6S4m6d8xo7T0QKHKB4s2BiamaDc")
     }
 
 //    @Test
@@ -281,8 +281,7 @@ class ExampleInstrumentedTest {
     @Test
     fun testSwap() = runBlocking {
         //Altude.savePrivateKey(accountPrivateKey )
-        val testMnemonic = System.getProperty("TEST_MNEMONIC") ?: ""
-        Altude.saveMnemonic(testMnemonic)
+        Altude.saveMnemonic("pause trial leisure wife deliver save crack sniff exact village claim upset")
         val option = SwapOption(
             account = "BG8ttfjfSdUVxJB5saKq59gfFdtpvDBeVTwg1X3ZBUyS",
             inputMint = Token.SOL.mint(),
@@ -293,7 +292,7 @@ class ExampleInstrumentedTest {
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.swap(option)
+        val result = Altude.swap2(option)
         result
             .onSuccess { println("✅ Sent: ${it.Signature}") }
             .onFailure {
