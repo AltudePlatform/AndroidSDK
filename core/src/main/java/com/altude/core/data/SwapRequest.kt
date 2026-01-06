@@ -146,13 +146,13 @@ data class RoutePlan(
 @Serializable
 data class SwapInfo(
     val ammKey: String,
-    val label: String,
+    val label: String? = null,
     val inputMint: String,
     val outputMint: String,
     val inAmount: String,
     val outAmount: String,
-    val feeAmount: String,
-    val feeMint: String
+    val feeAmount: String? = null,
+    val feeMint: String? = null
 )
 
 @Serializable

@@ -32,11 +32,7 @@ class ExampleInstrumentedTest {
     private lateinit var service: StorageService
     private lateinit var context: Context
     val accountPrivateKey = byteArrayOf(
-        235.toByte(), 144.toByte(), 12, 215.toByte(), 112, 178.toByte(), 249.toByte(), 227.toByte(), 180.toByte(), 112, 121, 214.toByte(), 13, 190.toByte(), 158.toByte(), 91,
-        208.toByte(), 118, 253.toByte(), 192.toByte(), 48, 6, 252.toByte(), 37, 111, 169.toByte(), 209.toByte(), 238.toByte(), 174.toByte(), 78, 210.toByte(), 184.toByte(),
-        9, 37, 75, 1, 98, 80, 44, 48, 119, 25, 193.toByte(), 156.toByte(), 161.toByte(), 185.toByte(), 250.toByte(), 119,
-        160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
-    )
+      0    )
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
@@ -55,9 +51,9 @@ class ExampleInstrumentedTest {
 //    }
     @Test
     fun testStorage()= runBlocking{
-        Altude.saveMnemonic("bring record van away man person trouble clay rebuild review dust pond")
-        val seedData2 = StorageService.getDecryptedSeed("BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
-        assertEquals(seedData2?.mnemonic, "bring record van away man person trouble clay rebuild review dust pond")
+        Altude.saveMnemonic("")
+        val seedData2 = StorageService.getDecryptedSeed("")
+        assertEquals(seedData2?.mnemonic, "")
 
         Altude.savePrivateKey(accountPrivateKey)
         val seedData = StorageService.getDecryptedSeed("chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu")
@@ -73,16 +69,16 @@ class ExampleInstrumentedTest {
 
     @Test
     fun testMnemonicToKeyPair()= runBlocking{
-        val keypair =  KeyPair.solanaKeyPairFromMnemonic("bring record van away man person trouble clay rebuild review dust pond")
+        val keypair =  KeyPair.solanaKeyPairFromMnemonic("")
         assertEquals(keypair.publicKey.toBase58(), "BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr")
 
-        val keypair2 =  KeyPair.solanaKeyPairFromMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        val keypair2 =  KeyPair.solanaKeyPairFromMnemonic("")
         assertEquals(keypair2.publicKey.toBase58(), "ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W")
 
-        val keypair3 =  KeyPair.solanaKeyPairFromMnemonic("profit admit clean purchase wagon cake cattle they favorite diamond rigid present twin devote busy rack float catch route menu short beyond inherit sight")
+        val keypair3 =  KeyPair.solanaKeyPairFromMnemonic("")
         assertEquals(keypair3.publicKey.toBase58(), "GRicVJoBc9Gxg7aqE11xAuSGej6Q2DAf1Wo72ggYzaSw")
 
-        val keypair4 =  KeyPair.solanaKeyPairFromMnemonic("wisdom hospital stable flavor payment slice cannon dirt galaxy capital side hunt parent surprise rate upon jaguar ketchup keen swim mammal kite net omit")
+        val keypair4 =  KeyPair.solanaKeyPairFromMnemonic("")
         assertEquals(keypair4.publicKey.toBase58(), "HPzZhuj27KQLpAJqS4QZAeHpz4c1t5fgihzXXoFsSTDo")
     }
 
@@ -172,7 +168,7 @@ class ExampleInstrumentedTest {
 
 
         StorageService.listStoredWalletAddresses()
-        Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
+        Altude.saveMnemonic("")
 
         val options = CloseAccountOption(
             account = "BW9UiAzLfMTBrzUcMeLhpMUqhWZa3NMTLCF79dSStXuk",   //optional
@@ -281,13 +277,12 @@ class ExampleInstrumentedTest {
     @Test
     fun testSwap() = runBlocking {
         //Altude.savePrivateKey(accountPrivateKey )
-        val testMnemonic = System.getProperty("TEST_MNEMONIC") ?: ""
-        Altude.saveMnemonic(testMnemonic)
+        Altude.saveMnemonic("")
         val option = SwapOption(
             account = "BG8ttfjfSdUVxJB5saKq59gfFdtpvDBeVTwg1X3ZBUyS",
             inputMint = Token.SOL.mint(),
             outputMint = Token.USDC.mint(),
-            amount = 0.0000034,
+            amount = 0.000001,
             commitment = Commitment.finalized,
             //slippageBps = 50
         )
