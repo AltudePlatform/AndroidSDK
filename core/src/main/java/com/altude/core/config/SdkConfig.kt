@@ -6,7 +6,6 @@ import com.altude.core.api.ConfigResponse
 import com.altude.core.api.TransactionService
 import com.altude.core.service.StorageService
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import com.solana.transaction.MessageSerializer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
