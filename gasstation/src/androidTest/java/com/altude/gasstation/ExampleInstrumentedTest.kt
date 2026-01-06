@@ -36,7 +36,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"")
+        Altude.setApiKey(context,"ak_6sOZEHfAC0XGsgCFOOQ55c_ynLqvTFHbYIIFHvteNrc")
     }
 
 //    @Test
@@ -200,12 +200,12 @@ class ExampleInstrumentedTest {
     @Test
     fun testTransferToken() = runBlocking  {
 
-        Altude.savePrivateKey(accountPrivateKey)
+        Altude.saveMnemonic("pause trial leisure wife deliver save crack sniff exact village claim upset")
 
         val options = SendOptions(
-            account = "chenGqdufWByiUyxqg7xEhUVMqF3aS9sxYLSzDNmwqu", //optional
-            toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
-            amount = 0.00001,
+            account = "BG8ttfjfSdUVxJB5saKq59gfFdtpvDBeVTwg1X3ZBUyS", //optional
+            toAddress = "6iyTeuuMzqKyGncSYQE7xbivtcTFMfS1aYM1t5xsyDU6",
+            amount = 47749.11222,
             token = Token.KIN .mint(),
             commitment =  Commitment.finalized
         )
