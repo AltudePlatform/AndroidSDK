@@ -1,7 +1,12 @@
-# Gasless Android SDK
+# Altude Android SDK
 
-[![GitHub release](https://img.shields.io/github/tag/AltudePlatform/AndroidSDK.svg)](https://github.com/AltudePlatform/AndroidSDK/releases)
+## License
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## Released Version
+[![GitHub release](https://img.shields.io/github/tag/AltudePlatform/AndroidSDK.svg)](https://github.com/AltudePlatform/AndroidSDK/releases)
+
+## Version
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-blue.svg)](https://kotlinlang.org/)
 
 
