@@ -1,5 +1,7 @@
 # Altude Android SDK
 
+![alt text](https://getdrawings.com/vectors/mount-fuji-vector-5.png)
+
 ## License
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
