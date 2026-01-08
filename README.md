@@ -41,7 +41,7 @@ dependencies {
 2. Set API Key
 ```kotlin
 val context =ApplicationProvider.getApplicationContext()
-val sdk = Altude.setApiKey(context,"")
+val sdk = Altude.setApiKey(context,"my_ApiKey")
 ```
 
 2. Usage
