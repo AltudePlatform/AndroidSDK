@@ -1,5 +1,3 @@
-# Altude Android SDK
-
 ![alt text](https://getdrawings.com/vectors/mount-fuji-vector-5.png)
 
 ## License
@@ -11,6 +9,8 @@
 ## Version
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-blue.svg)](https://kotlinlang.org/)
 
+
+# Altude Android SDK
 
 **An Android SDK for seamless, gasless blockchain interactions.**  
 
