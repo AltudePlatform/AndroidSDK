@@ -1,16 +1,6 @@
-![alt text](https://getdrawings.com/vectors/mount-fuji-vector-5.png)
-
-## License
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-## Released Version
-[![GitHub release](https://img.shields.io/github/tag/AltudePlatform/AndroidSDK.svg)](https://github.com/AltudePlatform/AndroidSDK/releases)
-
-## Version
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-blue.svg)](https://kotlinlang.org/)
-
-
 # Altude Android SDK
+
+![alt text](https://getdrawings.com/vectors/mount-fuji-vector-5.png)
 
 **An Android SDK for seamless, gasless blockchain interactions.**  
 
@@ -32,7 +22,7 @@ For full documentation, see [Altude Docs](https://docs.altude.so/introduction) a
 
 ## 📦 Getting Started
 
-1. Add the SDK to your Android project via Gradle:
+1. Add the SDK to your Android project via Gradle: ([Latest Tag](https://github.com/AltudePlatform/AndroidSDK/tags))
 
 ```gradle
 dependencies {
@@ -64,3 +54,11 @@ result
         println("❌ Failed: ${it.message}")
     }
 ```
+## Released Version
+[![GitHub release](https://img.shields.io/github/tag/AltudePlatform/AndroidSDK.svg)](https://github.com/AltudePlatform/AndroidSDK/releases)
+
+## Version
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-blue.svg)](https://kotlinlang.org/)
+
+## License
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
