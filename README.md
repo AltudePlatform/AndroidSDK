@@ -1,7 +1,6 @@
-# Altude Android SDK
-
 <div align="center">
   <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="200"/>
+# Altude Android SDK
   
 **Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
 
