@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="200"/>
+  <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
 
   # Altude Android SDK
   
