@@ -2,13 +2,15 @@
 
 <div align="center">
 
-**Wallet Infrastructure for Non-Custodial Wallets on Solana**
+**Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
+
+***Fully Gasless, non-custodial and Simple***
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.2.0-blue.svg)](https://kotlinlang.org)
 
-[Website](https://altude.so) • [Documentation](#) • [Discord](#) • [Twitter](#)
+[Website](https://altude.so) • [Documentation](https://docs.altude.so) • [Discord](https://discord.gg/9gPsQeZD7x) • [Twitter](x.com/altudeso)
 
 </div>
 
@@ -23,9 +25,9 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
 ## ✨ Features
 
 - **🔑 Wallet Management** - Secure key generation, mnemonic support, and encrypted storage
-- **⛽ Gasless Transactions** - Sponsor transaction fees for your users
-- **💸 Token Operations** - Send, receive, and swap SPL tokens with ease
-- **🖼️ NFT Support** - Create collections and mint NFTs using Metaplex standards
+- **⛽ Gasless Transactions** - Fully gasless SDK
+- **💸 Token Operations** - Send, receive, and swap SPL tokens gasless
+- **🖼️ NFT Support** - Create collections and mint NFTs without gas fees using Metaplex standards
 - **📊 Provenance Tracking** - Gasless tools for tracking asset provenance on Solana
 - **🔐 Enterprise Security** - Built-in encryption and secure key management
 - **🚀 Developer Friendly** - Clean APIs with full Kotlin coroutine support
@@ -66,14 +68,16 @@ Advanced account features:
 - Custom authorization logic
 
 ### [`nft`](./nft)
-**Gasless tools for provenance on Solana**
+**Gasless tools for NFTs on Solana**
 
-NFT and provenance features:
+NFT features:
 - Create NFT collections
 - Mint compressed NFTs
-- Provenance tracking
 - Metadata management
 - Metaplex Core integration
+
+### [`provenance`](./provenance)
+**Tools for Gasless provenance on Solana**
 
 ## 🚀 Getting Started
 
@@ -299,10 +303,10 @@ val result = NFTSdk.mint(mintOptions)
            │  - Storage     │
            └───────┬────────┘
                    │
-         ┌─────────▼──────────┐
-         │   Altude Platform  │
-         │   (Fee Sponsoring) │
-         └─────────┬──────────┘
+         ┌─────────▼─────────────┐
+         │   Altude Platform     │
+         │(Fee Sponsoring/Relay) │
+         └─────────┬─────────────┘
                    │
             ┌──────▼───────┐
             │    Solana    │
@@ -326,10 +330,10 @@ val result = NFTSdk.mint(mintOptions)
 
 ## 📚 Documentation
 
-- [Full API Reference](#) *(Coming Soon)*
+- [Full API Reference](https://docs.altude.so/api-reference/introduction) *(Coming Soon)*
 - [Integration Guide](#) *(Coming Soon)*
-- [Example App](./app) - Complete example application
-- [Migration Guide](#) *(Coming Soon)*
+- [Example App](./app) - *(Coming Soon)*
+- [Migration Guide](https://docs.altude.so/api-reference/gas-station/converting-from-kinetic)
 
 ## 🛠️ Development
 
@@ -364,10 +368,10 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ## 🆘 Support
 
-- **Documentation**: [docs.altude.so](#)
-- **Discord**: [Join our community](#)
-- **Email**: support@altude.so
-- **Twitter**: [@AltudePlatform](#)
+- **Documentation**: [docs.altude.so](http://docs.altude.so)
+- **Discord**: [Join our community](https://discord.gg/9gPsQeZD7x)
+- **Email**: andrew@altude.so
+- **Twitter**: [@AltudePlatform](x.com/altudeso)
 
 ## 🙏 Acknowledgments
 
