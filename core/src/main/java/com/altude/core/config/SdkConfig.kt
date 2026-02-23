@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.altude.core.api.ConfigResponse
 import com.altude.core.api.TransactionService
+import com.altude.core.model.TransactionSigner
 import com.altude.core.service.StorageService
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.solana.transaction.MessageSerializer
@@ -34,6 +35,14 @@ object SdkConfig {
     var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = false
+
+    /**
+     * Current transaction signer. Initialized to HotSigner by default for backward compatibility.
+     * Can be overridden by setSigner() or during AltudeGasStation.init().
+     * All transaction builders use this signer unless explicitly overridden.
+     */
+    var currentSigner: TransactionSigner? = null
+        private set
 
     @OptIn(ExperimentalTime::class)
     var apiConfig = ConfigResponse()
@@ -123,5 +132,15 @@ object SdkConfig {
             throw IllegalStateException("SdkConfig must be initialized before creating services")
         }
         return retrofit.create(service)
+    }
+
+    /**
+     * Set the current transaction signer for all transaction operations.
+     * Called internally by AltudeGasStation.init() or can be used to override the signer at runtime.
+     *
+     * @param signer The TransactionSigner implementation to use for signing transactions
+     */
+    fun setSigner(signer: TransactionSigner) {
+        currentSigner = signer
     }
 }
