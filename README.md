@@ -59,6 +59,20 @@ Enable sponsored transactions for your users:
 - Balance and history queries
 - Automatic fee payment handling
 
+### [`vault`](./vault)
+**Biometric-Protected Key Storage** ⭐ NEW
+
+Secure client-side key management with invisible biometric authentication:
+- AES-256-GCM encrypted seed storage
+- BiometricPrompt integration (per-operation or session-based)
+- HKDF-SHA256 deterministic key derivation
+- Multi-wallet support from single seed
+- Zero-knowledge architecture (keys never leave device)
+- Custom signer support (hardware wallet compatible)
+
+**Quick Start:** See [Vault Documentation](./docs/VAULT_DOCUMENTATION_INDEX.md)  
+**Examples:** [VaultExampleActivity](./app/src/main/java/com/altude/android/VaultExampleActivity.kt) • [ErrorHandlingExampleActivity](./app/src/main/java/com/altude/android/ErrorHandlingExampleActivity.kt)
+
 ### [`smart-account`](./smart-account)
 **Smart account abstractions** *(Coming Soon)*
 
