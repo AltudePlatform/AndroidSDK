@@ -20,6 +20,7 @@ import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.HotSigner
+import com.altude.core.model.TransactionSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.network.AltudeRpc
@@ -33,7 +34,6 @@ import com.altude.core.model.TransactionVersion
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.Token
 import com.altude.gasstation.data.parseLookupTableAccountBase64
-import com.metaplex.signer.Signer
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanaeddsa.Keypair
@@ -61,7 +61,7 @@ object GaslessManager {
         explicitNulls = false      // don’t send nulls unless explicitly set
         decodeEnumsCaseInsensitive = true
             }
-    suspend fun transferToken(option: ISendOption): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun transferToken(option: ISendOption, signer: TransactionSigner? = null): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val pubKeyMint = PublicKey(option.token)
             val pubKeyDestination = PublicKey(option.toAddress)
@@ -102,8 +102,9 @@ object GaslessManager {
             )
 
             val recentBlockhash = blockhashInfo.blockhash
-            val authorizedSignature =
-                HotSigner(SolanaKeypair(defaultWallet.publicKey, defaultWallet.secretKey))
+            
+            // Use provided signer, or fall back to SdkConfig.currentSigner, or use HotSigner
+            val authorizedSignature = signer ?: SdkConfig.currentSigner ?: HotSigner(SolanaKeypair(defaultWallet.publicKey, defaultWallet.secretKey))
 
             val builder = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
@@ -124,11 +125,11 @@ object GaslessManager {
         }
     }
 
-    suspend fun batchTransferToken(options: List<SendOptions>): Result<String> =
+    suspend fun batchTransferToken(options: List<SendOptions>, signers: List<TransactionSigner>? = null): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val transferInstructions = mutableListOf<TransactionInstruction>();
-                val authorizedSignatures = mutableListOf<Signer>()
+                val authorizedSignatures = mutableListOf<TransactionSigner>()
                 options.forEach { option ->
                     val pubKeyMint = PublicKey(option.token)
                     val pubKeyDestination = PublicKey(option.toAddress)
@@ -169,7 +170,7 @@ object GaslessManager {
                         //signers = listOf(defaultWallet.publicKey, feePayerPubKey)
                     )
                     transferInstructions.add(transferInstruction)
-                    if (authorizedSignatures.find { it.publicKey == defaultWallet.publicKey } == null)
+                    if (signers == null && authorizedSignatures.find { it.publicKey == defaultWallet.publicKey } == null)
                         authorizedSignatures.add(
                             HotSigner(
                                 SolanaKeypair(
@@ -184,13 +185,15 @@ object GaslessManager {
 
                 val recentBlockhash = blockhashInfo.blockhash
 
+                // Use provided signers or fall back to constructed authorizedSignatures
+                val finalSigners = signers ?: authorizedSignatures
 
                 val builder = AltudeTransactionBuilder()
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(recentBlockhash)
                 //destinationCreateAta?.let { builder.addInstruction(it) }
                 builder.addRangeInstruction(transferInstructions)
-                builder.setSigners(authorizedSignatures)
+                builder.setSigners(finalSigners)
 
                 val build = builder.build()
                 val serialized = Base64.encodeToString(
@@ -204,7 +207,7 @@ object GaslessManager {
             }
         }
 
-    suspend fun createAccount(option: CreateAccountOption): Result<String> =
+    suspend fun createAccount(option: CreateAccountOption, signer: TransactionSigner? = null): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val defaultWallet = getKeyPair(option.account)
@@ -238,7 +241,9 @@ object GaslessManager {
                     }
                     return@withContext Result.failure( Error("Token account already created"))
                 }
-                val authorizedSigner = HotSigner(SolanaKeypair(ownerKey, defaultWallet.secretKey))
+                
+                // Use provided signer, or fall back to SdkConfig.currentSigner, or use HotSigner
+                val authorizedSigner = signer ?: SdkConfig.currentSigner ?: HotSigner(SolanaKeypair(ownerKey, defaultWallet.secretKey))
 
 
                 val blockhashInfo = rpc.getLatestBlockhash(
@@ -263,7 +268,8 @@ object GaslessManager {
         }
 
     suspend fun closeAccount(
-        option: CloseAccountOption
+        option: CloseAccountOption,
+        signer: TransactionSigner? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             var defaultWallet: Keypair? = null
@@ -316,8 +322,12 @@ object GaslessManager {
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .build()
-            if (isOwnerRequiredSignature && defaultWallet != null)
-                tx.sign(HotSigner(defaultWallet))
+            
+            // Use provided signer if available, or fall back to SdkConfig.currentSigner
+            if (isOwnerRequiredSignature && defaultWallet != null) {
+                val signerToUse = signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet)
+                tx.sign(signerToUse)
+            }
             //val sign = Core.SignTransaction(privateKeyBytes,message)
             val serialized = Base64.encodeToString(
                 tx.serialize(SerializeConfig(requireAllSignatures = false)),
@@ -331,7 +341,8 @@ object GaslessManager {
     }
 
     suspend fun swapInstruction(
-        option: SwapOption
+        option: SwapOption,
+        signer: TransactionSigner? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val defaultWallet = getKeyPair(option.account)
@@ -442,7 +453,7 @@ object GaslessManager {
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .addLookUpTables(lookupTables)
-                .setSigners(listOf(HotSigner(defaultWallet)))
+                .setSigners(listOf(signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet)))
 
                 .build()
             val serialized = Base64.encodeToString(
@@ -456,7 +467,8 @@ object GaslessManager {
         }
     }
     suspend fun swap(
-        option: SwapOption
+        option: SwapOption,
+        signer: TransactionSigner? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val defaultWallet = getKeyPair(option.account)
@@ -518,7 +530,7 @@ object GaslessManager {
 
 
             val tx = AltudeTransaction(swapResponse.swapTransaction ?: "")
-                .partialSign(listOf(HotSigner(defaultWallet), EmptySignature(feePayerPubKey)))
+                .partialSign(listOf(signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet), EmptySignature(feePayerPubKey)))
 
             val serialized = tx.serialize()
 
