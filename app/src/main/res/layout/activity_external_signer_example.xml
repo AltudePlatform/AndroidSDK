@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:text="Custom TransactionSigner implementation (no biometric)"
                 android:textSize="14sp"
-                android:opacity="0.7"
+                android:alpha="0.7"
                 android:paddingBottom="24dp" />
 
             <!-- Key Pair Input -->
@@ -126,7 +126,7 @@
                     android:layout_height="wrap_content"
                     android:text="(will appear after generation)"
                     android:textSize="11sp"
-                    android:textMonospace="true"
+                    android:typeface="monospace"
                     android:lineSpacingMultiplier="1.5" />
 
             </LinearLayout>

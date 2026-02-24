@@ -1,7 +1,7 @@
 package com.altude.vault.model
 
-import com.solana.core.PublicKey
-import foundation.metaplex.solanaeddsa.keypairs.Keypair
+import foundation.metaplex.solanaeddsa.Keypair
+import foundation.metaplex.solanapublickeys.PublicKey
 
 /**
  * Represents an active vault session with a decrypted keypair and TTL.

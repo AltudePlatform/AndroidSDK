@@ -1,11 +1,12 @@
 package com.altude.vault.crypto
 
-import foundation.metaplex.solanaeddsa.Ed25519
-import foundation.metaplex.solanaeddsa.keypairs.SolanaKeypair
+import foundation.metaplex.solanaeddsa.Keypair
+import foundation.metaplex.solanaeddsa.SolanaEddsa
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator
 import org.bouncycastle.crypto.params.HKDFParameters
 import org.bouncycastle.crypto.util.DigestFactory
 import java.nio.charset.StandardCharsets
+import java.security.SecureRandom
 
 /**
  * Vault cryptographic utilities for key derivation and signing.
@@ -33,14 +34,14 @@ object VaultCrypto {
      * @param seed Root seed (minimum 32 bytes)
      * @param appId Application identifier for domain separation (typically package name)
      * @param walletIndex Wallet index for multi-wallet support (default: 0)
-     * @return SolanaKeypair containing derived public and private keys compatible with Solana
+     * @return Keypair containing derived public and private keys compatible with Solana
      * @throws IllegalArgumentException if seed is too short
      */
-    fun deriveKeypair(
+    suspend fun deriveKeypair(
         seed: ByteArray,
         appId: String,
         walletIndex: Int = 0
-    ): SolanaKeypair {
+    ): Keypair {
         require(seed.size >= SEED_LENGTH) {
             "Seed must be at least $SEED_LENGTH bytes, got ${seed.size}"
         }
@@ -61,10 +62,8 @@ object VaultCrypto {
         val derivedSeed = ByteArray(SEED_LENGTH)
         hkdf.generateBytes(derivedSeed, 0, SEED_LENGTH)
 
-        // Create Ed25519 keypair from derived seed using Solana's Ed25519 implementation
-        val keypair = Ed25519.createKeypairFromSeed(derivedSeed)
-
-        return SolanaKeypair(keypair.publicKey, keypair.secretKey)
+        // Create Ed25519 keypair from derived seed using Metaplex SolanaEddsa
+        return SolanaEddsa.createKeypairFromSecretKey(derivedSeed)
     }
 
     /**
@@ -75,8 +74,8 @@ object VaultCrypto {
      * @param keypair The keypair to sign with
      * @return 64-byte Ed25519 signature
      */
-    fun signMessage(message: ByteArray, keypair: SolanaKeypair): ByteArray {
-        return Ed25519.sign(message, keypair.secretKey)
+    suspend fun signMessage(message: ByteArray, keypair: Keypair): ByteArray {
+        return SolanaEddsa.sign(message, keypair)
     }
 
     /**
@@ -88,7 +87,7 @@ object VaultCrypto {
      */
     fun generateRandomSeed(lengthBytes: Int = SEED_LENGTH): ByteArray {
         val seed = ByteArray(lengthBytes)
-        java.security.SecureRandom().nextBytes(seed)
+        SecureRandom().nextBytes(seed)
         return seed
     }
 }

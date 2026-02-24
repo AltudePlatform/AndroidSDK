@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:text="Learn how to handle Vault errors and recover gracefully"
                 android:textSize="14sp"
-                android:opacity="0.7"
+                android:alpha="0.7"
                 android:paddingBottom="24dp" />
 
             <!-- Error Code Display -->
@@ -56,7 +56,7 @@
                     android:layout_height="wrap_content"
                     android:text="(none yet)"
                     android:textSize="12sp"
-                    android:textMonospace="true"
+                    android:fontFamily="monospace"
                     android:textColor="@android:color/holo_red_dark" />
 
             </LinearLayout>
@@ -73,7 +73,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Message & Recovery:"
+                    android:text="Message &amp; Recovery:"
                     android:textStyle="bold"
                     android:textSize="14sp"
                     android:paddingBottom="8dp" />
@@ -130,7 +130,7 @@
                         android:layout_height="wrap_content"
                         android:text="User hasn't enrolled fingerprint/face/PIN"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 
@@ -152,7 +152,7 @@
                         android:layout_height="wrap_content"
                         android:text="User changed fingerprints or face (keys unrecoverable)"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 
@@ -174,7 +174,7 @@
                         android:layout_height="wrap_content"
                         android:text="Wrong fingerprint/face or cancelled prompt (transient)"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 
@@ -196,7 +196,7 @@
                         android:layout_height="wrap_content"
                         android:text="Vault not initialized (call AltudeGasStation.init())"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 
@@ -218,7 +218,7 @@
                         android:layout_height="wrap_content"
                         android:text="Session TTL exceeded in session-based mode (automatic re-prompt)"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 
@@ -239,7 +239,7 @@
                         android:layout_height="wrap_content"
                         android:text="App lacks write permission or storage is full"
                         android:textSize="10sp"
-                        android:opacity="0.7" />
+                        android:alpha="0.7" />
 
                 </LinearLayout>
 

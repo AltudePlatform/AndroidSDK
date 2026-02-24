@@ -8,8 +8,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import com.altude.gasstation.AltudeGasStation
 import com.altude.core.config.SdkConfig
+import com.altude.core.config.InitOptions
+import com.altude.core.config.SignerStrategy
 import com.altude.vault.model.VaultException
 import com.altude.vault.model.BiometricNotAvailableException
 import com.altude.vault.model.BiometricInvalidatedException
@@ -35,8 +38,9 @@ class VaultExampleActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var initButton: Button
-    private lateinit var transferButton: Button
-    private lateinit var transferBatchButton: Button
+    private lateinit var singleTransferButton: Button
+    private lateinit var batchTransferButton: Button
+    private lateinit var clearDataButton: Button
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,13 +50,15 @@ class VaultExampleActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         progressBar = findViewById(R.id.progressBar)
         initButton = findViewById(R.id.initButton)
-        transferButton = findViewById(R.id.transferButton)
-        transferBatchButton = findViewById(R.id.transferBatchButton)
+        singleTransferButton = findViewById(R.id.singleTransferButton)
+        batchTransferButton = findViewById(R.id.batchTransferButton)
+        clearDataButton = findViewById(R.id.clearDataButton)
         
         // Set up click listeners
         initButton.setOnClickListener { initializeVault() }
-        transferButton.setOnClickListener { performSingleTransfer() }
-        transferBatchButton.setOnClickListener { performBatchTransfer() }
+        singleTransferButton.setOnClickListener { performSingleTransfer() }
+        batchTransferButton.setOnClickListener { performBatchTransfer() }
+        clearDataButton.setOnClickListener { clearAppDataAndRestart() }
         
         // Display welcome message
         updateStatus("Welcome to Altude Vault!\n\n" +
@@ -85,8 +91,8 @@ class VaultExampleActivity : AppCompatActivity() {
                         "Next: Tap 'Send Transfer' to perform a transaction.")
                 
                 // Enable transaction buttons
-                transferButton.isEnabled = true
-                transferBatchButton.isEnabled = true
+                singleTransferButton.isEnabled = true
+                batchTransferButton.isEnabled = true
                 initButton.isEnabled = false
                 
             } catch (e: BiometricNotAvailableException) {
@@ -138,7 +144,7 @@ class VaultExampleActivity : AppCompatActivity() {
                 updateStatus("Preparing transfer...\n\nYou'll be prompted to authenticate.")
                 
                 // Get current signer (VaultSigner set by AltudeGasStation.init)
-                val signer = SdkConfig.getInstance().currentSigner
+                val signer = SdkConfig.currentSigner
                     ?: throw Exception("Vault not initialized")
                 
                 // Create gas-free transfer
@@ -155,7 +161,7 @@ class VaultExampleActivity : AppCompatActivity() {
                 
                 showProgress(false)
                 updateStatus("✅ Transaction Signed Successfully!\n\n" +
-                        "Signature: ${signature.take(16).joinToString("") { "%02x".format(it) }}...\n\n" +
+                        "Signature: ${signature.take(16).joinToString("") { b -> "%02x".format(b) }}...\n\n" +
                         "In production, this would be submitted to blockchain.")
                 
             } catch (e: BiometricAuthenticationFailedException) {
@@ -206,20 +212,22 @@ class VaultExampleActivity : AppCompatActivity() {
                         "You'll authenticate once for the entire batch.\n" +
                         "This is more efficient than per-transaction prompts.")
                 
-                val signer = SdkConfig.getInstance().currentSigner
+                val signer = SdkConfig.currentSigner
                     ?: throw Exception("Vault not initialized")
                 
                 // In per-operation mode (default), each sign still prompts
                 // For true batch with one prompt, use VaultSigner.createWithSession()
                 
-                val signatures = listOf(
+                val signatures: List<ByteArray> = listOf(
                     "Transfer 1: 100 USDC",
                     "Transfer 2: 50 SOL",
                     "Transfer 3: 200 USDC"
                 ).mapIndexed { index, transfer ->
-                    updateStatus("Signing transaction ${index + 1}/3...\n\nPlease authenticate.")
-                    signer.signMessage(transfer.toByteArray())
-                }
+                    async {
+                        updateStatus("Signing transaction ${index + 1}/3...\n\nPlease authenticate.")
+                        signer.signMessage(transfer.toByteArray())
+                    }
+                }.map { it.await() }
                 
                 showProgress(false)
                 updateStatus("✅ All 3 transactions signed!\n\n" +

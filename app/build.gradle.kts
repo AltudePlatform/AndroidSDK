@@ -36,6 +36,14 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        jniLibs {
+            pickFirsts += "lib/x86_64/libargon2.so"
+            pickFirsts += "lib/armeabi-v7a/libargon2.so"
+            pickFirsts += "lib/arm64-v8a/libargon2.so"
+        }
+    }
 }
 
 dependencies {
@@ -43,6 +51,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.appcompat)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -55,5 +64,7 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    implementation(project(":core"))
     implementation(project(":gasstation"))
+    implementation(project(":vault"))
 }

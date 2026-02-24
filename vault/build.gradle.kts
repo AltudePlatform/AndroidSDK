@@ -40,6 +40,11 @@ dependencies {
     implementation(libs.androidx.monitor)
     // Biometric authentication
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.security.crypto)
+    
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

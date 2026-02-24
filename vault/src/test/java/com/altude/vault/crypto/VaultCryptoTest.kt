@@ -2,8 +2,7 @@ package com.altude.vault.crypto
 
 import junit.framework.TestCase.*
 import org.junit.Test
-import com.solana.core.KeyPair
-import com.solana.core.PublicKey
+import kotlinx.coroutines.runBlocking
 
 /**
  * Unit tests for VaultCrypto - HKDF key derivation and determinism
@@ -96,7 +95,7 @@ class VaultCryptoTest {
         
         // When: Sign a message
         val message = "Test transaction message".toByteArray()
-        val signature = VaultCrypto.signMessage(message, keypair)
+        val signature = runBlocking { VaultCrypto.signMessage(message, keypair) }
         
         // Then: Signature is 64 bytes (Ed25519)
         assertEquals("Ed25519 signature must be 64 bytes", 64, signature.size)
@@ -114,8 +113,8 @@ class VaultCryptoTest {
         val message = "Deterministic message".toByteArray()
         
         // When: Sign same message twice
-        val signature1 = VaultCrypto.signMessage(message, keypair)
-        val signature2 = VaultCrypto.signMessage(message, keypair)
+        val signature1 = runBlocking { VaultCrypto.signMessage(message, keypair) }
+        val signature2 = runBlocking { VaultCrypto.signMessage(message, keypair) }
         
         // Then: Signatures should be identical (Ed25519 is deterministic)
         assertArrayEquals("Same message should produce identical signatures",
@@ -129,8 +128,8 @@ class VaultCryptoTest {
         val keypair = VaultCrypto.deriveKeypair(seed, "com.example.app", 0)
         
         // When: Sign different messages
-        val sig1 = VaultCrypto.signMessage("Message 1".toByteArray(), keypair)
-        val sig2 = VaultCrypto.signMessage("Message 2".toByteArray(), keypair)
+        val sig1 = runBlocking { VaultCrypto.signMessage("Message 1".toByteArray(), keypair) }
+        val sig2 = runBlocking { VaultCrypto.signMessage("Message 2".toByteArray(), keypair) }
         
         // Then: Different messages produce different signatures
         assertFalse("Different messages should produce different signatures",

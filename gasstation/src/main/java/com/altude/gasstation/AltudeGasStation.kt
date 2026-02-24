@@ -75,7 +75,8 @@ object AltudeGasStation {
             SdkConfig.setApiKey(context, apiKey)
 
             // Step 3: Set up signer based on strategy
-            val signer = when (options.signerStrategy) {
+            val strategy: SignerStrategy = options.signerStrategy // Create local variable for smart casting
+            val signer = when (strategy) {
                 is SignerStrategy.VaultDefault -> {
                     // Create VaultSigner - takes care of vault initialization internally
                     createVaultSigner(context, options)
@@ -83,7 +84,7 @@ object AltudeGasStation {
 
                 is SignerStrategy.External -> {
                     // Use external signer directly
-                    options.signerStrategy.signer
+                    strategy.signer
                 }
             }
 

@@ -6,8 +6,8 @@ import com.altude.vault.crypto.BiometricHandler
 import com.altude.vault.crypto.VaultCrypto
 import com.altude.vault.model.VaultSession
 import com.altude.vault.storage.VaultStorage
-import com.solana.core.PublicKey
-import foundation.metaplex.solanaeddsa.keypairs.Keypair
+import foundation.metaplex.solanaeddsa.Keypair
+import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 

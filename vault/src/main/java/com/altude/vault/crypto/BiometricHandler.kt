@@ -57,21 +57,21 @@ object BiometricHandler {
                         }
 
                         BiometricPrompt.ERROR_UNABLE_TO_PROCESS -> {
-                            BiometricAuthenticationFailedException("Biometric data invalid or signal too noisy")
+                            BiometricAuthenticationFailedException(failureReason = BiometricAuthenticationFailedException.FailureReason.Invalid, message = "Biometric data invalid or signal too noisy")
                         }
 
                         BiometricPrompt.ERROR_USER_CANCELED,
                         BiometricPrompt.ERROR_NEGATIVE_BUTTON -> {
-                            BiometricAuthenticationFailedException("Authentication cancelled by user")
+                            BiometricAuthenticationFailedException(failureReason = BiometricAuthenticationFailedException.FailureReason.UserCancelled, message = "Authentication cancelled by user")
                         }
 
                         BiometricPrompt.ERROR_LOCKOUT,
                         BiometricPrompt.ERROR_LOCKOUT_PERMANENT -> {
-                            BiometricAuthenticationFailedException("Biometric locked out. Too many failed attempts. Retry after timeout or use device credential.")
+                            BiometricAuthenticationFailedException(failureReason = BiometricAuthenticationFailedException.FailureReason.TooManyAttempts, message = "Biometric locked out. Too many failed attempts. Retry after timeout or use device credential.")
                         }
 
                         else -> {
-                            BiometricAuthenticationFailedException("Authentication error: $errString")
+                            BiometricAuthenticationFailedException(failureReason = BiometricAuthenticationFailedException.FailureReason.Unknown, message = "Authentication error: $errString")
                         }
                     }
 

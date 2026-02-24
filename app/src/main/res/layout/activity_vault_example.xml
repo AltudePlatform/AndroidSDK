@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:text="Default Vault with per-operation biometric authentication"
                 android:textSize="14sp"
-                android:opacity="0.7"
+                android:alpha="0.7"
                 android:paddingBottom="24dp" />
 
             <!-- Status Display -->
@@ -140,8 +140,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:spacing="12dp">
+        android:orientation="vertical">
 
         <Button
             android:id="@+id/initButton"
@@ -172,7 +171,7 @@
             android:layout_height="48dp"
             android:text="Clear Vault Data"
             android:enabled="false"
-            android:backgroundTint="@android:color/holo_red_light" />
+            android:backgroundTint="?attr/colorError" />
 
     </LinearLayout>
 

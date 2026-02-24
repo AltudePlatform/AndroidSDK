@@ -13,8 +13,11 @@ import com.altude.gasstation.AltudeGasStation
 import com.altude.core.config.InitOptions
 import com.altude.core.config.SignerStrategy
 import com.altude.core.model.TransactionSigner
-import com.solana.core.KeyPair
-import com.solana.core.PublicKey
+import foundation.metaplex.solanaeddsa.Keypair
+import foundation.metaplex.solanaeddsa.SolanaEddsa
+import foundation.metaplex.solanapublickeys.PublicKey
+import java.security.SecureRandom
+import kotlinx.coroutines.runBlocking
 
 /**
  * External Signer Example Activity
@@ -169,8 +172,14 @@ class ExternalSignerExampleActivity : AppCompatActivity() {
     
     private fun generateTestKeyPair() {
         try {
-            val keyPair = KeyPair.newInstance()
-            val privateKeyHex = keyPair.secretKey.joinToString("") { "%02x".format(it) }
+            // Generate random 32-byte seed for Ed25519
+            val seed = ByteArray(32)
+            SecureRandom().nextBytes(seed)
+            // Use runBlocking to call suspend function
+            val keyPair = runBlocking {
+                SolanaEddsa.createKeypairFromSecretKey(seed)
+            }
+            val privateKeyHex = seed.joinToString("") { "%02x".format(it) }
             
             privateKeyInput.setText(privateKeyHex)
             updateStatus("✅ Test key pair generated!\n\n" +
@@ -219,11 +228,20 @@ class ExternalSignerExampleActivity : AppCompatActivity() {
  */
 class CustomTestSigner(private val privateKeyHex: String) : TransactionSigner {
     
-    private val keyPair: KeyPair = try {
-        // Parse hex string to keypair (simplified for demo)
-        KeyPair.newInstance()  // In real app, parse the privateKeyHex
+    private val keyPair: Keypair = try {
+        // Parse hex string to 32-byte seed and create keypair
+        val seed = ByteArray(32)
+        for (i in 0 until minOf(64, privateKeyHex.length) step 2) {
+            if (i + 1 < privateKeyHex.length) {
+                seed[i / 2] = privateKeyHex.substring(i, i + 2).toInt(16).toByte()
+            }
+        }
+        // Use runBlocking to call suspend function from init block
+        runBlocking {
+            SolanaEddsa.createKeypairFromSecretKey(seed)
+        }
     } catch (e: Exception) {
-        throw IllegalArgumentException("Invalid private key format")
+        throw IllegalArgumentException("Invalid private key format: ${e.message}")
     }
     
     override val publicKey: PublicKey
@@ -231,9 +249,8 @@ class CustomTestSigner(private val privateKeyHex: String) : TransactionSigner {
     
     override suspend fun signMessage(message: ByteArray): ByteArray {
         return try {
-            // Sign using the keypair
-            // (In real implementation, would use the actual private key)
-            keyPair.sign(message)
+            // Sign using SolanaEddsa (Metaplex signing utility)
+            SolanaEddsa.sign(message, keyPair)
         } catch (e: Exception) {
             throw RuntimeException("Failed to sign message: ${e.message}")
         }

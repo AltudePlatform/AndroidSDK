@@ -10,6 +10,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.altude.gasstation.AltudeGasStation
 import com.altude.core.config.SdkConfig
+import com.altude.core.config.InitOptions
+import com.altude.core.config.SignerStrategy
 import com.altude.vault.model.*
 
 /**
@@ -143,7 +145,7 @@ class ErrorHandlingExampleActivity : AppCompatActivity() {
                 displayError(e)
                 
                 // Critical error - offer clear options
-                AlertDialog.Builder(this)
+                AlertDialog.Builder(this@ErrorHandlingExampleActivity)
                     .setTitle("Security Update Required")
                     .setMessage(e.remediation)
                     .setPositiveButton("Clear App Data") { _, _ ->
@@ -227,7 +229,7 @@ class ErrorHandlingExampleActivity : AppCompatActivity() {
                 updateStatus("Simulating: Vault Locked")
                 
                 // Try to use signer without initialization
-                val signer = SdkConfig.getInstance().currentSigner
+                val signer = SdkConfig.currentSigner
                     ?: throw VaultLockedException(
                         message = "Vault is not initialized",
                         remediation = "Call AltudeGasStation.init(context, apiKey) first"
@@ -365,7 +367,12 @@ class ErrorHandlingExampleActivity : AppCompatActivity() {
     }
     
     private fun openStorageSettings() {
-        startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_SPACE))
+        // Open Settings > Apps > This App > Storage
+        val intent = android.content.Intent().apply {
+            action = android.provider.Settings.ACTION_APPLICATION_SETTINGS
+            data = android.net.Uri.parse("package:${packageName}")
+        }
+        startActivity(intent)
     }
     
     private fun clearAppDataGracefully() {

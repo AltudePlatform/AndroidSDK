@@ -5,7 +5,7 @@ import androidx.fragment.app.FragmentActivity
 import com.altude.core.model.TransactionSigner
 import com.altude.vault.crypto.VaultCrypto
 import com.altude.vault.manager.VaultManager
-import com.solana.core.PublicKey
+import foundation.metaplex.solanapublickeys.PublicKey
 
 /**
  * Authentication mode for Vault transactions.

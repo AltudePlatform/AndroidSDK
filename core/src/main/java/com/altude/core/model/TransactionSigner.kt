@@ -1,7 +1,7 @@
 package com.altude.core.model
 
 import com.metaplex.signer.Signer
-import com.solana.core.PublicKey
+import foundation.metaplex.solanapublickeys.PublicKey
 
 /**
  * TransactionSigner is the Altude SDK abstraction for signing operations.
