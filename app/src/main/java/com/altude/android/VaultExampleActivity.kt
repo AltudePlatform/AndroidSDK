@@ -34,7 +34,7 @@ import com.altude.vault.model.BiometricAuthenticationFailedException
  */
 class VaultExampleActivity : AppCompatActivity() {
     
-    private val apiKey = "your_api_key_here"  // Replace with real key
+    private val apiKey = "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk"  // Replace with real key
     private lateinit var statusText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var initButton: Button
@@ -83,18 +83,24 @@ class VaultExampleActivity : AppCompatActivity() {
                 // - Initializes Android Keystore
                 // - Enables biometric authentication
                 // - No explicit signer configuration needed
-                AltudeGasStation.init(this@VaultExampleActivity, apiKey)
-                
-                showProgress(false)
-                updateStatus("✅ Vault Initialized Successfully!\n\n" +
-                        "Your wallet is now secured with biometric authentication.\n\n" +
-                        "Next: Tap 'Send Transfer' to perform a transaction.")
-                
-                // Enable transaction buttons
-                singleTransferButton.isEnabled = true
-                batchTransferButton.isEnabled = true
-                initButton.isEnabled = false
-                
+                val initResult = AltudeGasStation.init(this@VaultExampleActivity, apiKey)
+
+                initResult
+                    .onSuccess {
+                        showProgress(false)
+                        updateStatus("✅ Vault Initialized Successfully!\n\n" +
+                                "Your wallet is now secured with biometric authentication.\n\n" +
+                                "Next: Tap 'Send Transfer' to perform a transaction.")
+
+                        // Enable transaction buttons
+                        singleTransferButton.isEnabled = true
+                        batchTransferButton.isEnabled = true
+                        initButton.isEnabled = false
+                    }
+                    .onFailure { error ->
+                        throw error
+                    }
+
             } catch (e: BiometricNotAvailableException) {
                 // User hasn't set up biometric - guide them
                 showProgress(false)
@@ -122,6 +128,15 @@ class VaultExampleActivity : AppCompatActivity() {
                 showErrorDialog(
                     title = "Initialization Failed",
                     message = "[${e.errorCode}] ${e.message}\n\n${e.remediation}",
+                    actionLabel = "Retry",
+                    action = { initializeVault() }
+                )
+            } catch (e: Exception) {
+                // Catch any other unexpected exceptions
+                showProgress(false)
+                showErrorDialog(
+                    title = "Unexpected Error",
+                    message = "${e.javaClass.simpleName}: ${e.message}",
                     actionLabel = "Retry",
                     action = { initializeVault() }
                 )

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.altude.gasstation"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 21

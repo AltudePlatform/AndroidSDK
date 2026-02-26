@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.altude.core"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 21
@@ -65,9 +65,7 @@ dependencies {
     implementation(libs.bouncycastle) {
         exclude(group = "com.ditchoom")
     }
-    implementation(libs.diglol.crypto) {
-        exclude(group = "com.ditchoom")
-    }
+    // Removed diglol.crypto (0.2.0 not 16 KB aligned) - using BouncyCastle instead
 
     // Serialization
     implementation(libs.serialization.json) {

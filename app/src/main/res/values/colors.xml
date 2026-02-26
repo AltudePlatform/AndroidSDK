@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Material 3 Colors -->
+    <color name="primary">#FF6200EE</color>
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="primary_container">#FFBB86FC</color>
+    <color name="on_primary_container">#FF3700B3</color>
+
+    <color name="secondary">#FF03DAC5</color>
+    <color name="on_secondary">#FF000000</color>
+    <color name="secondary_container">#FFB1F1EA</color>
+    <color name="on_secondary_container">#FF018786</color>
+
+    <color name="tertiary">#FFFF6D00</color>
+    <color name="on_tertiary">#FFFFFFFF</color>
+    <color name="tertiary_container">#FFFFE0B2</color>
+    <color name="on_tertiary_container">#FFCC4400</color>
+
+    <color name="error">#FFFF0000</color>
+    <color name="on_error">#FFFFFFFF</color>
+    <color name="error_container">#FFFF8A80</color>
+    <color name="on_error_container">#FFCC0000</color>
+
+    <color name="outline">#FF999999</color>
+
+    <color name="background">#FFFAFAFA</color>
+    <color name="on_background">#FF212121</color>
+
+    <color name="surface">#FFFAFAFA</color>
+    <color name="on_surface">#FF212121</color>
+
+    <!-- Legacy Colors -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

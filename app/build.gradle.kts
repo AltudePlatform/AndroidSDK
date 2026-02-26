@@ -37,13 +37,16 @@ android {
         compose = true
     }
 
+    // Configure packaging for 16 KB page size alignment (required for Android 15+ on Google Play)
     packaging {
         jniLibs {
-            pickFirsts += "lib/x86_64/libargon2.so"
-            pickFirsts += "lib/armeabi-v7a/libargon2.so"
-            pickFirsts += "lib/arm64-v8a/libargon2.so"
+            pickFirsts.add("lib/x86_64/libargon2.so")
+            pickFirsts.add("lib/arm64-v8a/libargon2.so")
+            pickFirsts.add("lib/armeabi-v7a/libargon2.so")
+            pickFirsts.add("lib/x86/libargon2.so")
         }
     }
+    buildToolsVersion = rootProject.extra["buildToolsVersion"] as String
 }
 
 dependencies {

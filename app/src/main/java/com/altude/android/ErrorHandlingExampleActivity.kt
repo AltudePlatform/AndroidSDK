@@ -28,7 +28,7 @@ import com.altude.vault.model.*
  */
 class ErrorHandlingExampleActivity : AppCompatActivity() {
     
-    private val apiKey = "your_api_key_here"
+    private val apiKey = "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk"
     private lateinit var statusText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var testButton: Button
