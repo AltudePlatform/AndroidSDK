@@ -95,17 +95,23 @@ object BiometricHandler {
                 }
             }
 
-            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            val allowedAuthenticators =
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
+            val promptBuilder = BiometricPrompt.PromptInfo.Builder()
                 .setTitle(title)
                 .apply {
                     if (subtitle.isNotEmpty()) setSubtitle(subtitle)
                 }
                 .setDescription(description)
-                .setNegativeButtonText("Cancel")
-                .setAllowedAuthenticators(
-                    BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                            BiometricManager.Authenticators.DEVICE_CREDENTIAL
-                )
+
+            if (allowedAuthenticators and BiometricManager.Authenticators.DEVICE_CREDENTIAL == 0) {
+                promptBuilder.setNegativeButtonText("Cancel")
+            }
+
+            val promptInfo = promptBuilder
+                .setAllowedAuthenticators(allowedAuthenticators)
                 .build()
 
             val biometricPrompt = BiometricPrompt(activity, callback)

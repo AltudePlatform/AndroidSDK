@@ -143,4 +143,8 @@ object SdkConfig {
     fun setSigner(signer: TransactionSigner) {
         currentSigner = signer
     }
+
+    fun clearSigner() {
+        currentSigner = null
+    }
 }

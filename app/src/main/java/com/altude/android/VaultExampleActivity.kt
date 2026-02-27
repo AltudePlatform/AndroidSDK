@@ -7,16 +7,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
 import com.altude.gasstation.AltudeGasStation
 import com.altude.core.config.SdkConfig
-import com.altude.core.config.InitOptions
-import com.altude.core.config.SignerStrategy
+import com.altude.core.service.StorageService
 import com.altude.vault.model.VaultException
 import com.altude.vault.model.BiometricNotAvailableException
 import com.altude.vault.model.BiometricInvalidatedException
 import com.altude.vault.model.BiometricAuthenticationFailedException
+import com.altude.vault.model.VaultSigner
+import kotlinx.coroutines.launch
 
 /**
  * Vault Example Activity - Default Integration
@@ -34,7 +33,7 @@ import com.altude.vault.model.BiometricAuthenticationFailedException
  */
 class VaultExampleActivity : AppCompatActivity() {
     
-    private val apiKey = "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk"  // Replace with real key
+    private val apiKey = "my_apikey"  // Replace with real key
     private lateinit var statusText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var initButton: Button
@@ -223,32 +222,45 @@ class VaultExampleActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 showProgress(true)
-                updateStatus("Preparing batch transfer...\n\n" +
-                        "You'll authenticate once for the entire batch.\n" +
-                        "This is more efficient than per-transaction prompts.")
-                
-                val signer = SdkConfig.currentSigner
-                    ?: throw Exception("Vault not initialized")
-                
-                // In per-operation mode (default), each sign still prompts
-                // For true batch with one prompt, use VaultSigner.createWithSession()
-                
-                val signatures: List<ByteArray> = listOf(
+                updateStatus(
+                    "Preparing batch transfer...\n\n" +
+                        "You'll authenticate once to unlock a 45-second signing session." +
+                        "\nAll subsequent transactions reuse that session."
+                )
+
+                // Ensure the vault has been initialized before creating a session signer
+                SdkConfig.currentSigner ?: throw Exception("Vault not initialized")
+
+                val sessionSigner = VaultSigner.createWithSession(
+                    context = this@VaultExampleActivity,
+                    appId = packageName,
+                    sessionTTLSeconds = 45
+                )
+
+                val transfers = listOf(
                     "Transfer 1: 100 USDC",
                     "Transfer 2: 50 SOL",
                     "Transfer 3: 200 USDC"
-                ).mapIndexed { index, transfer ->
-                    async {
-                        updateStatus("Signing transaction ${index + 1}/3...\n\nPlease authenticate.")
-                        signer.signMessage(transfer.toByteArray())
+                )
+
+                val signatures = mutableListOf<ByteArray>()
+                transfers.forEachIndexed { index, transfer ->
+                    val prompt = if (index == 0) {
+                        "Please authenticate once to start the batch session..."
+                    } else {
+                        "Signing transaction ${index + 1}/${transfers.size} using the active session..."
                     }
-                }.map { it.await() }
-                
+                    updateStatus(prompt)
+                    signatures += sessionSigner.signMessage(transfer.toByteArray())
+                }
+
                 showProgress(false)
-                updateStatus("✅ All 3 transactions signed!\n\n" +
-                        "In per-operation mode (default), user was prompted 3 times.\n\n" +
-                        "Tip: Use VaultSigner.createWithSession() for fewer prompts in batch operations.")
-                
+                updateStatus(
+                    "✅ All ${transfers.size} transactions signed with a single biometric prompt!\n\n" +
+                        "Session-based signing stays unlocked for ~45 seconds, so you can push additional" +
+                        " transactions without pestering the user."
+                )
+
             } catch (e: BiometricAuthenticationFailedException) {
                 showProgress(false)
                 if (e.failureReason == BiometricAuthenticationFailedException.FailureReason.UserCancelled) {
@@ -259,7 +271,7 @@ class VaultExampleActivity : AppCompatActivity() {
                         message = "Could not authenticate for batch operation.\n\nPlease try again."
                     )
                 }
-                
+
             } catch (e: VaultException) {
                 showProgress(false)
                 showErrorDialog(
@@ -321,12 +333,29 @@ class VaultExampleActivity : AppCompatActivity() {
     }
     
     private fun clearAppDataAndRestart() {
-        val packageName = packageName
-        val runtime = Runtime.getRuntime()
-        try {
-            runtime.exec("pm clear $packageName")
-        } catch (e: Exception) {
-            updateStatus("Could not clear data. Please manually clear app data in settings.")
+        lifecycleScope.launch {
+            try {
+                showProgress(true)
+                updateStatus("Clearing vault data...\n\nThis resets biometric storage and keystore material.")
+
+                AltudeGasStation.clearVault(applicationContext)
+                StorageService.clearAll()
+                SdkConfig.clearSigner()
+
+                showProgress(false)
+                updateStatus("✅ Vault data cleared. Tap 'Initialize' to set up a new vault.")
+
+                singleTransferButton.isEnabled = false
+                batchTransferButton.isEnabled = false
+                initButton.isEnabled = true
+            } catch (e: Exception) {
+                showProgress(false)
+                showErrorDialog(
+                    title = "Unable to Clear",
+                    message = "${e.javaClass.simpleName}: ${e.message}\n\n" +
+                            "Please clear app data from system settings if the problem persists."
+                )
+            }
         }
     }
     

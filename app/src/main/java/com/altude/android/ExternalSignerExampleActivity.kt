@@ -36,7 +36,7 @@ import kotlinx.coroutines.runBlocking
  */
 class ExternalSignerExampleActivity : AppCompatActivity() {
     
-    private val apiKey = "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk"
+    private val apiKey = "my_apikey"
     private lateinit var statusText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var privateKeyInput: EditText

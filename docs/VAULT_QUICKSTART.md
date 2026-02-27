@@ -21,7 +21,7 @@ The simplest way to get started:
 // In your Application class onCreate() or early in MainActivity
 import com.altude.gasstation.AltudeGasStation
 
-AltudeGasStation.init(context, apiKey = "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk")
+AltudeGasStation.init(context, apiKey = "my_apikey")
 ```
 
 **What happened:**
