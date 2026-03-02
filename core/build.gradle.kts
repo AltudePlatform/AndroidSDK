@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.altude.core"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 21
@@ -43,6 +43,10 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
 
     implementation(platform(libs.androidx.compose.bom)) // Recommended: Use the BOM
     implementation(libs.androidx.runtime) // <-- Add this line
@@ -61,9 +65,7 @@ dependencies {
     implementation(libs.bouncycastle) {
         exclude(group = "com.ditchoom")
     }
-    implementation(libs.diglol.crypto) {
-        exclude(group = "com.ditchoom")
-    }
+    // Removed diglol.crypto (0.2.0 not 16 KB aligned) - using BouncyCastle instead
 
     // Serialization
     implementation(libs.serialization.json) {
@@ -98,7 +100,7 @@ dependencies {
     }
 
     // Security
-    implementation(libs.security.crypto)
+    implementation(libs.androidx.security.crypto)
 
     // Auth
     implementation(libs.jwt)

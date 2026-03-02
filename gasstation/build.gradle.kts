@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.altude.gasstation"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 21
@@ -43,6 +43,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":core"))
+    implementation(project(":vault"))
     // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)

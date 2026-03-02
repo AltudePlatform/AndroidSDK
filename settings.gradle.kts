@@ -11,12 +11,16 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
-        mavenCentral() // ✅ Required
-
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+        maven { url = uri("https://dl.google.com/dl/android/maven2/") }
     }
 }
 
@@ -25,4 +29,5 @@ include(":app")
 include(":smart-account")
 include(":nft")
 include(":gasstation")
+include(":vault")
 include(":core")

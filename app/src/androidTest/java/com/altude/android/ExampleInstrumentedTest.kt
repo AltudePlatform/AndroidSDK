@@ -26,7 +26,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        Altude.setApiKey(appContext,"myAPIKey")
+        Altude.setApiKey(appContext,"my_apikey")
     }
     @Test
     fun useAppContext() {

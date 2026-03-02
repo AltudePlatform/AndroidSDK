@@ -1,16 +1,82 @@
+# IDE & Editor
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Gradle
+.gradle/
+/build/
+/gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+*.gradle.kts.bak
+
+# Build artifacts & outputs
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+*.zip
+*.jar
+*.rar
+
+# Local configuration
+local.properties
+gradle.properties.local
+.env
+
+# Android Studio specific
+/.idea/caches/
+/.idea/libraries/
 /.idea/modules.xml
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+/.idea/dictionaries/
+/.idea/misc.xml
+/.idea/vcs.xml
+/.idea/projectCodeStyle.xml
+/.idea/copyright/
+/.idea/inspectionProfiles/
+/.idea/runConfigurations/
+/.idea/shelf/
+
+# Android native build
+.kotlin/
+.kotlin/errors/
 local.properties
-.kotlin/errors
+
+# Test coverage
+/coverage/
+*.lcov
+*.profraw
+
+# OS files
+Thumbs.db
+.DS_Store
+*.log
+*.swp
+
+# Kotlin
+.kotlin_module
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Compiled output
+/app/build/
+/core/build/
+/vault/build/
+/gasstation/build/
+/nft/build/
+/smart-account/build/
