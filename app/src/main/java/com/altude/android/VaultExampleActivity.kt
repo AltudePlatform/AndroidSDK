@@ -1,20 +1,27 @@
 package com.altude.android
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.altude.gasstation.Altude
 import com.altude.gasstation.AltudeGasStation
+import com.altude.gasstation.data.SendOptions
+import com.altude.gasstation.data.Token
+import com.altude.gasstation.data.Commitment
 import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
 import com.altude.vault.model.VaultException
 import com.altude.vault.model.BiometricNotAvailableException
 import com.altude.vault.model.BiometricInvalidatedException
 import com.altude.vault.model.BiometricAuthenticationFailedException
-import com.altude.vault.model.VaultSigner
 import kotlinx.coroutines.launch
 
 /**
@@ -35,35 +42,50 @@ class VaultExampleActivity : AppCompatActivity() {
     
     private val apiKey = "my_apikey"  // Replace with real key
     private lateinit var statusText: TextView
+    private lateinit var walletAddressText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var initButton: Button
     private lateinit var singleTransferButton: Button
     private lateinit var batchTransferButton: Button
     private lateinit var clearDataButton: Button
-    
+    private lateinit var revealWalletButton: Button
+    private lateinit var copyWalletButton: ImageButton
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_vault_example)
         
         // Initialize UI
         statusText = findViewById(R.id.statusText)
+        walletAddressText = findViewById(R.id.walletAddressText)
         progressBar = findViewById(R.id.progressBar)
         initButton = findViewById(R.id.initButton)
         singleTransferButton = findViewById(R.id.singleTransferButton)
         batchTransferButton = findViewById(R.id.batchTransferButton)
         clearDataButton = findViewById(R.id.clearDataButton)
-        
+        revealWalletButton = findViewById(R.id.revealWalletButton)
+        copyWalletButton = findViewById(R.id.copyWalletButton)
+
         // Set up click listeners
         initButton.setOnClickListener { initializeVault() }
         singleTransferButton.setOnClickListener { performSingleTransfer() }
         batchTransferButton.setOnClickListener { performBatchTransfer() }
         clearDataButton.setOnClickListener { clearAppDataAndRestart() }
-        
+        revealWalletButton.setOnClickListener { revealWalletAddress() }
+        copyWalletButton.setOnClickListener { copyWalletToClipboard() }
+
         // Display welcome message
         updateStatus("Welcome to Altude Vault!\n\n" +
                 "Tap 'Initialize' to set up your secure vault with biometric auth.")
+        updateWalletAddress()
     }
-    
+
+    private fun updateWalletAddress() {
+        val address = runCatching { SdkConfig.currentSigner?.publicKey?.toBase58() }
+            .getOrNull()
+        walletAddressText.text = address ?: "Not initialized"
+    }
+
     /**
      * Step 1: Initialize Vault with One-Liner
      *
@@ -87,6 +109,7 @@ class VaultExampleActivity : AppCompatActivity() {
                 initResult
                     .onSuccess {
                         showProgress(false)
+                        updateWalletAddress()  // Address is now available immediately after init
                         updateStatus("✅ Vault Initialized Successfully!\n\n" +
                                 "Your wallet is now secured with biometric authentication.\n\n" +
                                 "Next: Tap 'Send Transfer' to perform a transaction.")
@@ -94,6 +117,7 @@ class VaultExampleActivity : AppCompatActivity() {
                         // Enable transaction buttons
                         singleTransferButton.isEnabled = true
                         batchTransferButton.isEnabled = true
+                        revealWalletButton.isEnabled = true
                         initButton.isEnabled = false
                     }
                     .onFailure { error ->
@@ -144,40 +168,45 @@ class VaultExampleActivity : AppCompatActivity() {
     }
     
     /**
-     * Step 2: Perform Single Transaction
+     * Step 2: Perform Single Transaction using Altude.send()
      *
      * Demonstrates:
+     * - Using Altude.send(options) for a simple gas-free transfer
      * - Per-operation biometric prompt (default mode)
      * - User is prompted on EVERY transaction
      * - Best for security-sensitive operations
+     *
+     * This is the recommended way to send transactions with vault/biometric auth
      */
     private fun performSingleTransfer() {
         lifecycleScope.launch {
+            // Create SendOptions - account can be blank, SDK resolves it after biometric unlock
+            val sendOptions = SendOptions(
+                account = "",  // SDK auto-resolves from vault signer after biometric
+                toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                amount = 0.001,
+                token = Token.SOL.mint(),
+                commitment = Commitment.finalized
+            )
+
             try {
                 showProgress(true)
-                updateStatus("Preparing transfer...\n\nYou'll be prompted to authenticate.")
-                
-                // Get current signer (VaultSigner set by AltudeGasStation.init)
-                val signer = SdkConfig.currentSigner
-                    ?: throw Exception("Vault not initialized")
-                
-                // Create gas-free transfer
-                // (In real app, would use real recipient and amount)
-                val transferTx = createTestTransfer(
-                    recipient = "11111111111111111111111111111111",
-                    tokenMint = "EPjFWaLb3HuSfopjmrX4S37FvCkxjVcaS1nrSE9w5MEh",  // USDC
-                    amount = 100_000_000  // 100 USDC
-                )
-                
-                // Sign transaction (user sees biometric prompt here)
-                updateStatus("Please authenticate to sign this transaction...")
-                val signature = signer.signMessage(transferTx.message)
-                
-                showProgress(false)
-                updateStatus("✅ Transaction Signed Successfully!\n\n" +
-                        "Signature: ${signature.take(16).joinToString("") { b -> "%02x".format(b) }}...\n\n" +
-                        "In production, this would be submitted to blockchain.")
-                
+                updateStatus("Please authenticate to send this transfer...")
+                val result = Altude.send(sendOptions)
+
+                result
+                    .onSuccess { response ->
+                        showProgress(false)
+                        updateWalletAddress()  // Public key is now available after biometric unlock
+                        updateStatus("✅ Transaction Sent Successfully!\n\n" +
+                                "Signature: ${response.Signature.take(16)}...\n\n" +
+                                "Status: Finalized on blockchain\n" +
+                                "Your transfer has been completed securely.")
+                    }
+                    .onFailure { error ->
+                        throw error
+                    }
+
             } catch (e: BiometricAuthenticationFailedException) {
                 showProgress(false)
                 when (e.failureReason) {
@@ -198,25 +227,56 @@ class VaultExampleActivity : AppCompatActivity() {
                     }
                 }
                 
-            } catch (e: VaultException) {
+            } catch (e: Exception) {
                 showProgress(false)
-                showErrorDialog(
-                    title = "Transaction Error",
-                    message = "[${e.errorCode}] ${e.message}\n\n${e.remediation}"
-                )
+                // Handle specific error cases
+                val errorMessage = e.message ?: "Unknown error"
+                when {
+                    errorMessage.contains("token account", ignoreCase = true) ||
+                    errorMessage.contains("Owner associated token account", ignoreCase = true) -> {
+                        val tokenName = Token.entries.find { it.mint() == sendOptions.token }?.name ?: sendOptions.token
+                        showErrorDialog(
+                            title = "Invalid Recipient",
+                            message = "The recipient wallet does not have a $tokenName token account.\n\n" +
+                                    "The recipient must first create a $tokenName token account to receive transfers.\n\n" +
+                                    "Error: $errorMessage"
+                        )
+                    }
+                    errorMessage.contains("insufficient", ignoreCase = true) -> {
+                        val tokenName = Token.entries.find { it.mint() == sendOptions.token }?.name ?: sendOptions.token
+                        showErrorDialog(
+                            title = "Insufficient Balance",
+                            message = "Your wallet does not have enough $tokenName to complete this transfer.\n\n" +
+                                    "Please ensure your wallet has sufficient balance."
+                        )
+                    }
+                    errorMessage.contains("invalid", ignoreCase = true) ||
+                    errorMessage.contains("invalid account", ignoreCase = true) -> {
+                        showErrorDialog(
+                            title = "Invalid Recipient Address",
+                            message = "The recipient address is not valid.\n\n" +
+                                    "Please check the recipient address and try again."
+                        )
+                    }
+                    else -> {
+                        showErrorDialog(
+                            title = "Transfer Failed",
+                            message = "${e.javaClass.simpleName}: $errorMessage"
+                        )
+                    }
+                }
             }
         }
     }
     
     /**
-     * Step 3: Batch Transactions (Advanced)
+     * Step 3: Batch Transactions using Altude.sendBatch()
      *
      * Demonstrates:
-     * - Would use VaultSigner.createWithSession() for batch operations
-     * - User prompted ONCE for multiple transactions in 45-second window
+     * - Using Altude.sendBatch() for multiple transfers with single biometric auth
+     * - User is prompted ONCE for the entire batch
      * - Better UX for bulk operations
-     *
-     * Note: This shows the pattern; actual batch signing left for VaultSignerExampleActivity
+     * - Uses VaultSigner session internally for efficient signing
      */
     private fun performBatchTransfer() {
         lifecycleScope.launch {
@@ -224,42 +284,55 @@ class VaultExampleActivity : AppCompatActivity() {
                 showProgress(true)
                 updateStatus(
                     "Preparing batch transfer...\n\n" +
-                        "You'll authenticate once to unlock a 45-second signing session." +
-                        "\nAll subsequent transactions reuse that session."
+                        "You'll authenticate once for all 3 transfers."
                 )
 
-                // Ensure the vault has been initialized before creating a session signer
-                SdkConfig.currentSigner ?: throw Exception("Vault not initialized")
+                // Ensure the vault has been initialized
+                if (SdkConfig.currentSigner == null) throw Exception("Vault not initialized")
 
-                val sessionSigner = VaultSigner.createWithSession(
-                    context = this@VaultExampleActivity,
-                    appId = packageName,
-                    sessionTTLSeconds = 45
+                // Create multiple SendOptions - account can be blank, SDK resolves from vault signer
+                val batchTransfers = listOf(
+                    SendOptions(
+                        account = "",  // SDK auto-resolves from vault signer after biometric
+                        toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                        amount = 0.001,
+                        token = Token.KIN.mint(),
+                        commitment = Commitment.finalized
+                    ),
+                    SendOptions(
+                        account = "",
+                        toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                        amount = 0.002,
+                        token = Token.KIN.mint(),
+                        commitment = Commitment.finalized
+                    ),
+                    SendOptions(
+                        account = "",
+                        toAddress = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                        amount = 0.003,
+                        token = Token.KIN.mint(),
+                        commitment = Commitment.finalized
+                    )
                 )
 
-                val transfers = listOf(
-                    "Transfer 1: 100 USDC",
-                    "Transfer 2: 50 SOL",
-                    "Transfer 3: 200 USDC"
-                )
+                // Sign and send batch - biometric prompt happens once inside Altude.sendBatch()
+                updateStatus("Please authenticate once to send all 3 transfers...")
+                val result = Altude.sendBatch(batchTransfers)
 
-                val signatures = mutableListOf<ByteArray>()
-                transfers.forEachIndexed { index, transfer ->
-                    val prompt = if (index == 0) {
-                        "Please authenticate once to start the batch session..."
-                    } else {
-                        "Signing transaction ${index + 1}/${transfers.size} using the active session..."
+                result
+                    .onSuccess { response ->
+                        showProgress(false)
+                        updateWalletAddress()
+                        updateStatus(
+                            "✅ All 3 transactions sent successfully!\n\n" +
+                                "Signature: ${response.Signature.take(16)}...\n\n" +
+                                "Batch processing completed with a single biometric authentication.\n" +
+                                "All transfers are now finalized on the blockchain."
+                        )
                     }
-                    updateStatus(prompt)
-                    signatures += sessionSigner.signMessage(transfer.toByteArray())
-                }
-
-                showProgress(false)
-                updateStatus(
-                    "✅ All ${transfers.size} transactions signed with a single biometric prompt!\n\n" +
-                        "Session-based signing stays unlocked for ~45 seconds, so you can push additional" +
-                        " transactions without pestering the user."
-                )
+                    .onFailure { error ->
+                        throw error
+                    }
 
             } catch (e: BiometricAuthenticationFailedException) {
                 showProgress(false)
@@ -276,29 +349,20 @@ class VaultExampleActivity : AppCompatActivity() {
                 showProgress(false)
                 showErrorDialog(
                     title = "Batch Error",
-                    message = "[${e.errorCode}] ${e.message}"
+                    message = "[${e.errorCode}] ${e.message}\n\n${e.remediation}"
+                )
+            } catch (e: Exception) {
+                showProgress(false)
+                showErrorDialog(
+                    title = "Batch Transfer Failed",
+                    message = "${e.javaClass.simpleName}: ${e.message}"
                 )
             }
         }
     }
-    
+
+
     // ============ Helper Methods ============
-    
-    private fun createTestTransfer(
-        recipient: String,
-        tokenMint: String,
-        amount: Long
-    ): TestTransaction {
-        // Simplified test transaction (not real Solana format)
-        val messageJson = """{
-            "recipient": "$recipient",
-            "tokenMint": "$tokenMint",
-            "amount": $amount,
-            "timestamp": ${System.currentTimeMillis()}
-        }"""
-        
-        return TestTransaction(messageJson.toByteArray())
-    }
     
     private fun updateStatus(message: String) {
         runOnUiThread {
@@ -347,6 +411,7 @@ class VaultExampleActivity : AppCompatActivity() {
 
                 singleTransferButton.isEnabled = false
                 batchTransferButton.isEnabled = false
+                revealWalletButton.isEnabled = false
                 initButton.isEnabled = true
             } catch (e: Exception) {
                 showProgress(false)
@@ -359,9 +424,63 @@ class VaultExampleActivity : AppCompatActivity() {
         }
     }
     
-    // Test data class
-    data class TestTransaction(val message: ByteArray) {
-        override fun equals(other: Any?) = this === other
-        override fun hashCode() = message.contentHashCode()
+    private fun revealWalletAddress() {
+        lifecycleScope.launch {
+            try {
+                showProgress(true)
+                updateStatus("Please authenticate to reveal your wallet address...")
+
+                val signer = SdkConfig.currentSigner
+                    ?: throw Exception("Vault not initialized")
+
+                // Sign a harmless message to unlock the vault and cache the public key
+                signer.signMessage("reveal-public-key".toByteArray())
+                updateWalletAddress()
+
+                showProgress(false)
+                updateStatus("✅ Wallet unlocked. Address displayed above.")
+
+            } catch (e: BiometricAuthenticationFailedException) {
+                showProgress(false)
+                when (e.failureReason) {
+                    BiometricAuthenticationFailedException.FailureReason.UserCancelled ->
+                        updateStatus("Unlock cancelled. Tap 'Reveal Wallet' to try again.")
+                    BiometricAuthenticationFailedException.FailureReason.TooManyAttempts ->
+                        showErrorDialog(
+                            title = "Too Many Attempts",
+                            message = "Biometric locked for 30 seconds. Please try again later."
+                        )
+                    else -> showErrorDialog(
+                        title = "Authentication Failed",
+                        message = "Fingerprint/face not recognized. Please try again."
+                    )
+                }
+            } catch (e: VaultException) {
+                showProgress(false)
+                showErrorDialog(
+                    title = "Vault Error",
+                    message = "[${e.errorCode}] ${e.message}\n\n${e.remediation}"
+                )
+            } catch (e: Exception) {
+                showProgress(false)
+                showErrorDialog(
+                    title = "Unable to Reveal",
+                    message = e.message ?: "Unknown error"
+                )
+            }
+        }
+    }
+
+    private fun copyWalletToClipboard() {
+        val address = walletAddressText.text.toString()
+        if (address.isEmpty() || address == "Not initialized" || address.contains("Locked")) {
+            Toast.makeText(this, "Wallet address not available. Unlock first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = android.content.ClipData.newPlainText("Wallet Address", address)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "Wallet address copied to clipboard!", Toast.LENGTH_SHORT).show()
     }
 }

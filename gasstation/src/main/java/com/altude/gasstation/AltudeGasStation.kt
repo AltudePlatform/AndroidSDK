@@ -6,10 +6,10 @@ import com.altude.core.config.InitOptions
 import com.altude.core.config.SdkConfig
 import com.altude.core.config.SignerStrategy
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.TransactionSigner
 import com.altude.core.service.StorageService
 import com.altude.vault.manager.VaultManager
 import com.altude.vault.model.VaultSigner
+import foundation.metaplex.solanapublickeys.PublicKey
 
 /**
  * ModernAltudeGasStation provides the modern SDK initialization API with Vault as the default signer.
@@ -74,27 +74,21 @@ object AltudeGasStation {
             // Step 2: Initialize Core SDK services
             SdkConfig.setApiKey(context, apiKey)
 
-            // Step 3: Set up signer based on strategy
-            val strategy: SignerStrategy = options.signerStrategy // Create local variable for smart casting
-            val signer = when (strategy) {
-                is SignerStrategy.VaultDefault -> {
-                    // Create VaultSigner - takes care of vault initialization internally
-                    createVaultSigner(context, options)
-                }
-
-                is SignerStrategy.External -> {
-                    // Use external signer directly
-                    strategy.signer
-                }
-            }
-
-            // Step 4: Set the signer in SdkConfig for all subsequent operations
-            SdkConfig.setSigner(signer)
-
-            // Step 5: Initialize storage for backward compatibility with legacy APIs
+            // Step 3: Initialize storage first so we can read stored wallet addresses
             StorageService.init(context)
 
-            // Generate mnemonic for backward compatibility (legacy Altude.setApiKey behavior)
+            // Step 4: Set up signer based on strategy
+            val strategy: SignerStrategy = options.signerStrategy
+            val signer = when (strategy) {
+                is SignerStrategy.VaultDefault -> createVaultSigner(context, options)
+                is SignerStrategy.External -> strategy.signer
+            }
+
+            // Step 5: Set the signer in SdkConfig for all subsequent operations
+            SdkConfig.setSigner(signer)
+
+
+            // Step 7: Generate mnemonic for backward compatibility
             Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
 
             Result.success(Unit)
@@ -131,12 +125,17 @@ object AltudeGasStation {
             )
         }
 
+        // Read stored wallet address to pre-populate publicKey so it's
+        // available immediately after init without requiring biometric
+        val storedAddress = StorageService.listStoredWalletAddresses().firstOrNull()
+        val initialPublicKey = storedAddress?.let { PublicKey(it) }
+
         // Default to per-operation authentication (most secure)
-        // Apps can use VaultSigner.createWithSession() afterwards for batch operations
         return VaultSigner.create(
             context = context,
             appId = appId,
-            walletIndex = vaultOptions.walletIndex
+            walletIndex = vaultOptions.walletIndex,
+            initialPublicKey = initialPublicKey
         )
     }
 

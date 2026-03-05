@@ -41,6 +41,7 @@ android {
     packaging {
         jniLibs {
             excludes += setOf("**/libargon2.so")
+            useLegacyPackaging = false
         }
     }
     buildToolsVersion = rootProject.extra["buildToolsVersion"] as String
