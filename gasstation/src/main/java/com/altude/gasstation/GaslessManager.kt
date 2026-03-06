@@ -5,38 +5,32 @@ import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.Programs.SwapHelper
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.api.SwapService
-import com.altude.core.config.SwapConfig
-import com.altude.gasstation.helper.Utility
 import com.altude.core.config.SdkConfig
-import com.altude.core.data.SwapResponse
+import com.altude.core.config.SwapConfig
 import com.altude.core.data.PrioritizationFeeLamports
 import com.altude.core.data.PriorityLevelWithMaxLamports
 import com.altude.core.data.QuoteResponse
 import com.altude.core.data.SwapInstructionRequest
+import com.altude.core.data.SwapRequest
+import com.altude.core.data.SwapResponse
+import com.altude.core.data.toQueryMap
+import com.altude.core.model.AltudeTransaction
+import com.altude.core.model.AltudeTransactionBuilder
+import com.altude.core.model.EmptySignature
+import com.altude.core.model.MessageAddressTableLookup
+import com.altude.core.model.TransactionSigner
+import com.altude.core.model.TransactionVersion
+import com.altude.core.network.AltudeRpc
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
 import com.altude.gasstation.data.SendOptions
-import com.altude.core.helper.Mnemonic
-import com.altude.core.model.AltudeTransactionBuilder
-import com.altude.core.model.HotSigner
-import com.altude.core.model.TransactionSigner
-import com.altude.gasstation.data.KeyPair
-import com.altude.gasstation.data.SolanaKeypair
-import com.altude.core.network.AltudeRpc
-import com.altude.core.service.StorageService
-import com.altude.core.data.SwapRequest
-import com.altude.core.data.toQueryMap
-import com.altude.core.model.AltudeTransaction
-import com.altude.core.model.EmptySignature
-import com.altude.core.model.MessageAddressTableLookup
-import com.altude.core.model.TransactionVersion
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.Token
 import com.altude.gasstation.data.parseLookupTableAccountBase64
+import com.altude.gasstation.helper.Utility
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
-import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,7 +39,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import retrofit2.HttpException
 import retrofit2.await
-import java.lang.Error
 import kotlin.math.pow
 
 object GaslessManager {
@@ -63,23 +56,23 @@ object GaslessManager {
             }
     suspend fun transferToken(option: ISendOption, signer: TransactionSigner? = null): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
+            val signerToUse = resolveSigner(option.account, signer)
+            ensureBiometricAuth(signerToUse, "transfer")
+            // After biometric unlock the public key is always available - use it as account
+            val ownerKey = signerToUse.publicKey
             val pubKeyMint = PublicKey(option.token)
             val pubKeyDestination = PublicKey(option.toAddress)
-            val defaultWallet = getKeyPair(option.account)
-            val sourceAta =
-                AssociatedTokenAccountProgram.deriveAtaAddress(defaultWallet.publicKey, pubKeyMint)
-            val destinationAta =
-                AssociatedTokenAccountProgram.deriveAtaAddress(pubKeyDestination, pubKeyMint)
-            val sourceAtaBase58 = sourceAta.toBase58()
-            if (!Utility.ataExists(sourceAtaBase58))
-                throw Error("Owner associated token account does not exist.")
+            val sourceAta = AssociatedTokenAccountProgram.deriveAtaAddress(ownerKey, pubKeyMint)
+            val destinationAta = AssociatedTokenAccountProgram.deriveAtaAddress(pubKeyDestination, pubKeyMint)
+            if (!Utility.ataExists(sourceAta.toBase58()))
+                throw Exception("Owner associated token account does not exist.")
 
             val destinationCreateAta: TransactionInstruction? =
                 if (!Utility.ataExists(destinationAta.toBase58())) {
                     AssociatedTokenAccountProgram.createAssociatedTokenAccount(
                         ata = destinationAta,
                         feePayer = feePayerPubKey,
-                        owner = pubKeyDestination, // ✅ Corrected
+                        owner = pubKeyDestination,
                         mint = pubKeyMint
                     )
                 } else null
@@ -90,128 +83,100 @@ object GaslessManager {
             val transferInstruction = TokenProgram.transferToken(
                 source = sourceAta,
                 destination = destinationAta,
-                owner = defaultWallet.publicKey,
+                owner = ownerKey,
                 mint = pubKeyMint,
                 amount = rawAmount,
-                decimals = decimals.toUInt(),
-                //signers = listOf(defaultWallet.publicKey, feePayerPubKey)
+                decimals = decimals.toUInt()
             )
 
-            val blockhashInfo = rpc.getLatestBlockhash(
-                commitment = option.commitment.name
-            )
-
-            val recentBlockhash = blockhashInfo.blockhash
-            
-            // Use provided signer, or fall back to SdkConfig.currentSigner, or use HotSigner
-            val authorizedSignature = signer ?: SdkConfig.currentSigner ?: HotSigner(SolanaKeypair(defaultWallet.publicKey, defaultWallet.secretKey))
+            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
             val builder = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
-                .setRecentBlockHash(recentBlockhash)
+                .setRecentBlockHash(blockhashInfo.blockhash)
             destinationCreateAta?.let { builder.addInstruction(it) }
             builder.addInstruction(transferInstruction)
-            builder.setSigners(listOf(authorizedSignature))
+            builder.setSigners(listOf(signerToUse))
 
-            val build = builder.build()
             val serialized = Base64.encodeToString(
-                build.serialize(SerializeConfig(requireAllSignatures = false)),
+                builder.build().serialize(SerializeConfig(requireAllSignatures = false)),
                 Base64.NO_WRAP
             )
 
             Result.success(serialized)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
     suspend fun batchTransferToken(options: List<SendOptions>, signers: List<TransactionSigner>? = null): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                val transferInstructions = mutableListOf<TransactionInstruction>();
-                val authorizedSignatures = mutableListOf<TransactionSigner>()
+                val finalSigners = resolveSignersForBatch(options, signers)
+                ensureBiometricAuth(finalSigners.first(), "batch-transfer")
+                val transferInstructions = mutableListOf<TransactionInstruction>()
+
                 options.forEach { option ->
+                    val signerForOption = resolveSignerForAccount(finalSigners, option.account)
+                    val ownerKey = signerForOption.publicKey
                     val pubKeyMint = PublicKey(option.token)
                     val pubKeyDestination = PublicKey(option.toAddress)
-                    val defaultWallet = getKeyPair(option.account)
-                    val sourceAta = AssociatedTokenAccountProgram.deriveAtaAddress(
-                        defaultWallet.publicKey,
-                        pubKeyMint
-                    )
-                    val destinationAta = AssociatedTokenAccountProgram.deriveAtaAddress(
-                        pubKeyDestination,
-                        pubKeyMint
-                    )
+                    val sourceAta = AssociatedTokenAccountProgram.deriveAtaAddress(ownerKey, pubKeyMint)
+                    val destinationAta = AssociatedTokenAccountProgram.deriveAtaAddress(pubKeyDestination, pubKeyMint)
 
                     if (!Utility.ataExists(sourceAta.toBase58()))
-                        throw Error("Owner associated token account does not exist.")
+                        throw Exception("Owner associated token account does not exist.")
 
                     val destinationCreateAta: TransactionInstruction? =
                         if (!Utility.ataExists(destinationAta.toBase58())) {
                             AssociatedTokenAccountProgram.createAssociatedTokenAccount(
                                 ata = destinationAta,
                                 feePayer = feePayerPubKey,
-                                owner = pubKeyDestination, // ✅ Corrected
+                                owner = pubKeyDestination,
                                 mint = pubKeyMint
                             )
                         } else null
-                    if (destinationCreateAta != null)
-                        transferInstructions.add(destinationCreateAta)
+                    destinationCreateAta?.let { transferInstructions.add(it) }
+
                     val decimals = Utility.getTokenDecimals(option.token)
                     val rawAmount = com.altude.core.Programs.Utility.getRawQuantity(option.amount, decimals)
 
                     val transferInstruction = TokenProgram.transferToken(
                         source = sourceAta,
                         destination = destinationAta,
-                        owner = defaultWallet.publicKey,
+                        owner = ownerKey,
                         mint = pubKeyMint,
                         amount = rawAmount,
-                        decimals = decimals.toUInt(),
-                        //signers = listOf(defaultWallet.publicKey, feePayerPubKey)
+                        decimals = decimals.toUInt()
                     )
                     transferInstructions.add(transferInstruction)
-                    if (signers == null && authorizedSignatures.find { it.publicKey == defaultWallet.publicKey } == null)
-                        authorizedSignatures.add(
-                            HotSigner(
-                                SolanaKeypair(
-                                    defaultWallet.publicKey,
-                                    defaultWallet.secretKey
-                                )
-                            )
-                        )
                 }
 
                 val blockhashInfo = rpc.getLatestBlockhash()
 
-                val recentBlockhash = blockhashInfo.blockhash
-
-                // Use provided signers or fall back to constructed authorizedSignatures
-                val finalSigners = signers ?: authorizedSignatures
-
                 val builder = AltudeTransactionBuilder()
                     .setFeePayer(feePayerPubKey)
-                    .setRecentBlockHash(recentBlockhash)
-                //destinationCreateAta?.let { builder.addInstruction(it) }
-                builder.addRangeInstruction(transferInstructions)
-                builder.setSigners(finalSigners)
+                    .setRecentBlockHash(blockhashInfo.blockhash)
+                    .addRangeInstruction(transferInstructions)
+                    .setSigners(finalSigners.distinctBy { it.publicKey.toBase58() })
 
-                val build = builder.build()
                 val serialized = Base64.encodeToString(
-                    build.serialize(SerializeConfig(requireAllSignatures = false)),
+                    builder.build().serialize(SerializeConfig(requireAllSignatures = false)),
                     Base64.NO_WRAP
                 )
 
                 Result.success(serialized)
-            } catch (e: Exception) {
-                Result.failure(e)
+            } catch (e: Throwable) {
+                Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
         }
 
     suspend fun createAccount(option: CreateAccountOption, signer: TransactionSigner? = null): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                val defaultWallet = getKeyPair(option.account)
-                val ownerKey = defaultWallet.publicKey//PublicKey(option.owner)
+                val signerToUse = resolveSigner(option.account, signer)
+                ensureBiometricAuth(signerToUse, "create-account")
+                val ownerKey = signerToUse.publicKey
 
                 val txInstructions = mutableListOf<TransactionInstruction>()
                 option.tokens.forEach { token ->
@@ -221,7 +186,7 @@ object GaslessManager {
                         val ataInstruction =
                             AssociatedTokenAccountProgram.createAssociatedTokenAccount(
                                 ata = ata,
-                                feePayer = feePayerPubKey, // only pubkey
+                                feePayer = feePayerPubKey,
                                 owner = ownerKey,
                                 mint = mintKey
                             )
@@ -234,26 +199,19 @@ object GaslessManager {
                         txInstructions.add(authInstruction)
                     }
                 }
-                if (txInstructions.count() == 0) {
+                if (txInstructions.isEmpty()) {
                     if (option.tokens.count() > 1) {
-                        return@withContext  Result.failure(Error("All Token accounts already created"))
-
+                        return@withContext Result.failure(Error("All Token accounts already created"))
                     }
-                    return@withContext Result.failure( Error("Token account already created"))
+                    return@withContext Result.failure(Error("Token account already created"))
                 }
-                
-                // Use provided signer, or fall back to SdkConfig.currentSigner, or use HotSigner
-                val authorizedSigner = signer ?: SdkConfig.currentSigner ?: HotSigner(SolanaKeypair(ownerKey, defaultWallet.secretKey))
 
-
-                val blockhashInfo = rpc.getLatestBlockhash(
-                    commitment = option.commitment.name
-                )
+                val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
                 val tx = AltudeTransactionBuilder().addRangeInstruction(txInstructions)
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhashInfo.blockhash)
-                    .setSigners(listOf(authorizedSigner))
+                    .setSigners(listOf(signerToUse))
                     .build()
 
                 val serialized = Base64.encodeToString(
@@ -261,40 +219,38 @@ object GaslessManager {
                     Base64.NO_WRAP
                 )
                 Result.success(serialized)
-            } catch (e: Exception) {
-                Error(e)
-                Result.failure(e)
+            } catch (e: Throwable) {
+                Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
         }
 
     suspend fun closeAccount(
         option: CloseAccountOption,
-        signer: TransactionSigner? = null
+        signer: TransactionSigner? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            var defaultWallet: Keypair? = null
-            try {
-                defaultWallet = getKeyPair(option.account)
-            } catch (e: Error) {
-            }
-            val ownerKeypubkey = defaultWallet?.publicKey ?: PublicKey(option.account)
+            val signerToUse = resolveSigner(option.account, signer)
+            ensureBiometricAuth(signerToUse, "close-account")
+            val ownerKey = signerToUse.publicKey
+                ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
+                ?: throw IllegalArgumentException("Account public key required to close accounts")
 
             val txInstructions = mutableListOf<TransactionInstruction>()
-            var authorized: PublicKey
-            var isOwnerRequiredSignature = false
+            var requiresOwnerSignature = false
             option.tokens.forEach { token ->
                 val mintKey = PublicKey(token)
-                val ata = AssociatedTokenAccountProgram.deriveAtaAddress(ownerKeypubkey, mintKey)
+                val ata = AssociatedTokenAccountProgram.deriveAtaAddress(ownerKey, mintKey)
                 val ataInfo = Utility.getAccountInfo(ata.toBase58())
                 if (ataInfo != null) {
                     val parsed = ataInfo.data?.parsed?.info
                     val balance = parsed?.tokenAmount?.uiAmount ?: 0.0
-                    if(balance == 0.0 || token == Token.SOL.mint()){
-                        if (parsed?.closeAuthority == feePayerPubKey.toBase58() || defaultWallet == null)
-                            authorized = feePayerPubKey
-                        else {
-                            authorized = defaultWallet.publicKey
-                            isOwnerRequiredSignature = true
+                    if (balance == 0.0 || token == Token.SOL.mint()) {
+                        val closeAuthority = parsed?.closeAuthority
+                        val authorized = if (closeAuthority == feePayerPubKey.toBase58()) {
+                            feePayerPubKey
+                        } else {
+                            requiresOwnerSignature = true
+                            ownerKey
                         }
                         val instruction = TokenProgram.closeAtaAccount(
                             ata = ata,
@@ -303,49 +259,47 @@ object GaslessManager {
                         )
                         txInstructions.add(instruction)
                     }
-
-
                 }
             }
-            if (txInstructions.count() == 0) {
+            if (txInstructions.isEmpty()) {
                 if (option.tokens.count() > 1)
                     return@withContext Result.failure(Error("All selected token accounts either have a balance or are already closed."))
                 return@withContext Result.failure(Error("The selected token account either has a balance or is already closed."))
             }
 
-            val blockhashInfo = rpc.getLatestBlockhash(
-                commitment = option.commitment.name
-            )
+            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
+                .apply {
+                    if (requiresOwnerSignature) {
+                        val signerForClose = signerToUse
+                            ?: throw IllegalStateException("Vault signer required to close account with owner authority")
+                        setSigners(listOf(signerForClose))
+                    }
+                }
                 .build()
-            
-            // Use provided signer if available, or fall back to SdkConfig.currentSigner
-            if (isOwnerRequiredSignature && defaultWallet != null) {
-                val signerToUse = signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet)
-                tx.sign(signerToUse)
-            }
-            //val sign = Core.SignTransaction(privateKeyBytes,message)
+
             val serialized = Base64.encodeToString(
                 tx.serialize(SerializeConfig(requireAllSignatures = false)),
                 Base64.NO_WRAP
             )
             Result.success(serialized)
-        } catch (e: Exception) {
-            Result.failure(e)
-
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
     suspend fun swapInstruction(
         option: SwapOption,
-        signer: TransactionSigner? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val defaultWallet = getKeyPair(option.account)
+        signer: TransactionSigner? = null,
+    ): Result<AltudeTransaction> = withContext(Dispatchers.IO) {
+        try {
+            val signerToUse = resolveSigner(option.account, signer)
+            ensureBiometricAuth(signerToUse, "swap")
+            val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
@@ -355,7 +309,7 @@ object GaslessManager {
                 amount = rawAmount,
                 slippageBps = option.slippageBps,
                 swapMode = option.swapMode,
-                dexes =  option.dexes,
+                dexes = option.dexes,
                 excludeDexes = option.excludeDexes,
                 restrictIntermediateTokens = option.restrictIntermediateTokens,
                 onlyDirectRoutes = option.onlyDirectRoutes,
@@ -366,58 +320,62 @@ object GaslessManager {
                 dynamicSlippage = option.dynamicSlippage
             )
 
-            val quote =  try{ val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
-                Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)}catch (e: HttpException){
+            val quote = try {
+                val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
+                Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)
+            } catch (e: HttpException) {
                 val raw = e.response()?.errorBody()?.string()
                 val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
                 Altude.json.decodeFromJsonElement<QuoteResponse>(errorJson)
             }
 
-            if(quote.isError)
+            if (quote.isError)
                 throw Exception(quote.error)
             val swapInstructionRequest = SwapInstructionRequest(
                 quoteResponse = quote,
-                userPublicKey = option.account,
+                userPublicKey = ownerKey.toBase58(),
                 payer = feePayerPubKey.toBase58(),
-                prioritizationFeeLamports = if (option.priorityLevelWithMaxLamports != null){
+                prioritizationFeeLamports = option.priorityLevelWithMaxLamports?.let {
                     PrioritizationFeeLamports(
                         priorityLevelWithMaxLamports = PriorityLevelWithMaxLamports(
-                            priorityLevel = option.priorityLevelWithMaxLamports .priorityLevel,
-                            global = option.priorityLevelWithMaxLamports.global,
-                            maxLamports = option.priorityLevelWithMaxLamports.maxLamports
+                            priorityLevel = it.priorityLevel,
+                            global = it.global,
+                            maxLamports = it.maxLamports
                         )
                     )
-                } else {
-                    null
                 }
             )
 
-            val swapResponse = try{ val response = service.swapInstruction(swapInstructionRequest).await()
-                Altude.json.decodeFromJsonElement<SwapResponse>(response)} catch (e: HttpException){
+            val swapResponse = try {
+                val response = service.swapInstruction(swapInstructionRequest).await()
+                Altude.json.decodeFromJsonElement<SwapResponse>(response)
+            } catch (e: HttpException) {
                 val raw = e.response()?.errorBody()?.string()
                 val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
                 Altude.json.decodeFromJsonElement<SwapResponse>(errorJson)
             }
-            if(swapResponse.isError)
+            if (swapResponse.isError)
                 throw Exception(swapResponse.error)
 
-            val txInstructions = SwapHelper.buildSwapTransaction( swapResponse).toMutableList()
+            val txInstructions = SwapHelper.buildSwapTransaction(swapResponse).toMutableList()
 
-            txInstructions.addAll( txInstructions.filter { it -> it.programId == PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL") }.map
-                { it ->
-                    TokenProgram .setAuthority(
-                        ata = it.keys[1].publicKey,
-                        currentAuthority = defaultWallet.publicKey,
-                        newOwner = feePayerPubKey
-                    )
-                }
+            txInstructions.addAll(
+                txInstructions
+                    .filter { it.programId == PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL") }
+                    .map {
+                        TokenProgram.setAuthority(
+                            ata = it.keys[1].publicKey,
+                            currentAuthority = ownerKey,
+                            newOwner = feePayerPubKey
+                        )
+                    }
             )
 
             val mainKeys = swapResponse.swapInstruction?.accounts?.map { it.pubkey } ?: emptyList()
 
             val lookupTables = swapResponse.addressLookupTableAddresses?.map { tablePubkey ->
 
-                val accountInfo = Utility .getLookUpTable(tablePubkey)
+                val accountInfo = Utility.getLookUpTable(tablePubkey)
                 val dataBase64 = accountInfo?.data?.get(0) as? String ?: ""
 
                 val alt = parseLookupTableAccountBase64(dataBase64)
@@ -443,35 +401,34 @@ object GaslessManager {
                 )
             }?.filter { it.writableIndexes.isNotEmpty() || it.readonlyIndexes.isNotEmpty() } ?: emptyList()
 
-            val blockhashInfo = rpc.getLatestBlockhash(
-                commitment = option.commitment.name
-            )
-
+            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
             val tx = AltudeTransactionBuilder(TransactionVersion.V0)
                 .setFeePayer(feePayerPubKey)
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .addLookUpTables(lookupTables)
-                .setSigners(listOf(signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet)))
-
+                .setSigners(listOf(signerToUse))
                 .build()
-            val serialized = Base64.encodeToString(
+
+            // Wrap serialized transaction into AltudeTransaction (expected return type)
+            val serializedTx = Base64.encodeToString(
                 tx.serialize(SerializeConfig(requireAllSignatures = false)),
                 Base64.NO_WRAP
             )
-
-            Result.success(serialized)
-        } catch (e: Exception) {
-            Result.failure(e)
+            Result.success(AltudeTransaction(serializedTx))
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
+
     suspend fun swap(
         option: SwapOption,
-        signer: TransactionSigner? = null
+        signer: TransactionSigner? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val defaultWallet = getKeyPair(option.account)
+        try {
+            val signerToUse = resolveSigner(option.account, signer)
+            ensureBiometricAuth(signerToUse, "swap")
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
@@ -481,7 +438,7 @@ object GaslessManager {
                 amount = rawAmount,
                 slippageBps = option.slippageBps,
                 swapMode = option.swapMode,
-                dexes =  option.dexes,
+                dexes = option.dexes,
                 excludeDexes = option.excludeDexes,
                 restrictIntermediateTokens = option.restrictIntermediateTokens,
                 onlyDirectRoutes = option.onlyDirectRoutes,
@@ -492,53 +449,54 @@ object GaslessManager {
                 dynamicSlippage = option.dynamicSlippage
             )
 
-            val quote =  try{ val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
-                Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)}catch (e: HttpException){
+            val quote = try {
+                val quoteResponse = service.quote(swapRequest.toQueryMap()).await()
+                Altude.json.decodeFromJsonElement<QuoteResponse>(quoteResponse)
+            } catch (e: HttpException) {
                 val raw = e.response()?.errorBody()?.string()
                 val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
                 Altude.json.decodeFromJsonElement<QuoteResponse>(errorJson)
             }
 
-            if(quote.isError)
+            if (quote.isError)
                 throw Exception(quote.error)
             val swapInstructionRequest = SwapInstructionRequest(
                 quoteResponse = quote,
-                userPublicKey = option.account,
+                userPublicKey = signerToUse.publicKey.toBase58(),
                 payer = feePayerPubKey.toBase58(),
-                prioritizationFeeLamports = if (option.priorityLevelWithMaxLamports != null){
+                prioritizationFeeLamports = option.priorityLevelWithMaxLamports?.let {
                     PrioritizationFeeLamports(
                         priorityLevelWithMaxLamports = PriorityLevelWithMaxLamports(
-                            priorityLevel = option.priorityLevelWithMaxLamports .priorityLevel,
-                            global = option.priorityLevelWithMaxLamports.global,
-                            maxLamports = option.priorityLevelWithMaxLamports.maxLamports
+                            priorityLevel = it.priorityLevel,
+                            global = it.global,
+                            maxLamports = it.maxLamports
                         )
                     )
-                } else {
-                    null
                 }
             )
 
-            val swapResponse = try{ val response = service.swap(swapInstructionRequest).await()
-                Altude.json.decodeFromJsonElement<SwapResponse>(response)} catch (e: HttpException){
+            val swapResponse = try {
+                val response = service.swap(swapInstructionRequest).await()
+                Altude.json.decodeFromJsonElement<SwapResponse>(response)
+            } catch (e: HttpException) {
                 val raw = e.response()?.errorBody()?.string()
                 val errorJson = Altude.json.parseToJsonElement(raw ?: "{}")
                 Altude.json.decodeFromJsonElement<SwapResponse>(errorJson)
             }
-            if(swapResponse.isError)
+            if (swapResponse.isError)
                 throw Exception(swapResponse.error)
 
-
-
             val tx = AltudeTransaction(swapResponse.swapTransaction ?: "")
-                .partialSign(listOf(signer ?: SdkConfig.currentSigner ?: HotSigner(defaultWallet), EmptySignature(feePayerPubKey)))
+                .partialSign(listOf(signerToUse, EmptySignature(feePayerPubKey)))
 
             val serialized = tx.serialize()
 
             Result.success(serialized)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
+
     suspend fun quote(
         option: SwapOption
     ): Result<QuoteResponse> = withContext(Dispatchers.IO) {
@@ -548,27 +506,53 @@ object GaslessManager {
             val service = SwapConfig.createService(SwapService::class.java)
             val swapRequest = SwapRequest(
                 inputMint = option.inputMint,
-                outputMint =option.outputMint,
+                outputMint = option.outputMint,
                 amount = rawAmount,
                 slippageBps = option.slippageBps
             )
             val quoteResponse = Altude.json.decodeFromJsonElement<QuoteResponse>(service.quote(swapRequest.toQueryMap()).await())
-            if(quoteResponse.isError)
+            if (quoteResponse.isError)
                 Result.failure<String>(Exception(quoteResponse.error))
             Result.success(quoteResponse)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
-    suspend fun getKeyPair(account: String = ""): Keypair {
-        val seedData = StorageService.getDecryptedSeed(account)
-        if (seedData != null) {
-            if (seedData.type == "mnemonic") return Mnemonic(seedData.mnemonic).getKeyPair()
-            return if (seedData.privateKey != null) KeyPair.solanaKeyPairFromPrivateKey(seedData.privateKey!!)
-            else throw Error("No seed found in storage")
-        } else throw Error("Please set seed first")
+    private suspend fun ensureBiometricAuth(signer: TransactionSigner, purpose: String) {
+        withContext(Dispatchers.Main) {
+            signer.signMessage("auth:$purpose".toByteArray())
+        }
     }
 
+    private fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
+        val signer = overrideSigner ?: SdkConfig.currentSigner
+        requireNotNull(signer) {
+            "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
+        }
+        // If account is blank, use the signer's public key (resolved after biometric unlock)
+        if (account.isNotBlank() && signer.publicKey.toBase58() != account) {
+            throw IllegalArgumentException("Signer public key ${signer.publicKey.toBase58()} does not match requested account $account")
+        }
+        return signer
+    }
+
+    private fun resolveSignerForAccount(signers: List<TransactionSigner>, account: String): TransactionSigner {
+        if (signers.isEmpty()) throw IllegalArgumentException("No signer available")
+        if (account.isBlank()) return signers.first()
+        return signers.firstOrNull { it.publicKey.toBase58() == account }
+            ?: throw IllegalArgumentException("No signer matches requested account $account")
+    }
+
+    private fun resolveSignersForBatch(options: List<SendOptions>, provided: List<TransactionSigner>?): List<TransactionSigner> {
+        provided?.let { return it }
+        val defaultSigner = resolveSigner()
+        options.firstOrNull { it.account.isNotBlank() }?.let { option ->
+            if (defaultSigner.publicKey.toBase58() != option.account) {
+                throw IllegalArgumentException("Default signer does not match batch account ${option.account}")
+            }
+        }
+        return listOf(defaultSigner)
+    }
 
 }

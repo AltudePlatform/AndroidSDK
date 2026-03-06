@@ -1,7 +1,7 @@
 package com.altude.gasstation.data
 
 data class SwapOption(
-    val account: String,
+    val account: String = "",
     /**
      * The input token mint address.
      */

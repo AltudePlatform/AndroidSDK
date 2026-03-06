@@ -68,8 +68,8 @@ object Altude {
 
             val res = service.sendTransaction(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -87,8 +87,8 @@ object Altude {
 
             val res = service.sendBatchTransaction(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
@@ -107,8 +107,8 @@ object Altude {
 
             val res = service.createAccount(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -126,8 +126,8 @@ object Altude {
 
             val res = service.closeAccount(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -139,7 +139,7 @@ object Altude {
 
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
-            val signedTransaction = result.getOrThrow()
+            val signedTransaction = result.getOrThrow().serialize()
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = SwapTransactionRequest(signedTransaction)
 
@@ -149,8 +149,8 @@ object Altude {
             closeAccount(CloseAccountOption(options.account, listOf(Token.SOL.mint(), options.inputMint).distinct())).getOrNull()
 
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
@@ -170,8 +170,8 @@ object Altude {
             val res = service.swapTransaction(request).await()
 
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
@@ -185,8 +185,8 @@ object Altude {
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             Result.success(result.getOrThrow())
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
@@ -195,15 +195,22 @@ object Altude {
         options: GetHistoryOption
     ): Result<GetHistoryData> = withContext(Dispatchers.IO) {
         try {
+            val account = resolveAccount(options.account)
             val service = SdkConfig.createService(TransactionService::class.java)
 
-            val res = service.getHistory(options.offset.toString(),options.limit.toString(),options.account).await()
+            val res = service.getHistory(options.offset.toString(), options.limit.toString(), account).await()
 
             Result.success(deCodeJson<GetHistoryData>(res))
-        } catch (e: Exception) {
-            println("Error: $e")
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
+    }
+
+    private fun resolveAccount(account: String): String {
+        if (account.isNotBlank()) return account
+        val signer = SdkConfig.currentSigner
+        requireNotNull(signer) { "Vault signer required. Call SdkConfig.setSigner(VaultSigner) before using SDK methods." }
+        return signer.publicKey.toBase58()
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -211,18 +218,14 @@ object Altude {
         option: GetBalanceOption
     ): Result<GetBalanceResponse> = withContext(Dispatchers.IO)  {
         try {
-            val defaultWallet = GaslessManager.getKeyPair(option.account)
-
-            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val account = resolveAccount(option.account)
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = GetBalanceRequest(account, option.token)
 
             val res = service.getBalance(request).await()
             Result.success(deCodeJson<GetBalanceResponse>(res))
-            //return   result.data?.parsed?.info?.tokenAmount
-        } catch (e: Exception) {
-            println("Error: $e")
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -230,17 +233,14 @@ object Altude {
         option: GetAccountInfoOption = GetAccountInfoOption()
     ): Result<GetAccountResponse> = withContext(Dispatchers.IO)  {
         try {
-            val defaultWallet = GaslessManager.getKeyPair(option.account)
-
-            val account = if (option.account == "") defaultWallet.publicKey.toBase58() else option.account
+            val account = resolveAccount(option.account)
             val service = SdkConfig.createService(TransactionService::class.java)
             val request = GetAccountInfoRequest(account)
 
             val res = service.getAccountInfo(request).await()
             Result.success(deCodeJson<GetAccountResponse>(res))
-        } catch (e: Exception) {
-            println("Error: $e")
-            return@withContext Result.failure(e)
+        } catch (e: Throwable) {
+            return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
