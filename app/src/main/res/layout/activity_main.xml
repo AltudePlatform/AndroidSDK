@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal">
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Altude SDK"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:paddingTop="32dp"
+        android:paddingBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Example App"
+        android:textSize="16sp"
+        android:alpha="0.6"
+        android:gravity="center"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tvBuildInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:alpha="0.4"
+        android:gravity="center"
+        android:paddingBottom="40dp" />
+
+    <!-- Example buttons -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SELECT AN EXAMPLE"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.1"
+        android:alpha="0.5"
+        android:paddingBottom="12dp" />
+
+    <Button
+        android:id="@+id/btnVaultExample"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginBottom="12dp"
+        android:text="🔐  Vault Example\n(Default — biometric, recommended)"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/btnSignerExamples"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginBottom="12dp"
+        android:text="🔑  Signer Examples\n(Vault vs Custom key storage)"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/btnExternalSigner"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginBottom="12dp"
+        android:text="⚙️  External Signer\n(Custom TransactionSigner, no biometric)"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/btnErrorHandling"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="🛠  Error Handling\n(Vault error codes &amp; recovery)"
+        android:textSize="13sp" />
+
+</LinearLayout>
+

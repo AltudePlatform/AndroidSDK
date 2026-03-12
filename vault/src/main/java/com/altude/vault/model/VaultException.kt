@@ -30,6 +30,7 @@ object VaultErrorCodes {
     const val ENCRYPTION_FAILED = "VAULT-0302"
     const val STORAGE_CORRUPTED = "VAULT-0303"
     const val KEYSTORE_ERROR = "VAULT-0304"
+    const val STALE_KEYSET = "VAULT-0305"
 
     // Session/Runtime (04xx)
     const val VAULT_LOCKED = "VAULT-0401"
@@ -345,3 +346,5 @@ class VaultConfigurationException(
     remediation = remediation,
     cause = cause
 )
+
+

@@ -9,7 +9,7 @@ import com.altude.core.helper.Mnemonic
 import com.altude.core.service.StorageService
 import com.altude.vault.manager.VaultManager
 import com.altude.vault.model.VaultSigner
-import foundation.metaplex.solanapublickeys.PublicKey
+import com.altude.vault.model.VaultStorageCorruptedException
 
 /**
  * ModernAltudeGasStation provides the modern SDK initialization API with Vault as the default signer.
@@ -87,11 +87,17 @@ object AltudeGasStation {
             // Step 5: Set the signer in SdkConfig for all subsequent operations
             SdkConfig.setSigner(signer)
 
-
-            // Step 7: Generate mnemonic for backward compatibility
-            Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
+            // Step 6: Generate mnemonic for backward compatibility (best-effort — don't fail init)
+            try {
+                Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
+            } catch (e: Throwable) {
+                android.util.Log.w("AltudeGasStation", "saveMnemonic failed (non-fatal): ${e.message}")
+            }
 
             Result.success(Unit)
+        } catch (e: com.altude.vault.model.VaultException) {
+            // Vault exceptions already have clear messages — pass through as-is
+            Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -112,12 +118,11 @@ object AltudeGasStation {
         val vaultOptions = options.signerStrategy as SignerStrategy.VaultDefault
 
         val appId = vaultOptions.appId.ifEmpty {
-            // Use package name as default app ID
             context.packageName
         }
 
-        // Create vault if it doesn't exist
-        if (!VaultManager.vaultExists(context, appId)) {
+        // Create vault if it doesn't exist.
+        suspend fun ensureVaultCreated() {
             VaultManager.createVault(
                 context,
                 appId,
@@ -125,17 +130,42 @@ object AltudeGasStation {
             )
         }
 
-        // Read stored wallet address to pre-populate publicKey so it's
-        // available immediately after init without requiring biometric
-        val storedAddress = StorageService.listStoredWalletAddresses().firstOrNull()
-        val initialPublicKey = storedAddress?.let { PublicKey(it) }
+        val isNewVault = !VaultManager.vaultExists(context, appId)
 
-        // Default to per-operation authentication (most secure)
+        if (isNewVault) {
+            try {
+                ensureVaultCreated()
+            } catch (e: VaultStorageCorruptedException) {
+                VaultManager.clearVault(context, appId)
+                ensureVaultCreated()
+            }
+        }
+
+        // Unlock vault immediately — this prompts biometric ONCE at init time,
+        // derives the keypair, caches the session, and gives us the public key.
+        // This is the expected UX: user authenticates when tapping Initialize,
+        // not silently on the first transaction.
+        val keypair = VaultManager.unlockVault(
+            context = context,
+            appId = appId,
+            walletIndex = vaultOptions.walletIndex,
+            sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
+            authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
+                title = if (isNewVault) "Set Up Vault" else "Unlock Vault",
+                description = if (isNewVault)
+                    "Authenticate to secure your new wallet"
+                else
+                    "Authenticate to unlock your wallet"
+            )
+        )
+
+        val publicKey = foundation.metaplex.solanapublickeys.PublicKey(keypair.publicKey.toByteArray())
+
         return VaultSigner.create(
             context = context,
             appId = appId,
             walletIndex = vaultOptions.walletIndex,
-            initialPublicKey = initialPublicKey
+            initialPublicKey = publicKey
         )
     }
 
