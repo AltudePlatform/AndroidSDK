@@ -11,7 +11,6 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-// Toolchain auto-provisioning removed - use locally installed JDK 17
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
