@@ -43,7 +43,7 @@ android {
             useLegacyPackaging = false
         }
     }
-    buildToolsVersion = rootProject.extra["buildToolsVersion"] as String
+    //buildToolsVersion = rootProject.extra["buildToolsVersion"] as String
 }
 
 dependencies {
