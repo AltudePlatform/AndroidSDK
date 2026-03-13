@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.altude.core"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21
