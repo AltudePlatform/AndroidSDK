@@ -5,6 +5,7 @@ import androidx.fragment.app.FragmentActivity
 import com.altude.core.model.TransactionSigner
 import com.altude.vault.crypto.VaultCrypto
 import com.altude.vault.manager.VaultManager
+import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanapublickeys.PublicKey
 
 /**
@@ -98,6 +99,12 @@ class VaultSigner(
     // Cache public key after first derivation - can be pre-set at construction
     private var cachedPublicKey: PublicKey? = initialPublicKey
 
+    // Keypair cached by ensureUnlocked() for single-use by the next signMessage() call.
+    // Avoids a second biometric prompt when the caller pre-authenticates before building
+    // a transaction and then signs it immediately after (PerOperation mode).
+    @Volatile
+    private var pendingKeypair: Keypair? = null
+
     /**
      * Custom messages for biometric authentication prompts.
      * 
@@ -140,11 +147,56 @@ class VaultSigner(
     }
 
     /**
+     * Pre-authenticate without producing a signature.
+     *
+     * Performs biometric authentication (one prompt) and caches the resulting keypair so
+     * that the next [signMessage] call can reuse it without a second biometric prompt.
+     * This is the preferred way to unlock the vault before building a transaction, and
+     * avoids the old pattern of signing a dummy message just to obtain the public key.
+     *
+     * After this returns successfully:
+     * - [publicKey] is guaranteed to be accessible.
+     * - The next [signMessage] call will consume the cached keypair (PerOperation mode)
+     *   or reuse the TTL session (SessionBased mode) without an additional prompt.
+     *
+     * @throws VaultException if authentication fails
+     * @throws IllegalArgumentException if context is not FragmentActivity
+     */
+    override suspend fun ensureUnlocked() {
+        if (context !is FragmentActivity) {
+            throw IllegalArgumentException(
+                "VaultSigner requires FragmentActivity context for biometric prompts. " +
+                        "Got ${context.javaClass.simpleName} instead."
+            )
+        }
+
+        val keypair = VaultManager.unlockVault(
+            context = context,
+            appId = appId,
+            walletIndex = walletIndex,
+            sessionTTLSeconds = when (authMode) {
+                is VaultAuthMode.PerOperation -> 0
+                is VaultAuthMode.SessionBased -> authMode.sessionTTLSeconds
+            },
+            authMessages = authMessages
+        )
+
+        // Cache public key so callers can access it immediately after unlock
+        cachedPublicKey = PublicKey(keypair.publicKey.toByteArray())
+
+        // Store keypair for single-use by the next signMessage() call (PerOperation mode).
+        // SessionBased mode relies on VaultManager's TTL session cache instead.
+        if (authMode is VaultAuthMode.PerOperation) {
+            pendingKeypair = keypair
+        }
+    }
+
+    /**
      * Sign a message with the vault's Ed25519 keypair.
      * This is the core signing operation used by all transaction builders.
      *
      * Authentication behavior depends on authMode:
-     * - PerOperation: Always prompts user for biometric
+     * - PerOperation: Reuses keypair cached by [ensureUnlocked] if available; otherwise prompts
      * - SessionBased: Prompts if session expired, reuses cached keypair otherwise
      *
      * @param message Transaction message bytes to sign
@@ -160,29 +212,30 @@ class VaultSigner(
             )
         }
 
-        // Get keypair based on auth mode
-        val keypair = when (authMode) {
-            is VaultAuthMode.PerOperation -> {
-                // Always unlock (will prompt if not using session mode)
-                VaultManager.unlockVault(
-                    context = context,
-                    appId = appId,
-                    walletIndex = walletIndex,
-                    sessionTTLSeconds = 0, // 0 means no session caching
-                    authMessages = authMessages
-                )
+        // Consume the keypair cached by ensureUnlocked() if present (avoids a second prompt)
+        val keypair = pendingKeypair?.also { pendingKeypair = null }
+            ?: when (authMode) {
+                is VaultAuthMode.PerOperation -> {
+                    // No pending keypair; must prompt the user
+                    VaultManager.unlockVault(
+                        context = context,
+                        appId = appId,
+                        walletIndex = walletIndex,
+                        sessionTTLSeconds = 0,
+                        authMessages = authMessages
+                    )
+                }
+                is VaultAuthMode.SessionBased -> {
+                    // Unlock with TTL-based session (may reuse cached session without prompt)
+                    VaultManager.unlockVault(
+                        context = context,
+                        appId = appId,
+                        walletIndex = walletIndex,
+                        sessionTTLSeconds = authMode.sessionTTLSeconds,
+                        authMessages = authMessages
+                    )
+                }
             }
-            is VaultAuthMode.SessionBased -> {
-                // Unlock with TTL-based session
-                VaultManager.unlockVault(
-                    context = context,
-                    appId = appId,
-                    walletIndex = walletIndex,
-                    sessionTTLSeconds = authMode.sessionTTLSeconds,
-                    authMessages = authMessages
-                )
-            }
-        }
 
         // Cache public key after first successful unlock
         cachedPublicKey = PublicKey(keypair.publicKey.toByteArray())

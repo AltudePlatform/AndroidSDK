@@ -57,7 +57,7 @@ object GaslessManager {
     suspend fun transferToken(option: ISendOption, signer: TransactionSigner? = null): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "transfer")
+            ensureBiometricAuth(signerToUse)
             // After biometric unlock the public key is always available - use it as account
             val ownerKey = signerToUse.publicKey
             val pubKeyMint = PublicKey(option.token)
@@ -113,7 +113,7 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val finalSigners = resolveSignersForBatch(options, signers)
-                ensureBiometricAuth(finalSigners.first(), "batch-transfer")
+                ensureBiometricAuth(finalSigners.first())
                 val transferInstructions = mutableListOf<TransactionInstruction>()
 
                 options.forEach { option ->
@@ -175,7 +175,7 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val signerToUse = resolveSigner(option.account, signer)
-                ensureBiometricAuth(signerToUse, "create-account")
+                ensureBiometricAuth(signerToUse)
                 val ownerKey = signerToUse.publicKey
 
                 val txInstructions = mutableListOf<TransactionInstruction>()
@@ -230,7 +230,7 @@ object GaslessManager {
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "close-account")
+            ensureBiometricAuth(signerToUse)
             val ownerKey = signerToUse.publicKey
                 ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
                 ?: throw IllegalArgumentException("Account public key required to close accounts")
@@ -298,7 +298,7 @@ object GaslessManager {
     ): Result<AltudeTransaction> = withContext(Dispatchers.IO) {
         try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "swap")
+            ensureBiometricAuth(signerToUse)
             val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
@@ -428,7 +428,7 @@ object GaslessManager {
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "swap")
+            ensureBiometricAuth(signerToUse)
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
@@ -519,9 +519,9 @@ object GaslessManager {
         }
     }
 
-    private suspend fun ensureBiometricAuth(signer: TransactionSigner, purpose: String) {
+    private suspend fun ensureBiometricAuth(signer: TransactionSigner) {
         withContext(Dispatchers.Main) {
-            signer.signMessage("auth:$purpose".toByteArray())
+            signer.ensureUnlocked()
         }
     }
 

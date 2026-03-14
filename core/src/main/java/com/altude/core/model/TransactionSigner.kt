@@ -41,4 +41,14 @@ interface TransactionSigner : Signer {
      * @throws Exception if signing fails (e.g., biometric unavailable, key derivation error)
      */
     override suspend fun signMessage(message: ByteArray): ByteArray
+
+    /**
+     * Pre-authenticate and unlock the signer without producing a signature.
+     * After this returns, [publicKey] is guaranteed to be accessible and the next
+     * [signMessage] call will reuse the unlocked state (avoiding a second prompt).
+     *
+     * The default implementation is a no-op; override in vault-backed signers
+     * that need an explicit unlock step (e.g. VaultSigner).
+     */
+    suspend fun ensureUnlocked() { /* no-op by default */ }
 }
