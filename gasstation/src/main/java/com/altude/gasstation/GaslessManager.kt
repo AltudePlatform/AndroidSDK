@@ -19,6 +19,7 @@ import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.core.model.TransactionSigner
+import com.altude.vault.model.VaultLockedException
 import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
 import com.altude.gasstation.data.CloseAccountOption
@@ -58,6 +59,7 @@ object GaslessManager {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "transfer")
+            verifyAccountMatch(signerToUse, option.account)
             // After biometric unlock the public key is always available - use it as account
             val ownerKey = signerToUse.publicKey
             val pubKeyMint = PublicKey(option.token)
@@ -176,6 +178,7 @@ object GaslessManager {
             return@withContext try {
                 val signerToUse = resolveSigner(option.account, signer)
                 ensureBiometricAuth(signerToUse, "create-account")
+                verifyAccountMatch(signerToUse, option.account)
                 val ownerKey = signerToUse.publicKey
 
                 val txInstructions = mutableListOf<TransactionInstruction>()
@@ -231,6 +234,7 @@ object GaslessManager {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "close-account")
+            verifyAccountMatch(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
                 ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
                 ?: throw IllegalArgumentException("Account public key required to close accounts")
@@ -299,6 +303,7 @@ object GaslessManager {
         try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "swap")
+            verifyAccountMatch(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
@@ -429,6 +434,7 @@ object GaslessManager {
         try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "swap")
+            verifyAccountMatch(signerToUse, option.account)
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
@@ -530,11 +536,41 @@ object GaslessManager {
         requireNotNull(signer) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
-        // If account is blank, use the signer's public key (resolved after biometric unlock)
-        if (account.isNotBlank() && signer.publicKey.toBase58() != account) {
-            throw IllegalArgumentException("Signer public key ${signer.publicKey.toBase58()} does not match requested account $account")
+        if (account.isNotBlank()) {
+            try {
+                // Validate account match eagerly if the public key is already available
+                val signerKey = signer.publicKey.toBase58()
+                if (signerKey != account) {
+                    throw IllegalArgumentException("Signer public key $signerKey does not match requested account $account")
+                }
+            } catch (e: VaultLockedException) {
+                // Vault is locked; public key is not cached yet.
+                // Account match will be verified in verifyAccountMatch() after
+                // ensureBiometricAuth() unlocks the vault and caches the public key.
+            }
         }
         return signer
+    }
+
+    /**
+     * Verifies that the signer's public key matches the requested account after biometric unlock.
+     * Call this immediately after ensureBiometricAuth() whenever an account was specified,
+     * to complete any deferred account-match check that was skipped in resolveSigner() due
+     * to the vault being locked at that point.
+     */
+    private fun verifyAccountMatch(signer: TransactionSigner, account: String) {
+        if (account.isBlank()) return
+        val signerKey = try {
+            signer.publicKey.toBase58()
+        } catch (e: VaultLockedException) {
+            // If the vault is still locked after ensureBiometricAuth(), propagate the original
+            // exception so callers receive a clear VaultLockedException rather than a confusing
+            // IllegalArgumentException with no public key available.
+            throw e
+        }
+        if (signerKey != account) {
+            throw IllegalArgumentException("Signer public key $signerKey does not match requested account $account")
+        }
     }
 
     private fun resolveSignerForAccount(signers: List<TransactionSigner>, account: String): TransactionSigner {
@@ -548,8 +584,13 @@ object GaslessManager {
         provided?.let { return it }
         val defaultSigner = resolveSigner()
         options.firstOrNull { it.account.isNotBlank() }?.let { option ->
-            if (defaultSigner.publicKey.toBase58() != option.account) {
-                throw IllegalArgumentException("Default signer does not match batch account ${option.account}")
+            try {
+                if (defaultSigner.publicKey.toBase58() != option.account) {
+                    throw IllegalArgumentException("Default signer does not match batch account ${option.account}")
+                }
+            } catch (e: VaultLockedException) {
+                // Vault is locked; account match will be verified after ensureBiometricAuth()
+                // unlocks the vault and caches the public key.
             }
         }
         return listOf(defaultSigner)
