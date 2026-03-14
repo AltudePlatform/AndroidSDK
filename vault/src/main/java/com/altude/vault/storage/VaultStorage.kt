@@ -34,9 +34,15 @@ object VaultStorage {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private fun isKeyPermanentlyInvalidated(e: Exception): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                e.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException"
+    private fun isKeyPermanentlyInvalidated(e: Exception): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException") return true
+            cause = cause.cause
+        }
+        return false
+    }
 
     private fun isStaleKeyset(e: Exception): Boolean {
         if (e is AEADBadTagException) return true
