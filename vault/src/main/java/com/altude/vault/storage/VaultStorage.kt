@@ -18,11 +18,12 @@ import javax.crypto.AEADBadTagException
 
 object VaultStorage {
 
-    private const val TAG               = "VaultStorage"
-    private const val VAULT_FILE_PREFIX = "vault_seed_"
-    private const val VAULT_FILE_SUFFIX = ".encrypted"
-    private const val MASTER_KEY_ALIAS  = "vault_master_key"
-    private const val ANDROID_KEYSTORE  = "AndroidKeyStore"
+    private const val TAG                          = "VaultStorage"
+    private const val VAULT_FILE_PREFIX            = "vault_seed_"
+    private const val VAULT_FILE_SUFFIX            = ".encrypted"
+    private const val MASTER_KEY_ALIAS             = "vault_master_key"
+    private const val ANDROID_KEYSTORE             = "AndroidKeyStore"
+    private const val AUTH_VALIDITY_DURATION_SECS  = 3600 // 1-hour window after device auth
 
     @Serializable
     data class VaultData(
@@ -48,22 +49,57 @@ object VaultStorage {
         return false
     }
 
-    private fun buildMasterKey(context: Context): MasterKey {
-        // If a previous version left a stale auth-required key, getKey() returns null.
-        // Delete it so Builder creates a fresh non-auth-required key.
-        try {
-            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
-            if (ks.containsAlias(MASTER_KEY_ALIAS) && ks.getKey(MASTER_KEY_ALIAS, null) == null) {
-                Log.w(TAG, "Stale auth-required key detected — deleting.")
-                ks.deleteEntry(MASTER_KEY_ALIAS)
+    /**
+     * Create or configure the MasterKey with the correct auth requirements.
+     * Call this from [initializeKeystore] to establish the key's auth settings.
+     *
+     * When [requireBiometric] is false and an auth-required key already exists
+     * (getKey returns null), it is treated as a stale migration artifact and
+     * deleted so a non-auth key can be created in its place.
+     *
+     * When [requireBiometric] is true the key is built with
+     * [MasterKey.Builder.setUserAuthenticationRequired] so it is only accessible
+     * within a [AUTH_VALIDITY_DURATION_SECS]-second window following a successful
+     * device authentication.
+     */
+    private fun buildMasterKey(context: Context, requireBiometric: Boolean): MasterKey {
+        if (!requireBiometric) {
+            // Only purge a stale auth-required key when the caller explicitly wants no auth.
+            // For biometric vaults the key is expected to be auth-required; leaving it alone
+            // prevents accidentally downgrading its security properties.
+            try {
+                val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
+                if (ks.containsAlias(MASTER_KEY_ALIAS) && ks.getKey(MASTER_KEY_ALIAS, null) == null) {
+                    Log.w(TAG, "Stale auth-required key detected — deleting.")
+                    ks.deleteEntry(MASTER_KEY_ALIAS)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Keystore inspect failed — continuing: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Keystore inspect failed — continuing: ${e.message}")
         }
-        return MasterKey.Builder(context, MASTER_KEY_ALIAS)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        return masterKeyBuilder(context)
+            .apply {
+                if (requireBiometric) {
+                    // Key is accessible for AUTH_VALIDITY_DURATION_SECS seconds after the
+                    // user authenticates via device screen-lock or BiometricPrompt.
+                    setUserAuthenticationRequired(true, AUTH_VALIDITY_DURATION_SECS)
+                }
+            }
             .build()
     }
+
+    /**
+     * Retrieve the already-configured MasterKey for use in encrypt/decrypt operations.
+     * Does NOT perform any stale-key cleanup — the key's auth requirements were set
+     * during [initializeKeystore] and must not be altered here.
+     */
+    private fun getMasterKey(context: Context): MasterKey =
+        masterKeyBuilder(context).build()
+
+    /** Base [MasterKey.Builder] shared by [buildMasterKey] and [getMasterKey]. */
+    private fun masterKeyBuilder(context: Context): MasterKey.Builder =
+        MasterKey.Builder(context, MASTER_KEY_ALIAS)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
 
     private fun vaultFile(context: Context, appId: String) =
         File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
@@ -79,10 +115,9 @@ object VaultStorage {
 
     // ── public API ────────────────────────────────────────────────────────────
 
-    @Suppress("UNUSED_PARAMETER")
     fun initializeKeystore(context: Context, appId: String, requireBiometric: Boolean = true) {
         try {
-            buildMasterKey(context)
+            buildMasterKey(context, requireBiometric)
         } catch (e: Exception) {
             if (isKeyPermanentlyInvalidated(e)) throw BiometricInvalidatedException(cause = e)
             throw VaultInitFailedException("Failed to initialize keystore: ${e.message}", cause = e)
@@ -91,7 +126,7 @@ object VaultStorage {
 
     fun storeSeed(context: Context, appId: String, seedBytes: ByteArray) {
         try {
-            val masterKey = buildMasterKey(context)
+            val masterKey = getMasterKey(context)
             val file = vaultFile(context, appId)
             if (file.exists()) file.delete()
 
@@ -117,7 +152,7 @@ object VaultStorage {
 
     fun retrieveSeed(context: Context, appId: String): ByteArray {
         try {
-            val masterKey = buildMasterKey(context)
+            val masterKey = getMasterKey(context)
             val file = vaultFile(context, appId)
             if (!file.exists()) throw VaultDecryptionFailedException("Vault file not found for appId: $appId")
 
