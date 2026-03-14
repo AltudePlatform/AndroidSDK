@@ -110,7 +110,7 @@ class ErrorHandlingExampleActivity : AppCompatActivity() {
                 clearError()
 
                 val result = Altude.setApiKey(this@ErrorHandlingExampleActivity, apiKey)
-                // ───────────────────────────────────────────────────────────���
+                // ------------------------------------------------------------
 
                 result
                     .onSuccess {
