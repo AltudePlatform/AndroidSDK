@@ -336,7 +336,7 @@ object Altude {
 
             val res = service.createSchema(request).await()
             val txResponse = deCodeJson<TransactionResponse>(res)
-            val attester = SdkConfig.currentSigner?.publicKey
+            val attester = (signer ?: SdkConfig.currentSigner)?.publicKey
             val schemaId = attester?.let {
                 AttestationProgram.deriveSchemaAddress(it, option.name).toBase58()
             } ?: ""
@@ -394,7 +394,7 @@ object Altude {
 
             val res = service.attest(request).await()
             val txResponse = deCodeJson<TransactionResponse>(res)
-            val attester   = SdkConfig.currentSigner?.publicKey
+            val attester   = (signer ?: SdkConfig.currentSigner)?.publicKey
             val schemaPda  = foundation.metaplex.solanapublickeys.PublicKey(option.schemaId)
             val recipientKey = if (option.recipient.isBlank()) attester
                                else foundation.metaplex.solanapublickeys.PublicKey(option.recipient)
