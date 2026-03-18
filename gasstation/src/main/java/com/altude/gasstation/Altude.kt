@@ -24,8 +24,11 @@ import com.altude.core.model.TransactionSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
+import com.altude.core.data.AttestRequest
 import com.altude.core.data.BatchTransactionRequest
+import com.altude.core.data.CreateSchemaRequest
 import com.altude.core.data.QuoteResponse
+import com.altude.core.data.RevokeAttestationRequest
 import com.altude.core.data.SendTransactionRequest
 import com.altude.core.data.SwapTransactionRequest
 import com.altude.gasstation.data.GetAccountResponse
@@ -329,13 +332,10 @@ object Altude {
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
-            val request = SendTransactionRequest(signedTransaction)
+            val request = CreateSchemaRequest(signedTransaction)
 
-            val res = service.sendTransaction(request).await()
+            val res = service.createSchema(request).await()
             val txResponse = deCodeJson<TransactionResponse>(res)
-
-            // Derive the schema PDA locally so the caller can use it immediately
-            // (the server just relays the tx; PDA is deterministic)
             val attester = SdkConfig.currentSigner?.publicKey
             val schemaId = attester?.let {
                 AttestationProgram.deriveSchemaAddress(it, option.name).toBase58()
@@ -390,12 +390,10 @@ object Altude {
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
-            val request = SendTransactionRequest(signedTransaction)
+            val request = AttestRequest(signedTransaction)
 
-            val res = service.sendTransaction(request).await()
+            val res = service.attest(request).await()
             val txResponse = deCodeJson<TransactionResponse>(res)
-
-            // Derive attestation PDA deterministically
             val attester   = SdkConfig.currentSigner?.publicKey
             val schemaPda  = foundation.metaplex.solanapublickeys.PublicKey(option.schemaId)
             val recipientKey = if (option.recipient.isBlank()) attester
@@ -448,9 +446,9 @@ object Altude {
 
             val signedTransaction = result.getOrThrow()
             val service = SdkConfig.createService(TransactionService::class.java)
-            val request = SendTransactionRequest(signedTransaction)
+            val request = RevokeAttestationRequest(signedTransaction)
 
-            val res = service.sendTransaction(request).await()
+            val res = service.revokeAttestation(request).await()
             val txResponse = deCodeJson<TransactionResponse>(res)
 
             Result.success(
