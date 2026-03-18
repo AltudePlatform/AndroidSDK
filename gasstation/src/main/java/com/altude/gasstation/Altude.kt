@@ -12,6 +12,11 @@ import com.altude.gasstation.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
+import com.altude.gasstation.data.AttestationOption
+import com.altude.gasstation.data.AttestationResponse
+import com.altude.gasstation.data.CreateSchemaOption
+import com.altude.gasstation.data.RevokeAttestationOption
+import com.altude.core.Programs.AttestationProgram
 import com.altude.core.helper.Mnemonic
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
@@ -241,6 +246,178 @@ object Altude {
         } catch (e: Exception) {
             println("Error: $e")
             return@withContext Result.failure(e)
+        }
+    }
+
+    // ── Solana Attestation Service (SAS) ─────────────────────────────────────
+
+    /**
+     * Creates a new Schema on-chain using the Solana Attestation Service.
+     *
+     * A Schema must exist before you can create attestations.
+     * The schema PDA is derived from (authority wallet, name) so the same
+     * schema is always at the same address for a given authority + name pair.
+     *
+     * Usage:
+     * ```kotlin
+     * Altude.createSchema(
+     *     CreateSchemaOption(
+     *         name        = "kyc-v1",
+     *         description = "KYC level attestation",
+     *         fieldNames  = listOf("level", "country", "verifiedAt"),
+     *         isRevocable = true
+     *     )
+     * ).onSuccess { response ->
+     *     val schemaId = response.attestationId  // store this for attest() calls
+     * }
+     * ```
+     *
+     * @return [AttestationResponse] containing the Schema PDA in [AttestationResponse.attestationId]
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun createSchema(
+        option: CreateSchemaOption,
+        signer: TransactionSigner? = null
+    ): Result<AttestationResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.createSchema(option, signer)
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
+
+            val res = service.sendTransaction(request).await()
+            val txResponse = deCodeJson<TransactionResponse>(res)
+
+            // Derive the schema PDA locally so the caller can use it immediately
+            // (the server just relays the tx; PDA is deterministic)
+            val attester = SdkConfig.currentSigner?.publicKey
+            val schemaId = attester?.let {
+                AttestationProgram.deriveSchemaAddress(it, option.name).toBase58()
+            } ?: ""
+
+            Result.success(
+                AttestationResponse(
+                    Status        = txResponse.Status,
+                    Message       = txResponse.Message,
+                    Signature     = txResponse.Signature,
+                    attestationId = schemaId
+                )
+            )
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+        }
+    }
+
+    /**
+     * Creates an on-chain attestation using the Solana Attestation Service.
+     *
+     * Requires a Schema to already exist (see [createSchema]).
+     * Biometric authentication is triggered internally.
+     *
+     * Usage:
+     * ```kotlin
+     * Altude.attest(
+     *     AttestationOption(
+     *         schemaId  = "schema_pubkey_base58",
+     *         recipient = "recipient_wallet_base58",
+     *         data      = """{"level":2,"country":"US"}""".encodeToByteArray(),
+     *         expireAt  = 0L   // 0 = no expiry
+     *     )
+     * ).onSuccess { response ->
+     *     val attestationId = response.attestationId // on-chain PDA address
+     *     val signature     = response.Signature
+     * }.onFailure { error ->
+     *     // handle vault / network error
+     * }
+     * ```
+     *
+     * @return [AttestationResponse] containing the Attestation PDA in [AttestationResponse.attestationId]
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun attest(
+        option: AttestationOption,
+        signer: TransactionSigner? = null
+    ): Result<AttestationResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.attest(option, signer)
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
+
+            val res = service.sendTransaction(request).await()
+            val txResponse = deCodeJson<TransactionResponse>(res)
+
+            // Derive attestation PDA deterministically
+            val attester   = SdkConfig.currentSigner?.publicKey
+            val schemaPda  = foundation.metaplex.solanapublickeys.PublicKey(option.schemaId)
+            val recipientKey = if (option.recipient.isBlank()) attester
+                               else foundation.metaplex.solanapublickeys.PublicKey(option.recipient)
+            val attestationId = if (attester != null && recipientKey != null) {
+                AttestationProgram.deriveAttestationAddress(
+                    schema    = schemaPda,
+                    attester  = attester,
+                    recipient = recipientKey,
+                    nonce     = option.nonce
+                ).toBase58()
+            } else ""
+
+            Result.success(
+                AttestationResponse(
+                    Status        = txResponse.Status,
+                    Message       = txResponse.Message,
+                    Signature     = txResponse.Signature,
+                    attestationId = attestationId
+                )
+            )
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+        }
+    }
+
+    /**
+     * Revokes an existing on-chain attestation.
+     *
+     * Only the original attester can revoke, and the schema must have [isRevocable = true].
+     * Biometric authentication is triggered internally.
+     *
+     * Usage:
+     * ```kotlin
+     * Altude.revokeAttestation(
+     *     RevokeAttestationOption(attestationId = "attestation_pda_base58")
+     * ).onSuccess { response ->
+     *     // attestation is now marked revoked on-chain
+     * }
+     * ```
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun revokeAttestation(
+        option: RevokeAttestationOption,
+        signer: TransactionSigner? = null
+    ): Result<AttestationResponse> = withContext(Dispatchers.IO) {
+        try {
+            val result = GaslessManager.revokeAttestation(option, signer)
+            if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
+
+            val signedTransaction = result.getOrThrow()
+            val service = SdkConfig.createService(TransactionService::class.java)
+            val request = SendTransactionRequest(signedTransaction)
+
+            val res = service.sendTransaction(request).await()
+            val txResponse = deCodeJson<TransactionResponse>(res)
+
+            Result.success(
+                AttestationResponse(
+                    Status    = txResponse.Status,
+                    Message   = txResponse.Message,
+                    Signature = txResponse.Signature
+                )
+            )
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
