@@ -2,7 +2,6 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
-import com.altude.core.Programs.AttestationProgram
 import com.altude.core.Programs.SwapHelper
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.api.SwapService
@@ -16,9 +15,6 @@ import com.altude.core.data.QuoteResponse
 import com.altude.core.data.SwapInstructionRequest
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
-import com.altude.gasstation.data.AttestationOption
-import com.altude.gasstation.data.CreateSchemaOption
-import com.altude.gasstation.data.RevokeAttestationOption
 import com.altude.gasstation.data.ISendOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
@@ -563,140 +559,5 @@ object GaslessManager {
     }
 
 
-    // ════════════════════════════════════════════════════════════════════════
-    // Solana Attestation Service (SAS)
-    // ════════════════════════════════════════════════════════════════════════
-
-    /**
-     * Creates a new SAS Schema on-chain.
-     * The schema PDA is derived deterministically from (authority, name).
-     *
-     * Returns the serialized + partially-signed transaction string (Base64).
-     */
-    suspend fun createSchema(
-        option: CreateSchemaOption,
-        signer: TransactionSigner? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "create-schema")
-            val authority = signerToUse.publicKey
-
-            val instruction = AttestationProgram.createSchema(
-                authority    = authority,
-                feePayer     = feePayerPubKey,
-                name         = option.name,
-                description  = option.description,
-                fieldNames   = option.fieldNames,
-                isRevocable  = option.isRevocable
-            )
-
-            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
-
-            val tx = AltudeTransactionBuilder()
-                .setFeePayer(feePayerPubKey)
-                .setRecentBlockHash(blockhashInfo.blockhash)
-                .addInstruction(instruction)
-                .setSigners(listOf(signerToUse))
-                .build()
-
-            val serialized = Base64.encodeToString(
-                tx.serialize(SerializeConfig(requireAllSignatures = false)),
-                Base64.NO_WRAP
-            )
-            Result.success(serialized)
-        } catch (e: Throwable) {
-            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-        }
-    }
-
-    /**
-     * Creates an on-chain attestation under the given schema.
-     *
-     * The Attestation PDA is derived from (schema, attester, recipient, nonce).
-     * Returns the serialized + partially-signed transaction string (Base64).
-     */
-    suspend fun attest(
-        option: AttestationOption,
-        signer: TransactionSigner? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "attest")
-            val attester  = signerToUse.publicKey
-            val schemaPda = PublicKey(option.schemaId)
-            val recipient = if (option.recipient.isBlank()) attester
-                            else PublicKey(option.recipient)
-
-            val instruction = AttestationProgram.createAttestation(
-                attester        = attester,
-                feePayer        = feePayerPubKey,
-                schemaPda       = schemaPda,
-                recipient       = recipient,
-                attestationData = option.data,
-                expireAt        = option.expireAt,
-                nonce           = option.nonce
-            )
-
-            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
-
-            val tx = AltudeTransactionBuilder()
-                .setFeePayer(feePayerPubKey)
-                .setRecentBlockHash(blockhashInfo.blockhash)
-                .addInstruction(instruction)
-                .setSigners(listOf(signerToUse))
-                .build()
-
-            val serialized = Base64.encodeToString(
-                tx.serialize(SerializeConfig(requireAllSignatures = false)),
-                Base64.NO_WRAP
-            )
-            Result.success(serialized)
-        } catch (e: Throwable) {
-            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-        }
-    }
-
-    /**
-     * Revokes an existing on-chain attestation.
-     *
-     * The schema must have been created with [isRevocable = true].
-     * Only the original attester can revoke.
-     * Returns the serialized + partially-signed transaction string (Base64).
-     */
-    suspend fun revokeAttestation(
-        option: RevokeAttestationOption,
-        signer: TransactionSigner? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val signerToUse    = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "revoke-attestation")
-            val attester       = signerToUse.publicKey
-            val attestationPda = PublicKey(option.attestationId)
-
-            val instruction = AttestationProgram.revokeAttestation(
-                attester       = attester,
-                feePayer       = feePayerPubKey,
-                attestationPda = attestationPda
-            )
-
-            val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
-
-            val tx = AltudeTransactionBuilder()
-                .setFeePayer(feePayerPubKey)
-                .setRecentBlockHash(blockhashInfo.blockhash)
-                .addInstruction(instruction)
-                .setSigners(listOf(signerToUse))
-                .build()
-
-            val serialized = Base64.encodeToString(
-                tx.serialize(SerializeConfig(requireAllSignatures = false)),
-                Base64.NO_WRAP
-            )
-            Result.success(serialized)
-        } catch (e: Throwable) {
-            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-        }
-    }
 
 }
