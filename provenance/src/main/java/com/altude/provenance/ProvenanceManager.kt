@@ -9,6 +9,7 @@ import com.altude.core.model.HotSigner
 import com.altude.core.network.AltudeRpc
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.ImageHashPayload
+import com.altude.provenance.data.ProvenancePrefs
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanaeddsa.SolanaEddsa
@@ -27,6 +28,13 @@ internal object ProvenanceManager {
 
     /** Fixed schema name used for all image-hash attestations. */
     const val SCHEMA_NAME = "image_hash"
+
+    /**
+     * Session-level PDA cache: walletBase58 → Schema PDA.
+     * Avoids re-deriving the PDA on every call within the same app session.
+     * SharedPreferences ([ProvenancePrefs]) handles persistence across restarts.
+     */
+    private val schemaPdaCache = mutableMapOf<String, PublicKey>()
 
     private val rpc get() = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
     private val feePayerPubKey get() = PublicKey(SdkConfig.apiConfig.FeePayer)
@@ -47,49 +55,65 @@ internal object ProvenanceManager {
 
     /**
      * Derives the Schema PDA for the fixed [SCHEMA_NAME] and the given [account].
+     * Caches the result in [schemaPdaCache] — computed once per session per wallet.
      * Keeps [AttestationProgram] fully hidden from callers outside this class.
      */
     internal suspend fun deriveSchemaAddress(account: String = ""): PublicKey {
-        val keypair = getKeyPair(account)
-        return AttestationProgram.deriveSchemaAddress(
-            authority = keypair.publicKey,
-            name      = SCHEMA_NAME
-        )
+        val keypair   = getKeyPair(account)
+        val walletKey = keypair.publicKey.toBase58()
+        return schemaPdaCache.getOrPut(walletKey) {
+            AttestationProgram.deriveSchemaAddress(
+                authority = keypair.publicKey,
+                name      = SCHEMA_NAME
+            )
+        }
     }
 
-    // ── Schema ────────────────────────────────────────────────────────────────
+    // ── Schema — once per wallet ──────────────────────────────────────────────
 
     /**
-     * Builds and signs a `createSchema` transaction for the fixed [SCHEMA_NAME] schema.
-     * Returns the Base64-encoded serialized transaction.
+     * Builds + signs a `createSchema` tx ONLY if not yet confirmed for this wallet.
+     *
+     * What `createSchema` does:
+     * Registers a reusable template on Solana that defines what fields an image
+     * attestation contains (type, hash, mime, name, timestamp). Created ONCE per
+     * wallet ever — every image attestation then just references it. Without it,
+     * the on-chain program rejects all attestations.
+     *
+     * Flow:
+     *  - [ProvenancePrefs.isSchemaCreated] == true  → return `Result.success(null)` (skip)
+     *  - [ProvenancePrefs.isSchemaCreated] == false → build + sign tx, return `Result.success(signedTx)`
+     *
+     * [Provenance] calls [ProvenancePrefs.markSchemaCreated] ONLY after backend confirms success.
+     *
+     * @return `Result<String?>` — `null` = schema already exists; `String` = signed tx to send.
      */
-    suspend fun createSchema(payload: ImageHashPayload): Result<String> =
+    suspend fun ensureSchema(account: String, commitment: String): Result<String?> =
         withContext(Dispatchers.IO) {
             try {
-                val keypair   = getKeyPair(payload.account)
-                val authority = keypair.publicKey
-                val hotSigner = HotSigner(keypair)
+                val keypair   = getKeyPair(account)
+                val walletKey = keypair.publicKey.toBase58()
 
+                // Already confirmed on-chain — skip building the tx entirely
+                if (ProvenancePrefs.isSchemaCreated(walletKey))
+                    return@withContext Result.success(null)
+
+                val hotSigner   = HotSigner(keypair)
                 val instruction = AttestationProgram.createSchema(
-                    authority   = authority,
+                    authority   = keypair.publicKey,
                     feePayer    = feePayerPubKey,
                     name        = SCHEMA_NAME,
                     description = "Stores SHA-256 hash of images",
                     fieldNames  = listOf("type", "hash", "mime", "name", "timestamp"),
                     isRevocable = true
                 )
-
-                val blockhash = rpc.getLatestBlockhash(
-                    commitment = payload.commitment.name
-                ).blockhash
-
+                val blockhash = rpc.getLatestBlockhash(commitment = commitment).blockhash
                 val tx = AltudeTransactionBuilder()
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhash)
                     .addInstruction(instruction)
                     .setSigners(listOf(hotSigner))
                     .build()
-
                 val serialized = Base64.encodeToString(
                     tx.serialize(SerializeConfig(requireAllSignatures = false)),
                     Base64.NO_WRAP
@@ -99,6 +123,18 @@ internal object ProvenanceManager {
                 Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
         }
+
+    /**
+     * Clears schema state for [account] — both in-memory cache and SharedPreferences.
+     * Call via [Provenance.resetSession] on wallet switch or logout.
+     */
+    suspend fun resetSchema(account: String = "") {
+        runCatching {
+            val walletKey = getKeyPair(account).publicKey.toBase58()
+            ProvenancePrefs.reset(walletKey)
+            schemaPdaCache.remove(walletKey)
+        }
+    }
 
     // ── Attestation ───────────────────────────────────────────────────────────
 
