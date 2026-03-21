@@ -141,7 +141,8 @@ object VaultStorage {
         vaultFile(context, appId).exists()
 
     fun clearVault(context: Context, appId: String): Boolean {
+        val existed = vaultExists(context, appId)
         purgeVault(context, appId)
-        return true
+        return existed
     }
 }
