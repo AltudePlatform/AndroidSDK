@@ -65,6 +65,12 @@ data class C2paManifest(
             explicitNulls  = false
         }
 
+        // Used specifically for computing manifestHash; omits default-valued fields
+        private val hashingJson = Json {
+            encodeDefaults = false
+            explicitNulls  = false
+        }
+
         /**
          * Builds a [C2paManifest] from a file path.
          *
@@ -105,8 +111,8 @@ data class C2paManifest(
                 timestamp     = System.currentTimeMillis() / 1000
             )
 
-            // Step 3 — hash the canonical claim JSON → tamper-evident on-chain value
-            val claimJson    = canonicalJson.encodeToString(draft)
+            // Step 3 — hash the canonical claim JSON (without manifestHash) → tamper-evident on-chain value
+            val claimJson    = hashingJson.encodeToString(draft)
             val manifestHash = sha256Hex(claimJson.toByteArray(Charsets.UTF_8))
 
             return draft.copy(manifestHash = manifestHash)
