@@ -233,7 +233,13 @@ data class ImageHashRequest(
      */
     val signedSchemaTx: String? = null,
     /** Base64-encoded signed `createAttestation` tx. */
-    val signedAttestationTx: String
+    val signedAttestationTx: String,
+    /**
+     * Full [ProvenanceCertificate] JSON — includes ED25519 signature, device metadata,
+     * and optional GPS. Stored off-chain by the backend for independent verification.
+     * `null` only if certificate building failed (non-fatal).
+     */
+    val certificate: String? = null
 )
 
 /**
@@ -282,6 +288,14 @@ data class ProvenanceResult(
     /** The C2PA manifest built from the image. */
     val manifest: C2paManifest,
     /**
+     * Signed [ProvenanceCertificate] — contains the ED25519 signature over the canonical
+     * C2PA claim, device metadata, and optional GPS coordinates.
+     *
+     * Use [ProvenanceCertificate.toClaimJson] + `signerPublicKey` + `signature` for
+     * offline verification without network access.
+     */
+    val certificate: ProvenanceCertificate? = null,
+    /**
      * Sidecar `.c2pa.json` file saved on device.
      * Non-null when [ManifestOption.SidecarFile] or [ManifestOption.Both] was used.
      */
@@ -307,6 +321,70 @@ data class AttestationResult(
     val name:   String,
     val hash:   String,
     val result: Result<ProvenanceResult>
+)
+
+// ── Verification ──────────────────────────────────────────────────────────────
+
+/**
+ * Raw JSON response from `GET api/provenance/verify`.
+ * Deserialised internally — SDK users receive [VerifyResult] instead.
+ */
+@Serializable
+internal data class VerifyResponse(
+    /** `"verified"`, `"not_found"`, or `"tampered"`. */
+    val Status: String,
+    val Message: String,
+    /** On-chain attestation PDA (Base58). */
+    val attestationId: String = "",
+    /** Hash stored on-chain — compare with local [C2paManifest.manifestHash]. */
+    val onChainHash: String = "",
+    /**
+     * [ProvenanceCertificate] JSON as stored by the backend at attestation time.
+     * Parsed into [VerifyResult.certificate] automatically.
+     */
+    val certificate: String = ""
+)
+
+/**
+ * Result returned by [com.altude.provenance.Provenance.verifyByHash] and
+ * [com.altude.provenance.Provenance.verifyByAttestationId].
+ *
+ * **Online verification flow:**
+ * 1. The backend is queried with the manifest hash or attestation PDA.
+ * 2. The backend returns the on-chain hash and the stored certificate.
+ * 3. The SDK parses the certificate and returns this object.
+ *
+ * **What to check after receiving a [VerifyResult]:**
+ * ```kotlin
+ * val v = Provenance.verifyByHash(payload.hash).getOrThrow()
+ *
+ * // 1. On-chain status
+ * check(v.isVerified) { v.message }
+ *
+ * // 2. Hash matches what you computed locally
+ * check(v.onChainHash == payload.hash)
+ *
+ * // 3. Certificate signer is the expected wallet
+ * check(v.certificate?.signerAddress == expectedWallet)
+ *
+ * // 4. Optional: offline re-verify the ED25519 signature without network
+ * //    See ProvenanceCertificate KDoc for snippet
+ * ```
+ *
+ * @property isVerified     `true` when [Status] == `"verified"`.
+ * @property status         Raw status string from the backend.
+ * @property message        Human-readable description.
+ * @property attestationId  On-chain Attestation PDA (Base58).
+ * @property onChainHash    [C2paManifest.manifestHash] stored on Solana.
+ * @property certificate    Parsed [ProvenanceCertificate], or `null` if absent/malformed.
+ */
+data class VerifyResult(
+    val isVerified:    Boolean,
+    val status:        String,
+    val message:       String,
+    val attestationId: String,
+    val onChainHash:   String,
+    val certificate:   ProvenanceCertificate?
 )
 
 

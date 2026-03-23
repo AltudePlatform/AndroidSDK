@@ -8,8 +8,11 @@ import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ImageHashRequest
 import com.altude.provenance.data.ImageHashResponse
 import com.altude.provenance.data.ManifestOption
+import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
 import com.altude.provenance.data.ProvenanceResult
+import com.altude.provenance.data.VerifyResponse
+import com.altude.provenance.data.VerifyResult
 import com.altude.provenance.interfaces.ProvenanceService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -112,10 +115,12 @@ object Provenance {
             // 2. Derive Schema PDA
             val schemaPda = ProvenanceManager.deriveSchemaAddress(payload.account)
 
-            // 3. Sign attestation tx offline
+            // 3. Sign attestation tx + build ProvenanceCertificate offline
             val attestResult = ProvenanceManager.attest(payload, schemaPda)
             if (attestResult.isFailure)
                 return@withContext Result.failure(attestResult.exceptionOrNull()!!)
+
+            val attested = attestResult.getOrThrow()
 
             // 4. Submit
             val request = ImageHashRequest(
@@ -129,7 +134,8 @@ object Provenance {
                 expireAt            = payload.expireAt,
                 manifest            = payload.manifest,
                 signedSchemaTx      = schemaResult.getOrNull(),
-                signedAttestationTx = attestResult.getOrThrow()
+                signedAttestationTx = attested.signedTx,
+                certificate         = attested.certificate.toJson()
             )
             val res      = service().attestImageHash(request).await()
             val response = decodeJson<ImageHashResponse>(res)
@@ -147,6 +153,7 @@ object Provenance {
             Result.success(ProvenanceResult(
                 response          = response,
                 manifest          = payload.c2paManifest,
+                certificate       = attested.certificate,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
             ))
@@ -203,7 +210,7 @@ object Provenance {
         // ── 3. Sequential loop — sign offline → submit → emit ─────────────────
         payloads.forEachIndexed { index, payload ->
             val itemResult = runCatching {
-                val attestedTx = ProvenanceManager.attest(payload, schemaPda).getOrThrow()
+                val attested = ProvenanceManager.attest(payload, schemaPda).getOrThrow()
 
                 val request = ImageHashRequest(
                     type                = payload.type,
@@ -216,7 +223,8 @@ object Provenance {
                     expireAt            = payload.expireAt,
                     manifest            = payload.manifest,
                     signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
-                    signedAttestationTx = attestedTx
+                    signedAttestationTx = attested.signedTx,
+                    certificate         = attested.certificate.toJson()
                 )
                 val res      = service().attestImageHash(request).await()
                 val response = decodeJson<ImageHashResponse>(res)
@@ -233,6 +241,7 @@ object Provenance {
                 ProvenanceResult(
                     response          = response,
                     manifest          = payload.c2paManifest,
+                    certificate       = attested.certificate,
                     manifestFile      = manifestFile,
                     embeddedImageFile = embeddedImageFile
                 )
@@ -249,6 +258,67 @@ object Provenance {
      */
     suspend fun resetSession(account: String = "") =
         ProvenanceManager.resetSchema(account)
+
+    // ── Online verification ───────────────────────────────────────────────────
+
+    /**
+     * Verifies an attested image online by its **manifest hash**
+     * ([C2paManifest.manifestHash] — the SHA-256 of the canonical C2PA claim JSON
+     * that is stored on-chain).
+     *
+     * Use this when you have the hash from a local [ImageHashPayload] and want to
+     * confirm it is recorded on the Solana chain with a matching certificate.
+     *
+     * ```kotlin
+     * val payload = ImageHashPayload.create(filePath = file.absolutePath, account = wallet)
+     * val result  = Provenance.attestImageHash(payload).getOrThrow()
+     *
+     * // Later — verify the same image online:
+     * val v = Provenance.verifyByHash(payload.hash).getOrThrow()
+     * if (v.isVerified) {
+     *     println("Signer:      ${v.certificate?.signerAddress}")
+     *     println("On-chain:    ${v.onChainHash}")
+     *     println("Device:      ${v.certificate?.deviceMake} ${v.certificate?.deviceModel}")
+     * }
+     * ```
+     *
+     * @param hash [C2paManifest.manifestHash] — SHA-256 hex of the canonical claim JSON.
+     */
+    suspend fun verifyByHash(hash: String): Result<VerifyResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val raw      = service().verifyByHash(hash).await()
+                val response = decodeJson<VerifyResponse>(raw)
+                response.toVerifyResult()
+            }.mapFailure()
+        }
+
+    /**
+     * Verifies an attested image online by its **on-chain Attestation PDA** (Base58).
+     *
+     * Use this when you have the `attestationId` from [ProvenanceResult.response]:
+     *
+     * ```kotlin
+     * val result = Provenance.attestImageHash(payload).getOrThrow()
+     * val id     = result.response.attestationId
+     *
+     * // Later — verify by the Solana attestation account:
+     * val v = Provenance.verifyByAttestationId(id).getOrThrow()
+     * if (v.isVerified) {
+     *     println("Cert timestamp: ${v.certificate?.captureTimestampMs}")
+     * }
+     * ```
+     *
+     * @param attestationId On-chain Attestation PDA returned by [ProvenanceResult.response].
+     */
+    suspend fun verifyByAttestationId(attestationId: String): Result<VerifyResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val raw      = service().verifyByAttestationId(attestationId).await()
+                val response = decodeJson<VerifyResponse>(raw)
+                response.toVerifyResult()
+            }.mapFailure()
+        }
 
     // ── Manifest option helper ────────────────────────────────────────────────
 
@@ -287,4 +357,19 @@ object Provenance {
 
     private inline fun <reified T> decodeJson(element: JsonElement): T =
         json.decodeFromJsonElement(element)
+
+    /** Maps the raw [VerifyResponse] into the public [VerifyResult], parsing the certificate. */
+    private fun VerifyResponse.toVerifyResult() = VerifyResult(
+        isVerified    = Status.equals("verified", ignoreCase = true),
+        status        = Status,
+        message       = Message,
+        attestationId = attestationId,
+        onChainHash   = onChainHash,
+        certificate   = ProvenanceCertificate.fromJson(certificate)
+    )
+
+    /** Wraps any raw exception in a friendlier [Exception] with the original message. */
+    private fun <T> Result<T>.mapFailure(): Result<T> =
+        onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
+            .let { this }
 }
