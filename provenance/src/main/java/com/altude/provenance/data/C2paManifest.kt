@@ -1,6 +1,5 @@
 package com.altude.provenance.data
 
-import android.graphics.BitmapFactory
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
