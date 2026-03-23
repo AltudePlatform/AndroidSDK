@@ -145,7 +145,7 @@ data class C2paManifest(
         private fun sha256Hex(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256")
                 .digest(bytes)
-                .joinToString("") { "%02x".format(it) }
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     /** Returns the canonical JSON of this manifest for backend storage / verification. */
