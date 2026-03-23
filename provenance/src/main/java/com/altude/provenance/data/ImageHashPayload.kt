@@ -48,7 +48,13 @@ data class ImageHashPayload internal constructor(
     /** Unix timestamp (seconds) when attestation expires. 0 = no expiry. */
     val expireAt: Long,
     /** Finality commitment to wait for. */
-    val commitment: Commitment
+    val commitment: Commitment,
+    /** Optional GPS latitude in decimal degrees. */
+    val latitude: Double? = null,
+    /** Optional GPS longitude in decimal degrees. */
+    val longitude: Double? = null,
+    /** Pre-built certificate (set internally after offline signing). */
+    internal val certificate: ProvenanceCertificate? = null
 ) {
     companion object {
 
@@ -93,7 +99,9 @@ data class ImageHashPayload internal constructor(
             account:    String     = "",
             recipient:  String     = "",
             expireAt:   Long       = 0L,
-            commitment: Commitment = Commitment.finalized
+            commitment: Commitment = Commitment.finalized,
+            latitude:   Double?    = null,
+            longitude:  Double?    = null
         ): ImageHashPayload {
             val manifest = C2paManifest.build(
                 filePath  = filePath,
@@ -111,7 +119,9 @@ data class ImageHashPayload internal constructor(
                 account      = account,
                 recipient    = recipient,
                 expireAt     = expireAt,
-                commitment   = commitment
+                commitment   = commitment,
+                latitude     = latitude,
+                longitude    = longitude
             )
         }
 
@@ -147,7 +157,9 @@ data class ImageHashPayload internal constructor(
             account:         String     = "",
             recipient:       String     = "",
             expireAt:        Long       = 0L,
-            commitment:      Commitment = Commitment.finalized
+            commitment:      Commitment = Commitment.finalized,
+            latitude:        Double?    = null,
+            longitude:       Double?    = null
         ): ImageHashPayload {
             val imageBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: throw IllegalArgumentException("C2PA: cannot open URI $uri")
@@ -172,7 +184,9 @@ data class ImageHashPayload internal constructor(
                 account      = account,
                 recipient    = recipient,
                 expireAt     = expireAt,
-                commitment   = commitment
+                commitment   = commitment,
+                latitude     = latitude,
+                longitude    = longitude
             )
         }
 
@@ -192,7 +206,9 @@ data class ImageHashPayload internal constructor(
             account:    String     = "",
             recipient:  String     = "",
             expireAt:   Long       = 0L,
-            commitment: Commitment = Commitment.finalized
+            commitment: Commitment = Commitment.finalized,
+            latitude:   Double?    = null,
+            longitude:  Double?    = null
         ): ImageHashPayload = ImageHashPayload(
             type         = "image_hash",
             hash         = manifest.manifestHash,
@@ -204,7 +220,9 @@ data class ImageHashPayload internal constructor(
             account      = account,
             recipient    = recipient,
             expireAt     = expireAt,
-            commitment   = commitment
+            commitment   = commitment,
+            latitude     = latitude,
+            longitude    = longitude
         )
     }
 }

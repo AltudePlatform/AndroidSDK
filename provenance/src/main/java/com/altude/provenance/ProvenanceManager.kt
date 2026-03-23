@@ -125,20 +125,48 @@ internal object ProvenanceManager {
     internal suspend fun fetchBlockhash(commitment: String): String =
         rpc.getLatestBlockhash(commitment = commitment).blockhash
 
+    // ── Base58 → ByteArray helper ─────────────────────────────────────────────
+
+    /**
+     * Decodes a Base58-encoded Solana public key to its raw 32-byte array.
+     * Used instead of `keypair.publicKey.bytes` to avoid relying on a specific
+     * property that may differ across Metaplex / web3-solana library versions.
+     */
+    private fun decodeBase58(encoded: String): ByteArray {
+        val alphabet    = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        val leadingZeros = encoded.takeWhile { it == '1' }.length
+        var bigInt = java.math.BigInteger.ZERO
+        for (c in encoded) {
+            val idx = alphabet.indexOf(c)
+            if (idx < 0) throw IllegalArgumentException("Invalid Base58 char: $c")
+            bigInt = bigInt.multiply(java.math.BigInteger.valueOf(58L))
+                .add(java.math.BigInteger.valueOf(idx.toLong()))
+        }
+        val rawBytes = bigInt.toByteArray()
+        // BigInteger may prefix a 0x00 sign byte — strip it
+        val stripped = if (rawBytes.isNotEmpty() && rawBytes[0] == 0.toByte())
+            rawBytes.copyOfRange(1, rawBytes.size) else rawBytes
+        val result = ByteArray(leadingZeros) + stripped
+        return when {
+            result.size == 32 -> result
+            result.size > 32  -> result.copyOfRange(result.size - 32, result.size)
+            else              -> ByteArray(32 - result.size) + result
+        }
+    }
+
     // ── Offline-safe certificate builder ─────────────────────────────────────
 
     /**
      * Builds and ED25519-signs a [ProvenanceCertificate] from [payload].
-     *
-     * **No network calls** — safe to call when the device is offline.
-     * Used by [Provenance.attestOffline] to produce a signed credential before
-     * queuing the image for later on-chain submission.
+     * Suspend because [SolanaEddsa.sign] is a suspend function.
+     * No network calls — safe to call when the device is offline.
      */
-    internal fun buildCertificate(
+    internal suspend fun buildCertificate(
         payload: ImageHashPayload,
         keypair: Keypair
     ): ProvenanceCertificate {
-        val pubKeyHex = keypair.publicKey.bytes.joinToString("") { "%02x".format(it) }
+        val pubKeyBytes = decodeBase58(keypair.publicKey.toBase58())
+        val pubKeyHex   = pubKeyBytes.joinToString("") { "%02x".format(it) }
         val draft = ProvenanceCertificate(
             instanceId         = "urn:uuid:${java.util.UUID.randomUUID()}",
             captureTimestampMs = System.currentTimeMillis(),
@@ -164,11 +192,10 @@ internal object ProvenanceManager {
     /**
      * Builds and signs the Solana `createAttestation` transaction using a
      * **pre-fetched** [blockhash] and [keypair].
-     *
-     * Call [fetchBlockhash] once per batch and pass the result here to avoid an
-     * RPC network call per image.
+     * Suspend because [AltudeTransactionBuilder.setSigners], [build], and
+     * [Transaction.serialize] are suspend functions.
      */
-    internal fun buildTx(
+    internal suspend fun buildTx(
         payload:   ImageHashPayload,
         schemaPda: PublicKey,
         keypair:   Keypair,
@@ -203,13 +230,10 @@ internal object ProvenanceManager {
     // ── Batch-optimised attest (pre-fetched keypair + blockhash) ─────────────
 
     /**
-     * Builds both the certificate and the Solana tx using **caller-supplied**
-     * [keypair] and [blockhash] — no internal RPC or storage calls.
-     *
-     * Use this inside [Provenance.attestBatch] so that both the keypair and
-     * blockhash are fetched ONCE for the entire batch rather than once per image.
+     * Builds certificate + tx using caller-supplied [keypair] and [blockhash].
+     * No internal RPC or storage calls — use this inside [Provenance.attestBatch].
      */
-    internal fun attestWithPrefetched(
+    internal suspend fun attestWithPrefetched(
         payload:   ImageHashPayload,
         schemaPda: PublicKey,
         keypair:   Keypair,
@@ -227,8 +251,9 @@ internal object ProvenanceManager {
     // ── Single-image convenience (fetches blockhash internally) ───────────────
 
     /**
-     * Convenience wrapper for single-image attestation — fetches the blockhash and
-     * keypair internally. For batches use [attestWithPrefetched] instead.
+     * Convenience wrapper for single-image attestation.
+     * Fetches keypair and blockhash internally.
+     * For batches use [attestWithPrefetched] instead.
      */
     suspend fun attest(
         payload:   ImageHashPayload,
@@ -241,4 +266,7 @@ internal object ProvenanceManager {
         }.let { r ->
             r.exceptionOrNull()?.let { e ->
                 Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-            }
+            } ?: Result.success(r.getOrThrow())
+        }
+    }
+}
