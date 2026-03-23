@@ -217,7 +217,7 @@ data class C2paManifest(
               <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
                 <rdf:Description rdf:about=""
                     xmlns:c2pa="https://c2pa.org/ns/c2pa/">
-                  <c2pa:manifest>${json.replace("<", "&lt;").replace(">", "&gt;")}</c2pa:manifest>
+                  <c2pa:manifest>${json.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</c2pa:manifest>
                 </rdf:Description>
               </rdf:RDF>
             </x:xmpmeta>
