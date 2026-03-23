@@ -387,6 +387,44 @@ data class VerifyResult(
     val certificate:   ProvenanceCertificate?
 )
 
+// ── Offline queue results ─────────────────────────────────────────────────────
+
+/**
+ * Returned by [com.altude.provenance.Provenance.attestOffline].
+ *
+ * The image has been signed and queued locally — call
+ * [com.altude.provenance.Provenance.submitPending] when back online to submit
+ * everything to the Solana chain in one efficient batch.
+ *
+ * @property queueId           UUID identifying this entry in the pending queue.
+ * @property certificate       Signed [ProvenanceCertificate] — already tamper-evident
+ *                             even before on-chain submission.
+ * @property manifestFile      Sidecar `.c2pa.json` saved locally (if [ManifestOption.SidecarFile]).
+ * @property embeddedImageFile Image file with manifest embedded (if [ManifestOption.EmbedInImage]).
+ */
+data class OfflineAttestResult(
+    val queueId:           String,
+    val certificate:       ProvenanceCertificate,
+    val manifestFile:      java.io.File? = null,
+    val embeddedImageFile: java.io.File? = null
+)
+
+/**
+ * Per-image result emitted by [com.altude.provenance.Provenance.submitPending].
+ *
+ * @property queueId   The ID that was removed from the pending queue on success.
+ * @property name      Original filename — use to match back to your UI list.
+ * @property hash      [C2paManifest.manifestHash] stored on-chain.
+ * @property result    Success carries [ProvenanceResult]; failure carries the error.
+ *                     On failure the item **remains in the queue** for the next retry.
+ */
+data class SubmitResult(
+    val queueId: String,
+    val name:    String,
+    val hash:    String,
+    val result:  Result<ProvenanceResult>
+)
+
 
 
 

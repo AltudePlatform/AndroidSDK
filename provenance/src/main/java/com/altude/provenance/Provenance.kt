@@ -4,13 +4,17 @@ import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.AttestationResult
 import com.altude.provenance.data.C2paManifest
+import com.altude.provenance.data.Commitment
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ImageHashRequest
 import com.altude.provenance.data.ImageHashResponse
 import com.altude.provenance.data.ManifestOption
+import com.altude.provenance.data.OfflineAttestResult
+import com.altude.provenance.data.PendingAttestation
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
 import com.altude.provenance.data.ProvenanceResult
+import com.altude.provenance.data.SubmitResult
 import com.altude.provenance.data.VerifyResponse
 import com.altude.provenance.data.VerifyResult
 import com.altude.provenance.interfaces.ProvenanceService
@@ -90,7 +94,7 @@ object Provenance {
      * Attests a single image on-chain.
      *
      * @param payload        Built via [ImageHashPayload.create].
-     * @param manifestOption How to save the manifest after attestation. Default: [ManifestOption.SidecarFile].
+     * @param manifestOption How to save the manifest. Default: [ManifestOption.SidecarFile].
      *
      * Options:
      * - [ManifestOption.SidecarFile]   — saves `{name}.c2pa.json` in `filesDir/provenance_manifests/`
@@ -162,20 +166,24 @@ object Provenance {
         }
     }
 
-    // ── Bulk images ───────────────────────────────────────────────────────────
+    // ── Bulk images (performance-optimised) ───────────────────────────────────
 
     /**
-     * Attests a list of images sequentially — 1 schema tx (first call only per wallet),
-     * N attestation txs submitted one by one in order.
+     * Attests a list of images sequentially with **one keypair fetch** and
+     * **one blockhash fetch per 30 s** — not one per image.
      *
-     * @param payloads       List built via [ImageHashPayload.create].
-     * @param manifestOption How to save each manifest. Default: [ManifestOption.SidecarFile].
+     * - Schema tx: once per wallet (cached after first success).
+     * - Keypair:   fetched once before the loop.
+     * - Blockhash: fetched once; automatically refreshed every 30 s so it never
+     *              expires during a long batch (Solana validity ~90 s).
+     *
+     * Emits one [AttestationResult] per image as it completes so the UI can show
+     * progress without waiting for the whole batch.
      *
      * ```kotlin
      * viewModelScope.launch {
-     *     Provenance.attestBatch(payloads, ManifestOption.EmbedInImage(filePath)).collect { item ->
-     *         val embedded = item.result.getOrNull()?.embeddedImageFile
-     *         val sidecar  = item.result.getOrNull()?.manifestFile
+     *     Provenance.attestBatch(payloads).collect { item ->
+     *         // item.index, item.name, item.hash, item.result
      *     }
      * }
      * ```
@@ -188,7 +196,7 @@ object Provenance {
 
         val first = payloads.first()
 
-        // ── 1. Ensure schema ONCE for the whole batch ─────────────────────────
+        // ── 1. Schema — once per wallet ───────────────────────────────────────
         val schemaResult = ProvenanceManager.ensureSchema(
             account    = first.account,
             commitment = first.commitment.name
@@ -201,16 +209,28 @@ object Provenance {
             return@flow
         }
 
-        // ── 2. Derive Schema PDA ONCE ─────────────────────────────────────────
+        // ── 2. Keypair + PDA — once per batch ─────────────────────────────────
+        val keypair   = ProvenanceManager.getKeyPair(first.account)
+        val walletKey = keypair.publicKey.toBase58()
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        val walletKey = ProvenanceManager.getKeyPair(first.account).publicKey.toBase58()
-
         var schemaMarked = ProvenancePrefs.isSchemaCreated(walletKey)
 
-        // ── 3. Sequential loop — sign offline → submit → emit ─────────────────
+        // ── 3. Blockhash — once; refreshed every 30 s ─────────────────────────
+        var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment.name)
+        var blockhashFetchedAt = System.currentTimeMillis()
+
+        // ── 4. Sequential loop ─────────────────────────────────────────────────
         payloads.forEachIndexed { index, payload ->
+            // Refresh blockhash if older than 30 s to stay well within validity window
+            if (System.currentTimeMillis() - blockhashFetchedAt > 30_000L) {
+                blockhash          = ProvenanceManager.fetchBlockhash(payload.commitment.name)
+                blockhashFetchedAt = System.currentTimeMillis()
+            }
+
             val itemResult = runCatching {
-                val attested = ProvenanceManager.attest(payload, schemaPda).getOrThrow()
+                val attested = ProvenanceManager
+                    .attestWithPrefetched(payload, schemaPda, keypair, blockhash)
+                    .getOrThrow()
 
                 val request = ImageHashRequest(
                     type                = payload.type,
@@ -250,39 +270,236 @@ object Provenance {
         }
     }.flowOn(Dispatchers.IO)
 
+    // ── Offline queue ─────────────────────────────────────────────────────────
+
+    /**
+     * Signs the image credential and saves it to the local pending queue —
+     * **no network required**.
+     *
+     * Use when the device is offline or network reliability is uncertain.
+     * The [ProvenanceCertificate] is fully signed at this point so the credential
+     * is tamper-evident. Call [submitPending] when back online to broadcast to Solana.
+     *
+     * ```kotlin
+     * // Offline — sign now, submit later
+     * val offline = Provenance.attestOffline(payload).getOrThrow()
+     * println("Queued: ${offline.queueId}")
+     * println("Pending: ${Provenance.pendingCount()} images waiting")
+     *
+     * // Later, when online:
+     * Provenance.submitPending().collect { item ->
+     *     if (item.result.isSuccess) println("Submitted: ${item.name}")
+     * }
+     * ```
+     *
+     * @param payload        Built via [ImageHashPayload.create] — no network needed.
+     * @param manifestOption Applied immediately (local file I/O only); saved in the
+     *                       queue entry and re-applied after successful submission.
+     */
+    suspend fun attestOffline(
+        payload:        ImageHashPayload,
+        manifestOption: ManifestOption = ManifestOption.SidecarFile
+    ): Result<OfflineAttestResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            // 1. Get keypair from local storage — no network
+            val keypair = ProvenanceManager.getKeyPair(payload.account)
+
+            // 2. Build + sign certificate — pure crypto, no network
+            val certificate = ProvenanceManager.buildCertificate(payload, keypair)
+
+            // 3. Apply manifest option locally (sidecar / embed — file I/O only)
+            val (manifestFile, embeddedImageFile) =
+                applyManifestOption(payload.c2paManifest, manifestOption)
+
+            // 4. Serialise manifest option for storage
+            val (optType, optPath) = when (manifestOption) {
+                is ManifestOption.EmbedInImage -> "embed" to manifestOption.sourceFilePath
+                is ManifestOption.Both         -> "both"  to manifestOption.sourceFilePath
+                is ManifestOption.None         -> "none"  to ""
+                else                           -> "sidecar" to ""
+            }
+
+            // 5. Enqueue
+            val queueId = java.util.UUID.randomUUID().toString()
+            ProvenanceQueue.enqueue(
+                PendingAttestation(
+                    id                 = queueId,
+                    type               = payload.type,
+                    hash               = payload.hash,
+                    mime               = payload.mime,
+                    name               = payload.name,
+                    manifest           = payload.manifest,
+                    c2paManifest       = payload.c2paManifest,
+                    timestamp          = payload.timestamp,
+                    account            = payload.account,
+                    recipient          = payload.recipient,
+                    expireAt           = payload.expireAt,
+                    commitment         = payload.commitment.name,
+                    latitude           = payload.latitude,
+                    longitude          = payload.longitude,
+                    certificateJson    = certificate.toJson(),
+                    manifestOptionType = optType,
+                    manifestOptionPath = optPath
+                )
+            )
+
+            OfflineAttestResult(
+                queueId           = queueId,
+                certificate       = certificate,
+                manifestFile      = manifestFile,
+                embeddedImageFile = embeddedImageFile
+            )
+        }.mapFailure()
+    }
+
+    /**
+     * Submits all pending (offline-queued) attestations to the Solana chain.
+     *
+     * Optimised the same way as [attestBatch]:
+     * - Schema: once per wallet
+     * - Keypair: fetched once
+     * - Blockhash: fetched once, refreshed every 30 s
+     *
+     * Each item is removed from the queue **only on success** — failures remain
+     * in the queue so they are retried on the next [submitPending] call.
+     *
+     * ```kotlin
+     * // Call when the device comes back online
+     * if (Provenance.pendingCount() > 0) {
+     *     Provenance.submitPending().collect { item ->
+     *         if (item.result.isSuccess) println("✓ ${item.name}")
+     *         else println("✗ ${item.name}: ${item.result.exceptionOrNull()?.message}")
+     *     }
+     * }
+     * ```
+     */
+    fun submitPending(): Flow<SubmitResult> = flow {
+        val pending = ProvenanceQueue.getAll()
+        if (pending.isEmpty()) return@flow
+
+        val first = pending.first()
+
+        // ── Schema — once ──────────────────────────────────────────────────────
+        val schemaResult = ProvenanceManager.ensureSchema(
+            account    = first.account,
+            commitment = first.commitment
+        )
+        if (schemaResult.isFailure) {
+            pending.forEach { p ->
+                emit(SubmitResult(p.id, p.name, p.hash,
+                    Result.failure(schemaResult.exceptionOrNull()!!)))
+            }
+            return@flow
+        }
+
+        // ── Keypair + PDA — once ───────────────────────────────────────────────
+        val keypair   = ProvenanceManager.getKeyPair(first.account)
+        val walletKey = keypair.publicKey.toBase58()
+        val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
+        var schemaMarked = ProvenancePrefs.isSchemaCreated(walletKey)
+
+        // ── Blockhash — once; refreshed every 30 s ────────────────────────────
+        var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment)
+        var blockhashFetchedAt = System.currentTimeMillis()
+
+        pending.forEachIndexed { index, entry ->
+            if (System.currentTimeMillis() - blockhashFetchedAt > 30_000L) {
+                blockhash          = ProvenanceManager.fetchBlockhash(entry.commitment)
+                blockhashFetchedAt = System.currentTimeMillis()
+            }
+
+            val itemResult = runCatching {
+                // Reconstruct a minimal ImageHashPayload from the queued entry
+                val payload = ImageHashPayload(
+                    type         = entry.type,
+                    hash         = entry.hash,
+                    mime         = entry.mime,
+                    name         = entry.name,
+                    manifest     = entry.manifest,
+                    c2paManifest = entry.c2paManifest,
+                    timestamp    = entry.timestamp,
+                    account      = entry.account,
+                    recipient    = entry.recipient,
+                    expireAt     = entry.expireAt,
+                    commitment   = Commitment.valueOf(entry.commitment),
+                    latitude     = entry.latitude,
+                    longitude    = entry.longitude
+                )
+
+                // Build Solana tx using the pre-fetched blockhash (cert already signed)
+                val signedTx = ProvenanceManager.buildTx(payload, schemaPda, keypair, blockhash)
+                val certificate = ProvenanceCertificate.fromJson(entry.certificateJson)
+
+                val request = ImageHashRequest(
+                    type                = entry.type,
+                    hash                = entry.hash,
+                    mime                = entry.mime,
+                    name                = entry.name,
+                    timestamp           = entry.timestamp,
+                    account             = entry.account,
+                    recipient           = entry.recipient,
+                    expireAt            = entry.expireAt,
+                    manifest            = entry.manifest,
+                    signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
+                    signedAttestationTx = signedTx,
+                    certificate         = entry.certificateJson
+                )
+                val res      = service().attestImageHash(request).await()
+                val response = decodeJson<ImageHashResponse>(res)
+
+                if (!schemaMarked && index == 0 && response.Status == "success") {
+                    ProvenancePrefs.markSchemaCreated(walletKey)
+                    schemaMarked = true
+                }
+
+                // Remove from queue ONLY on success
+                ProvenanceQueue.dequeue(entry.id)
+
+                val manifestOption = entry.toManifestOption()
+                val (manifestFile, embeddedImageFile) =
+                    applyManifestOption(entry.c2paManifest, manifestOption)
+
+                ProvenanceResult(
+                    response          = response,
+                    manifest          = entry.c2paManifest,
+                    certificate       = certificate,
+                    manifestFile      = manifestFile,
+                    embeddedImageFile = embeddedImageFile
+                )
+            }
+            // Failures stay in queue — do NOT dequeue on failure
+            emit(SubmitResult(entry.id, entry.name, entry.hash, itemResult))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * Returns the number of images waiting in the offline queue.
+     * Check this when coming back online to decide whether to call [submitPending].
+     */
+    fun pendingCount(): Int = ProvenanceQueue.count()
+
+    /**
+     * Clears all pending queue entries for the current wallet.
+     * Call on logout or wallet switch — entries will NOT be submitted.
+     */
+    fun clearPending() = ProvenanceQueue.clear()
+
     // ── Session ───────────────────────────────────────────────────────────────
 
     /**
-     * Clears the schema state (SharedPreferences + in-memory PDA cache) for [account].
-     * Call on wallet switch or logout so the next [attestImageHash] re-creates the schema.
+     * Clears the schema state + pending queue for [account].
+     * Call on wallet switch or logout.
      */
-    suspend fun resetSession(account: String = "") =
+    suspend fun resetSession(account: String = "") {
         ProvenanceManager.resetSchema(account)
+        ProvenanceQueue.clear()
+    }
 
     // ── Online verification ───────────────────────────────────────────────────
 
     /**
-     * Verifies an attested image online by its **manifest hash**
-     * ([C2paManifest.manifestHash] — the SHA-256 of the canonical C2PA claim JSON
-     * that is stored on-chain).
-     *
-     * Use this when you have the hash from a local [ImageHashPayload] and want to
-     * confirm it is recorded on the Solana chain with a matching certificate.
-     *
-     * ```kotlin
-     * val payload = ImageHashPayload.create(filePath = file.absolutePath, account = wallet)
-     * val result  = Provenance.attestImageHash(payload).getOrThrow()
-     *
-     * // Later — verify the same image online:
-     * val v = Provenance.verifyByHash(payload.hash).getOrThrow()
-     * if (v.isVerified) {
-     *     println("Signer:      ${v.certificate?.signerAddress}")
-     *     println("On-chain:    ${v.onChainHash}")
-     *     println("Device:      ${v.certificate?.deviceMake} ${v.certificate?.deviceModel}")
-     * }
-     * ```
-     *
-     * @param hash [C2paManifest.manifestHash] — SHA-256 hex of the canonical claim JSON.
+     * Verifies an attested image online by its manifest hash
+     * ([C2paManifest.manifestHash] — stored on-chain).
      */
     suspend fun verifyByHash(hash: String): Result<VerifyResult> =
         withContext(Dispatchers.IO) {
@@ -294,22 +511,7 @@ object Provenance {
         }
 
     /**
-     * Verifies an attested image online by its **on-chain Attestation PDA** (Base58).
-     *
-     * Use this when you have the `attestationId` from [ProvenanceResult.response]:
-     *
-     * ```kotlin
-     * val result = Provenance.attestImageHash(payload).getOrThrow()
-     * val id     = result.response.attestationId
-     *
-     * // Later — verify by the Solana attestation account:
-     * val v = Provenance.verifyByAttestationId(id).getOrThrow()
-     * if (v.isVerified) {
-     *     println("Cert timestamp: ${v.certificate?.captureTimestampMs}")
-     * }
-     * ```
-     *
-     * @param attestationId On-chain Attestation PDA returned by [ProvenanceResult.response].
+     * Verifies an attested image online by its on-chain Attestation PDA (Base58).
      */
     suspend fun verifyByAttestationId(attestationId: String): Result<VerifyResult> =
         withContext(Dispatchers.IO) {
@@ -322,10 +524,6 @@ object Provenance {
 
     // ── Manifest option helper ────────────────────────────────────────────────
 
-    /**
-     * Applies [option] after attestation. Returns (sidecarFile, embeddedImageFile).
-     * Errors are swallowed to null so a save failure never crashes the attestation.
-     */
     private fun applyManifestOption(
         manifest: C2paManifest,
         option:   ManifestOption
@@ -333,14 +531,12 @@ object Provenance {
         val manifestsDir = java.io.File(StorageService.getContext().filesDir, "provenance_manifests")
         return when (option) {
             is ManifestOption.SidecarFile -> {
-                val file = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
-                Pair(file, null)
+                Pair(runCatching { manifest.saveTo(manifestsDir) }.getOrNull(), null)
             }
             is ManifestOption.EmbedInImage -> {
-                val embedded = runCatching {
+                Pair(null, runCatching {
                     manifest.embedInto(java.io.File(option.sourceFilePath))
-                }.getOrNull()
-                Pair(null, embedded)
+                }.getOrNull())
             }
             is ManifestOption.Both -> {
                 val sidecar  = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
@@ -349,7 +545,7 @@ object Provenance {
                 }.getOrNull()
                 Pair(sidecar, embedded)
             }
-            else -> Pair(null, null) // ManifestOption.None
+            else -> Pair(null, null)
         }
     }
 
@@ -358,7 +554,6 @@ object Provenance {
     private inline fun <reified T> decodeJson(element: JsonElement): T =
         json.decodeFromJsonElement(element)
 
-    /** Maps the raw [VerifyResponse] into the public [VerifyResult], parsing the certificate. */
     private fun VerifyResponse.toVerifyResult() = VerifyResult(
         isVerified    = Status.equals("verified", ignoreCase = true),
         status        = Status,
@@ -368,7 +563,6 @@ object Provenance {
         certificate   = ProvenanceCertificate.fromJson(certificate)
     )
 
-    /** Wraps any raw exception in a friendlier [Exception] with the original message. */
     private fun <T> Result<T>.mapFailure(): Result<T> =
         onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
             .let { this }
