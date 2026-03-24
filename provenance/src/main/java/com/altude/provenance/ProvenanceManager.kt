@@ -12,6 +12,7 @@ import com.altude.core.service.StorageService
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
+import org.json.JSONObject
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
 import foundation.metaplex.solanaeddsa.SolanaEddsa
@@ -234,7 +235,13 @@ internal object ProvenanceManager {
             recipient = recipient
         )
 
-        val payloadJson = """{"type":"${payload.type}","hash":"${payload.hash}","mime":"${payload.mime}","name":"${payload.name}","timestamp":${payload.timestamp}}"""
+        val payloadJson = JSONObject().apply {
+            put("type",      payload.type)
+            put("hash",      payload.hash)
+            put("mime",      payload.mime)
+            put("name",      payload.name)
+            put("timestamp", payload.timestamp)
+        }.toString()
 
         val instruction = AttestationProgram.createAttestation(
             attester        = attester,
