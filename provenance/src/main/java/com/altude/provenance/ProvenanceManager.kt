@@ -43,11 +43,11 @@ internal object ProvenanceManager {
 
     suspend fun getKeyPair(account: String = ""): Keypair {
         val seed = StorageService.getDecryptedSeed(account)
-            ?: throw Error("Please set seed first")
+            ?: throw IllegalStateException("Please set seed first")
         if (seed.type == "mnemonic") return Mnemonic(seed.mnemonic).getKeyPair()
         return seed.privateKey?.let {
             SolanaEddsa.createKeypairFromSecretKey(it.copyOfRange(0, 32))
-        } ?: throw Error("No seed found in storage")
+        } ?: throw IllegalStateException("No seed found in storage")
     }
 
     // ── PDA ───────────────────────────────────────────────────────────────────
