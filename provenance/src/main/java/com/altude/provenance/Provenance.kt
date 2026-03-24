@@ -150,9 +150,9 @@ object Provenance {
                 ProvenancePrefs.markSchemaCreated(walletKey)
             }
 
-            // 6. Apply chosen manifest option
+            // 6. Apply chosen manifest option — pass certificate so the file includes the signature
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(payload.c2paManifest, manifestOption)
+                applyManifestOption(payload.c2paManifest, manifestOption, attested.certificate)
 
             Result.success(ProvenanceResult(
                 response          = response,
@@ -254,9 +254,9 @@ object Provenance {
                     schemaMarked = true
                 }
 
-                // Apply chosen manifest option per image
+                // Apply chosen manifest option per image — include signature in file
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(payload.c2paManifest, manifestOption)
+                    applyManifestOption(payload.c2paManifest, manifestOption, attested.certificate)
 
                 ProvenanceResult(
                     response          = response,
@@ -307,9 +307,9 @@ object Provenance {
             // 2. Build + sign certificate — pure crypto, no network
             val certificate = ProvenanceManager.buildCertificate(payload, keypair)
 
-            // 3. Apply manifest option locally (sidecar / embed — file I/O only)
+            // 3. Apply manifest option locally — include signature in file
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(payload.c2paManifest, manifestOption)
+                applyManifestOption(payload.c2paManifest, manifestOption, certificate)
 
             // 4. Serialise manifest option for storage
             val (optType, optPath) = when (manifestOption) {
@@ -457,7 +457,7 @@ object Provenance {
 
                 val manifestOption = entry.toManifestOption()
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(entry.c2paManifest, manifestOption)
+                    applyManifestOption(entry.c2paManifest, manifestOption, certificate)
 
                 ProvenanceResult(
                     response          = response,
@@ -524,24 +524,33 @@ object Provenance {
 
     // ── Manifest option helper ────────────────────────────────────────────────
 
+    /**
+     * Applies the [option] to save or embed the manifest locally.
+     *
+     * When [certificate] is provided its [ProvenanceCertificate.toJson] (which includes
+     * the ED25519 signature) is written instead of the plain [C2paManifest.toJson], making
+     * the sidecar file / embedded image fully self-contained for offline verification.
+     */
     private fun applyManifestOption(
-        manifest: C2paManifest,
-        option:   ManifestOption
+        manifest:    C2paManifest,
+        option:      ManifestOption,
+        certificate: ProvenanceCertificate? = null
     ): Pair<java.io.File?, java.io.File?> {
+        val json         = certificate?.toJson() ?: manifest.toJson()
         val manifestsDir = java.io.File(StorageService.getContext().filesDir, "provenance_manifests")
         return when (option) {
             is ManifestOption.SidecarFile -> {
-                Pair(runCatching { manifest.saveTo(manifestsDir) }.getOrNull(), null)
+                Pair(runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull(), null)
             }
             is ManifestOption.EmbedInImage -> {
                 Pair(null, runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath))
+                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
                 }.getOrNull())
             }
             is ManifestOption.Both -> {
-                val sidecar  = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
+                val sidecar  = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
                 val embedded = runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath))
+                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
                 }.getOrNull()
                 Pair(sidecar, embedded)
             }

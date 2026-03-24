@@ -157,22 +157,24 @@ data class C2paManifest(
     fun toJson(): String = canonicalJson.encodeToString(this)
 
     /**
-     * Saves the manifest JSON as a sidecar `.c2pa.json` file.
-     * Named `{filename}.c2pa.json` (e.g. `photo.png.c2pa.json`).
+     * Saves a `.c2pa.json` sidecar file named `{filename}.c2pa.json`.
      *
      * @param directory Directory to write into (e.g. `context.filesDir`).
+     * @param json      JSON string to write. Defaults to [toJson] (manifest hashes only).
+     *                  Pass `certificate.toJson()` to include the full ED25519 signature
+     *                  so the file is self-contained for offline verification.
      * @return The written [File].
      */
-    fun saveTo(directory: File): File {
+    fun saveTo(directory: File, json: String = toJson()): File {
         directory.mkdirs()
         val stem = if (filename.isNotBlank()) filename else manifestHash.take(16)
         val out  = File(directory, "$stem.c2pa.json")
-        out.writeText(toJson(), Charsets.UTF_8)
+        out.writeText(json, Charsets.UTF_8)
         return out
     }
 
     /**
-     * Embeds the manifest JSON directly into the image file metadata.
+     * Embeds a C2PA manifest JSON directly into the image file metadata.
      *
      * - **JPEG** → written to XMP metadata via `ExifInterface` (`TAG_XMP`).
      *   The client only needs the image — no sidecar file required.
@@ -182,16 +184,20 @@ data class C2paManifest(
      * The file at [imageFile] is modified in-place.
      *
      * ```kotlin
+     * // Embed manifest hashes only (default)
      * result.manifest.embedInto(File(filePath))
-     * // imageFile now contains the C2PA manifest in its metadata
+     *
+     * // Embed full certificate with ED25519 signature (offline-verifiable)
+     * result.manifest.embedInto(File(filePath), result.certificate!!.toJson())
      * ```
      *
      * @param imageFile The image file to embed into (must be JPEG or PNG).
+     * @param json      JSON string to embed. Defaults to [toJson] (manifest hashes only).
+     *                  Pass `certificate.toJson()` to include the full ED25519 signature.
      * @return The modified [imageFile] for chaining.
      */
-    fun embedInto(imageFile: File): File {
+    fun embedInto(imageFile: File, json: String = toJson()): File {
         require(imageFile.exists()) { "C2PA embed: file not found at ${imageFile.absolutePath}" }
-        val json = toJson()
         return when {
             mimeType.contains("jpeg", ignoreCase = true) ||
             mimeType.contains("jpg",  ignoreCase = true) ||
