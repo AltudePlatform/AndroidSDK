@@ -107,11 +107,34 @@ internal object ProvenanceManager {
         }
     }
 
+    // ── On-chain fetch ────────────────────────────────────────────────────────
+
+    /**
+     * Fetches and parses an Attestation PDA account directly from Solana RPC.
+     * No backend involved — trustless on-chain read.
+     *
+     * @param attestationId Attestation PDA in Base58 (from [ProvenanceResult.response?.attestationId]
+     *                      or stored in the sidecar / embedded manifest).
+     */
+    internal suspend fun fetchAttestationOnChain(
+        attestationId: String
+    ): AttestationProgram.AttestationAccountData = withContext(Dispatchers.IO) {
+        val accountResult = rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+            attestationId,
+            isBase64 = true
+        )
+        val base64Data = accountResult.value?.data?.firstOrNull()
+            ?: error("Attestation account not found on-chain: $attestationId")
+        AttestationProgram.parseAttestationData(base64Data)
+    }
+
     // ── AttestResult ──────────────────────────────────────────────────────────
 
     internal data class AttestResult(
-        val signedTx:    String,
-        val certificate: ProvenanceCertificate
+        val signedTx:      String,
+        val certificate:   ProvenanceCertificate,
+        /** Attestation PDA derived locally — no backend round-trip needed. */
+        val attestationId: String
     )
 
     // ── Network helpers ───────────────────────────────────────────────────────
@@ -190,20 +213,26 @@ internal object ProvenanceManager {
     // ── Tx builder (requires pre-fetched blockhash) ───────────────────────────
 
     /**
-     * Builds and signs the Solana `createAttestation` transaction using a
-     * **pre-fetched** [blockhash] and [keypair].
-     * Suspend because [AltudeTransactionBuilder.setSigners], [build], and
-     * [Transaction.serialize] are suspend functions.
+     * Builds and signs the Solana `createAttestation` transaction.
+     * Returns a [Pair] of (base64-encoded signed tx, Attestation PDA Base58).
+     * The PDA is derived deterministically — no backend round-trip needed.
      */
     internal suspend fun buildTx(
         payload:   ImageHashPayload,
         schemaPda: PublicKey,
         keypair:   Keypair,
         blockhash: String
-    ): String {
+    ): Pair<String, String> {
         val attester  = keypair.publicKey
         val recipient = if (payload.recipient.isBlank()) attester
                         else PublicKey(payload.recipient)
+
+        // Derive attestation PDA locally — seeds match createAttestation (nonce = "")
+        val attestationPda = AttestationProgram.deriveAttestationAddress(
+            schema    = schemaPda,
+            attester  = attester,
+            recipient = recipient
+        )
 
         val payloadJson = """{"type":"${payload.type}","hash":"${payload.hash}","mime":"${payload.mime}","name":"${payload.name}","timestamp":${payload.timestamp}}"""
 
@@ -221,10 +250,11 @@ internal object ProvenanceManager {
             .addInstruction(instruction)
             .setSigners(listOf(HotSigner(keypair)))
             .build()
-        return Base64.encodeToString(
+        val signedTx = Base64.encodeToString(
             tx.serialize(SerializeConfig(requireAllSignatures = false)),
             Base64.NO_WRAP
         )
+        return Pair(signedTx, attestationPda.toBase58())
     }
 
     // ── Batch-optimised attest (pre-fetched keypair + blockhash) ─────────────
@@ -240,8 +270,8 @@ internal object ProvenanceManager {
         blockhash: String
     ): Result<AttestResult> = runCatching {
         val certificate = buildCertificate(payload, keypair)
-        val signedTx    = buildTx(payload, schemaPda, keypair, blockhash)
-        AttestResult(signedTx = signedTx, certificate = certificate)
+        val (signedTx, attestationId) = buildTx(payload, schemaPda, keypair, blockhash)
+        AttestResult(signedTx = signedTx, certificate = certificate, attestationId = attestationId)
     }.let { r ->
         r.exceptionOrNull()?.let { e ->
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))

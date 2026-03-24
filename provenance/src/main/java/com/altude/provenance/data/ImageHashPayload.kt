@@ -231,45 +231,38 @@ data class ImageHashPayload internal constructor(
 
 /**
  * JSON body sent to `POST api/provenance/attestImageHash`.
+ *
+ * The backend's **only job** is to add a feePayer signature and broadcast the
+ * signed transactions to Solana. Everything else is either:
+ * - Already on-chain in the Attestation PDA (hash, attester, recipient, expiry)
+ * - Stored locally on the device in the sidecar `.c2pa.json` file or embedded
+ *   in the image metadata (manifest, certificate)
+ *
+ * No database storage is required on the backend side.
  */
 @Serializable
 data class ImageHashRequest(
-    val type: String,
-    /** [C2paManifest.manifestHash] — stored on-chain. */
-    val hash: String,
-    val mime: String,
-    val name: String = "",
-    val timestamp: Long,
-    val account: String = "",
-    val recipient: String = "",
-    val expireAt: Long = 0L,
-    /** Full C2PA claim JSON — stored off-chain by backend for verification. */
-    val manifest: String = "",
     /**
      * Base64-encoded signed `createSchema` tx.
-     * `null` when schema already confirmed for this wallet — backend skips it.
+     * `null` when the schema already exists for this wallet — backend skips broadcast.
      */
     val signedSchemaTx: String? = null,
-    /** Base64-encoded signed `createAttestation` tx. */
-    val signedAttestationTx: String,
-    /**
-     * Full [ProvenanceCertificate] JSON — includes ED25519 signature, device metadata,
-     * and optional GPS. Stored off-chain by the backend for independent verification.
-     * `null` only if certificate building failed (non-fatal).
-     */
-    val certificate: String? = null
+    /** Base64-encoded signed `createAttestation` tx. Backend adds feePayer sig and broadcasts. */
+    val signedAttestationTx: String
 )
 
 /**
  * Response from `POST api/provenance/attestImageHash`.
+ * The backend broadcasts the signed transactions and returns the Solana tx signature.
+ * Note: [attestationId] is NOT returned here — it is derived deterministically
+ * client-side before the request is sent and exposed on [ProvenanceResult.attestationId].
  */
 @Serializable
 data class ImageHashResponse(
     val Status: String,
     val Message: String,
-    val Signature: String = "",
-    /** On-chain Attestation PDA (Base58). */
-    val attestationId: String = ""
+    /** Solana transaction signature of the broadcast `createAttestation` tx. */
+    val Signature: String = ""
 )
 
 /**
@@ -310,11 +303,15 @@ data class ProvenanceResult(
     /** The C2PA manifest built from the image. */
     val manifest: C2paManifest,
     /**
+     * Solana Attestation PDA (Base58) — derived deterministically client-side
+     * from (schemaPda, attester, recipient) before the tx is sent.
+     * Use this with [com.altude.provenance.Provenance.verifyOnChain].
+     * Also stored inside the sidecar `.c2pa.json` and embedded image metadata.
+     */
+    val attestationId: String = "",
+    /**
      * Signed [ProvenanceCertificate] — contains the ED25519 signature over the canonical
      * C2PA claim, device metadata, and optional GPS coordinates.
-     *
-     * Use [ProvenanceCertificate.toClaimJson] + `signerPublicKey` + `signature` for
-     * offline verification without network access.
      */
     val certificate: ProvenanceCertificate? = null,
     /**
@@ -325,19 +322,15 @@ data class ProvenanceResult(
     /**
      * The image file with the C2PA manifest embedded in its metadata.
      * Non-null when [ManifestOption.EmbedInImage] or [ManifestOption.Both] was used.
-     * JPEG: embedded in XMP. PNG: embedded as a tEXt chunk.
      */
     val embeddedImageFile: java.io.File? = null,
     /**
      * `true` when the device was offline at attestation time.
-     * The certificate is fully signed and the manifest is saved locally.
-     * Call [com.altude.provenance.Provenance.submitPending] when back online to
-     * broadcast to Solana — no re-signing needed.
+     * Call [com.altude.provenance.Provenance.submitPending] when back online.
      */
     val isQueued: Boolean = false,
     /**
      * Queue entry UUID. Non-null when [isQueued] is `true`.
-     * Use with [com.altude.provenance.Provenance.pendingCount] to track progress.
      */
     val queueId: String? = null
 )

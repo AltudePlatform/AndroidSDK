@@ -205,5 +205,29 @@ class AltudeRpc(val endpoint: String) {
 
     @kotlinx.serialization.Serializable
     data class RpcContext(val slot: Long)
-}
 
+    // ── Solana account (base64 encoding) ─────────────────────────────────────
+
+    /**
+     * Raw account data returned by `getAccountInfo` with `encoding: "base64"`.
+     * [data] is a two-element array: [base64EncodedBytes, "base64"].
+     */
+    @kotlinx.serialization.Serializable
+    data class SolanaAccountValue(
+        val data:       List<String> = emptyList(),
+        val executable: Boolean      = false,
+        val lamports:   Long         = 0L,
+        val owner:      String       = "",
+        val rentEpoch:  Long         = 0L
+    )
+
+    /**
+     * Top-level `result` wrapper for `getAccountInfo`.
+     * Use with `getAccountInfo<SolanaAccountResult>(pubkey, isBase64 = true)`.
+     */
+    @kotlinx.serialization.Serializable
+    data class SolanaAccountResult(
+        val context: RpcContext,
+        val value:   SolanaAccountValue?
+    )
+}

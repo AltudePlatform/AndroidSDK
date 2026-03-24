@@ -183,5 +183,60 @@ object AttestationProgram {
 
     private fun encode8(value: Long): ByteArray =
         ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(value).array()
-}
 
+    // ── On-chain account parser ───────────────────────────────────────────────
+
+    /**
+     * Parsed fields from a raw Attestation PDA account.
+     */
+    data class AttestationAccountData(
+        /** The `attestationData` bytes decoded as UTF-8 JSON. */
+        val payloadJson: String,
+        /** Unix timestamp (seconds) when this attestation expires; 0 = no expiry. */
+        val expireAt:    Long,
+        /** Unix timestamp (seconds) when this attestation was created. */
+        val createdAt:   Long
+    )
+
+    /**
+     * Parses the base64-encoded account data of a SAS Attestation PDA.
+     *
+     * Anchor account layout:
+     * ```
+     * [0..8)     discriminator  (8 bytes)
+     * [8..40)    schema         (32 bytes pubkey)
+     * [40..72)   attester       (32 bytes pubkey)
+     * [72..104)  recipient      (32 bytes pubkey)
+     * [104..108) data_len       (u32 LE)
+     * [108..)    data           (UTF-8 JSON payload)
+     * +0  expire_at  (i64 LE, 8 bytes)
+     * +8  created_at (i64 LE, 8 bytes)
+     * ```
+     */
+    fun parseAttestationData(base64AccountData: String): AttestationAccountData {
+        val bytes = android.util.Base64.decode(base64AccountData, android.util.Base64.DEFAULT)
+        var offset = 8      // skip Anchor 8-byte discriminator
+        offset += 32        // schema pubkey
+        offset += 32        // attester pubkey
+        offset += 32        // recipient pubkey
+
+        val dataLen = ByteBuffer.wrap(bytes, offset, 4)
+            .order(ByteOrder.LITTLE_ENDIAN).int
+        offset += 4
+
+        val payloadJson = String(bytes, offset, dataLen, StandardCharsets.UTF_8)
+        offset += dataLen
+
+        val expireAt  = ByteBuffer.wrap(bytes, offset, 8)
+            .order(ByteOrder.LITTLE_ENDIAN).long
+        offset += 8
+        val createdAt = ByteBuffer.wrap(bytes, offset, 8)
+            .order(ByteOrder.LITTLE_ENDIAN).long
+
+        return AttestationAccountData(
+            payloadJson = payloadJson,
+            expireAt    = expireAt,
+            createdAt   = createdAt
+        )
+    }
+}

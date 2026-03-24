@@ -136,18 +136,8 @@ object Provenance {
 
             // 4. Submit
             val request = ImageHashRequest(
-                type                = payload.type,
-                hash                = payload.hash,
-                mime                = payload.mime,
-                name                = payload.name,
-                timestamp           = payload.timestamp,
-                account             = payload.account,
-                recipient           = payload.recipient,
-                expireAt            = payload.expireAt,
-                manifest            = payload.manifest,
                 signedSchemaTx      = schemaResult.getOrNull(),
-                signedAttestationTx = attested.signedTx,
-                certificate         = attested.certificate.toJson()
+                signedAttestationTx = attested.signedTx
             )
             val res      = service().attestImageHash(request).await()
             val response = decodeJson<ImageHashResponse>(res)
@@ -165,6 +155,7 @@ object Provenance {
             Result.success(ProvenanceResult(
                 response          = response,
                 manifest          = payload.c2paManifest,
+                attestationId     = attested.attestationId,
                 certificate       = attested.certificate,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
@@ -308,18 +299,8 @@ object Provenance {
                     .getOrThrow()
 
                 val request = ImageHashRequest(
-                    type                = payload.type,
-                    hash                = payload.hash,
-                    mime                = payload.mime,
-                    name                = payload.name,
-                    timestamp           = payload.timestamp,
-                    account             = payload.account,
-                    recipient           = payload.recipient,
-                    expireAt            = payload.expireAt,
-                    manifest            = payload.manifest,
                     signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
-                    signedAttestationTx = attested.signedTx,
-                    certificate         = attested.certificate.toJson()
+                    signedAttestationTx = attested.signedTx
                 )
                 val res      = service().attestImageHash(request).await()
                 val response = decodeJson<ImageHashResponse>(res)
@@ -336,6 +317,7 @@ object Provenance {
                 ProvenanceResult(
                     response          = response,
                     manifest          = payload.c2paManifest,
+                    attestationId     = attested.attestationId,
                     certificate       = attested.certificate,
                     manifestFile      = manifestFile,
                     embeddedImageFile = embeddedImageFile
@@ -501,23 +483,13 @@ object Provenance {
                     longitude    = entry.longitude
                 )
 
-                // Build Solana tx using the pre-fetched blockhash (cert already signed)
-                val signedTx = ProvenanceManager.buildTx(payload, schemaPda, keypair, blockhash)
+                // Build Solana tx + derive attestationId locally
+                val (signedTx, attestationId) = ProvenanceManager.buildTx(payload, schemaPda, keypair, blockhash)
                 val certificate = ProvenanceCertificate.fromJson(entry.certificateJson)
 
                 val request = ImageHashRequest(
-                    type                = entry.type,
-                    hash                = entry.hash,
-                    mime                = entry.mime,
-                    name                = entry.name,
-                    timestamp           = entry.timestamp,
-                    account             = entry.account,
-                    recipient           = entry.recipient,
-                    expireAt            = entry.expireAt,
-                    manifest            = entry.manifest,
                     signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
-                    signedAttestationTx = signedTx,
-                    certificate         = entry.certificateJson
+                    signedAttestationTx = signedTx
                 )
                 val res      = service().attestImageHash(request).await()
                 val response = decodeJson<ImageHashResponse>(res)
@@ -539,7 +511,8 @@ object Provenance {
                     manifest          = entry.c2paManifest,
                     certificate       = certificate,
                     manifestFile      = manifestFile,
-                    embeddedImageFile = embeddedImageFile
+                    embeddedImageFile = embeddedImageFile,
+                    attestationId     = attestationId
                 )
             }
             // Failures stay in queue — do NOT dequeue on failure
@@ -597,6 +570,71 @@ object Provenance {
             }.mapFailure()
         }
 
+    /**
+     * Verifies an attested image **directly on-chain** via Solana RPC — no backend involved.
+     *
+     * Given the [attestationId] (Attestation PDA) from [ProvenanceResult.attestationId]
+     * or from the sidecar/embedded manifest, this fetches the account from Solana and compares
+     * the stored hash with your local [expectedHash].
+     *
+     * This is the **trustless** path — it does not depend on the backend at all.
+     *
+     * ```kotlin
+     * // Right after attestation:
+     * val pr = Provenance.attestImageHash(payload).getOrThrow()
+     * val v  = Provenance.verifyOnChain(
+     *     attestationId = pr.attestationId,
+     *     expectedHash  = pr.manifest.manifestHash
+     * ).getOrThrow()
+     * println(v.isVerified)  // true if hash on Solana matches local hash
+     *
+     * // Later, from a sidecar file alone (no backend needed):
+     * val v = Provenance.verifyOnChain(
+     *     attestationId = sidecarJson["attestationId"],
+     *     expectedHash  = sidecarJson["manifestHash"]
+     * ).getOrThrow()
+     * ```
+     *
+     * @param attestationId  Attestation PDA (Base58) — available via [ProvenanceResult.attestationId].
+     * @param expectedHash   [C2paManifest.manifestHash] read from the local sidecar/embedded
+     *                       manifest. Pass `null` to skip hash comparison and just confirm
+     *                       the account exists on-chain.
+     */
+    suspend fun verifyOnChain(
+        attestationId: String,
+        expectedHash:  String? = null
+    ): Result<VerifyResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val account     = ProvenanceManager.fetchAttestationOnChain(attestationId)
+            val onChainHash = extractHashFromPayload(account.payloadJson)
+            val now         = System.currentTimeMillis() / 1000L
+
+            val isExpired   = account.expireAt > 0L && account.expireAt < now
+            val hashMatches = expectedHash == null || onChainHash == expectedHash
+            val isVerified  = hashMatches && !isExpired
+
+            val status = when {
+                isExpired    -> "expired"
+                !hashMatches -> "tampered"
+                else         -> "verified"
+            }
+            val message = when {
+                isExpired    -> "Attestation has expired"
+                !hashMatches -> "Hash mismatch — image may have been modified"
+                else         -> "Hash verified on-chain"
+            }
+
+            VerifyResult(
+                isVerified    = isVerified,
+                status        = status,
+                message       = message,
+                attestationId = attestationId,
+                onChainHash   = onChainHash,
+                certificate   = null  // off-chain only; use verifyByAttestationId for full record
+            )
+        }.mapFailure()
+    }
+
     // ── Manifest option helper ────────────────────────────────────────────────
 
     /**
@@ -650,6 +688,16 @@ object Provenance {
     private fun <T> Result<T>.mapFailure(): Result<T> =
         onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
             .let { this }
+
+    /**
+     * Extracts the `hash` field from the on-chain payload JSON string.
+     * The stored format is: `{"type":"image_hash","hash":"<sha256>","mime":...}`.
+     * Uses a simple regex to avoid requiring a full JSON parse just for one field.
+     */
+    private fun extractHashFromPayload(payloadJson: String): String {
+        val match = Regex(""""hash"\s*:\s*"([^"]+)"""").find(payloadJson)
+        return match?.groupValues?.get(1) ?: ""
+    }
 
     /**
      * Returns `true` for any exception that indicates no network connectivity —
