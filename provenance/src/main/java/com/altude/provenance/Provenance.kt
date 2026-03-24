@@ -658,9 +658,17 @@ object Provenance {
                 Pair(runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull(), null)
             }
             is ManifestOption.EmbedInImage -> {
-                Pair(null, runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
-                }.getOrNull())
+                val embedded = runCatching {
+                    manifest.embedInto(java.io.File(option.sourceFilePath))
+                }.getOrNull()
+                if (embedded != null) {
+                    // Successfully embedded into image; no sidecar created.
+                    Pair(null, embedded)
+                } else {
+                    // Embedding failed (e.g., unsupported format). Fall back to sidecar as documented.
+                    val sidecar = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
+                    Pair(sidecar, null)
+                }
             }
             is ManifestOption.Both -> {
                 val sidecar  = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
