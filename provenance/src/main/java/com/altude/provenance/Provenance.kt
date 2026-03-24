@@ -113,16 +113,24 @@ object Provenance {
                 account    = payload.account,
                 commitment = payload.commitment.name
             )
-            if (schemaResult.isFailure)
-                return@withContext Result.failure(schemaResult.exceptionOrNull()!!)
+            if (schemaResult.isFailure) {
+                val cause = schemaResult.exceptionOrNull()!!
+                if (isNetworkError(cause))
+                    return@withContext queueOffline(payload, manifestOption)
+                return@withContext Result.failure(cause)
+            }
 
             // 2. Derive Schema PDA
             val schemaPda = ProvenanceManager.deriveSchemaAddress(payload.account)
 
             // 3. Sign attestation tx + build ProvenanceCertificate offline
             val attestResult = ProvenanceManager.attest(payload, schemaPda)
-            if (attestResult.isFailure)
-                return@withContext Result.failure(attestResult.exceptionOrNull()!!)
+            if (attestResult.isFailure) {
+                val cause = attestResult.exceptionOrNull()!!
+                if (isNetworkError(cause))
+                    return@withContext queueOffline(payload, manifestOption)
+                return@withContext Result.failure(cause)
+            }
 
             val attested = attestResult.getOrThrow()
 
@@ -162,8 +170,35 @@ object Provenance {
                 embeddedImageFile = embeddedImageFile
             ))
         } catch (e: Throwable) {
+            // Any unhandled network error at the backend call stage
+            if (isNetworkError(e))
+                return@withContext queueOffline(payload, manifestOption)
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
+    }
+
+    /**
+     * Builds a local certificate, applies the manifest option, and enqueues the
+     * attestation for later submission — no network required.
+     * Returns a [ProvenanceResult] with [ProvenanceResult.isQueued] == `true`.
+     */
+    private suspend fun queueOffline(
+        payload:        ImageHashPayload,
+        manifestOption: ManifestOption
+    ): Result<ProvenanceResult> {
+        val offline = attestOffline(payload, manifestOption)
+            .getOrElse { return Result.failure(it) }
+        return Result.success(
+            ProvenanceResult(
+                response          = null,
+                manifest          = payload.c2paManifest,
+                certificate       = offline.certificate,
+                manifestFile      = offline.manifestFile,
+                embeddedImageFile = offline.embeddedImageFile,
+                isQueued          = true,
+                queueId           = offline.queueId
+            )
+        )
     }
 
     // ── Bulk images (performance-optimised) ───────────────────────────────────
@@ -202,9 +237,28 @@ object Provenance {
             commitment = first.commitment.name
         )
         if (schemaResult.isFailure) {
+            val cause = schemaResult.exceptionOrNull()!!
+            if (isNetworkError(cause)) {
+                // Offline — queue all items locally and return immediately
+                payloads.forEachIndexed { i, p ->
+                    val offlineResult = runCatching {
+                        val offline = attestOffline(p, manifestOption).getOrThrow()
+                        ProvenanceResult(
+                            manifest          = p.c2paManifest,
+                            certificate       = offline.certificate,
+                            manifestFile      = offline.manifestFile,
+                            embeddedImageFile = offline.embeddedImageFile,
+                            isQueued          = true,
+                            queueId           = offline.queueId
+                        )
+                    }
+                    emit(AttestationResult(i, p.name, p.hash, offlineResult))
+                }
+                return@flow
+            }
             payloads.forEachIndexed { i, p ->
                 emit(AttestationResult(i, p.name, p.hash,
-                    Result.failure(schemaResult.exceptionOrNull()!!)))
+                    Result.failure(cause)))
             }
             return@flow
         }
@@ -223,8 +277,29 @@ object Provenance {
         payloads.forEachIndexed { index, payload ->
             // Refresh blockhash if older than 30 s to stay well within validity window
             if (System.currentTimeMillis() - blockhashFetchedAt > 30_000L) {
-                blockhash          = ProvenanceManager.fetchBlockhash(payload.commitment.name)
-                blockhashFetchedAt = System.currentTimeMillis()
+                try {
+                    blockhash          = ProvenanceManager.fetchBlockhash(payload.commitment.name)
+                    blockhashFetchedAt = System.currentTimeMillis()
+                } catch (e: Throwable) {
+                    // Network gone mid-batch — queue remaining items and stop submitting
+                    if (isNetworkError(e)) {
+                        payloads.drop(index).forEachIndexed { i, p ->
+                            val offlineResult = runCatching {
+                                val offline = attestOffline(p, manifestOption).getOrThrow()
+                                ProvenanceResult(
+                                    manifest          = p.c2paManifest,
+                                    certificate       = offline.certificate,
+                                    manifestFile      = offline.manifestFile,
+                                    embeddedImageFile = offline.embeddedImageFile,
+                                    isQueued          = true,
+                                    queueId           = offline.queueId
+                                )
+                            }
+                            emit(AttestationResult(index + i, p.name, p.hash, offlineResult))
+                        }
+                        return@flow
+                    }
+                }
             }
 
             val itemResult = runCatching {
@@ -265,7 +340,7 @@ object Provenance {
                     manifestFile      = manifestFile,
                     embeddedImageFile = embeddedImageFile
                 )
-            }
+            }.recoverNetworkToOffline(payload, manifestOption)
             emit(AttestationResult(index, payload.name, payload.hash, itemResult))
         }
     }.flowOn(Dispatchers.IO)
@@ -575,4 +650,47 @@ object Provenance {
     private fun <T> Result<T>.mapFailure(): Result<T> =
         onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
             .let { this }
+
+    /**
+     * Returns `true` for any exception that indicates no network connectivity —
+     * IO failures, DNS lookups, connection timeouts, and Retrofit/OkHttp errors.
+     */
+    private fun isNetworkError(e: Throwable): Boolean {
+        if (e is java.io.IOException)              return true
+        if (e is java.net.UnknownHostException)    return true
+        if (e is java.net.SocketTimeoutException)  return true
+        if (e is java.net.ConnectException)        return true
+        if (e is java.net.SocketException)         return true
+        val msg = e.message?.lowercase() ?: ""
+        if (msg.contains("unable to resolve host"))    return true
+        if (msg.contains("failed to connect"))         return true
+        if (msg.contains("no address associated"))     return true
+        if (msg.contains("network"))                   return true
+        val cause = e.cause
+        return cause != null && cause !== e && isNetworkError(cause)
+    }
+
+    /**
+     * If this [Result] failed with a network error, signs the payload locally,
+     * enqueues it, and returns a queued [ProvenanceResult] instead.
+     * Non-network errors are propagated as-is.
+     */
+    private suspend fun Result<ProvenanceResult>.recoverNetworkToOffline(
+        payload:        ImageHashPayload,
+        manifestOption: ManifestOption
+    ): Result<ProvenanceResult> {
+        val err = exceptionOrNull() ?: return this
+        if (!isNetworkError(err)) return this
+        return runCatching {
+            val offline = attestOffline(payload, manifestOption).getOrThrow()
+            ProvenanceResult(
+                manifest          = payload.c2paManifest,
+                certificate       = offline.certificate,
+                manifestFile      = offline.manifestFile,
+                embeddedImageFile = offline.embeddedImageFile,
+                isQueued          = true,
+                queueId           = offline.queueId
+            )
+        }
+    }
 }

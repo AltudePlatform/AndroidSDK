@@ -301,8 +301,12 @@ data class ImageHashResponse(
  * ```
  */
 data class ProvenanceResult(
-    /** On-chain attestation result from the backend. */
-    val response: ImageHashResponse,
+    /**
+     * On-chain attestation result from the backend.
+     * `null` when the device was offline and the attestation has been queued locally —
+     * check [isQueued] to distinguish this case.
+     */
+    val response: ImageHashResponse? = null,
     /** The C2PA manifest built from the image. */
     val manifest: C2paManifest,
     /**
@@ -323,7 +327,19 @@ data class ProvenanceResult(
      * Non-null when [ManifestOption.EmbedInImage] or [ManifestOption.Both] was used.
      * JPEG: embedded in XMP. PNG: embedded as a tEXt chunk.
      */
-    val embeddedImageFile: java.io.File? = null
+    val embeddedImageFile: java.io.File? = null,
+    /**
+     * `true` when the device was offline at attestation time.
+     * The certificate is fully signed and the manifest is saved locally.
+     * Call [com.altude.provenance.Provenance.submitPending] when back online to
+     * broadcast to Solana — no re-signing needed.
+     */
+    val isQueued: Boolean = false,
+    /**
+     * Queue entry UUID. Non-null when [isQueued] is `true`.
+     * Use with [com.altude.provenance.Provenance.pendingCount] to track progress.
+     */
+    val queueId: String? = null
 )
 
 /**
