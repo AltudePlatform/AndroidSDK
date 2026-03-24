@@ -500,7 +500,9 @@ object Provenance {
                 }
 
                 // Remove from queue ONLY on success
-                ProvenanceQueue.dequeue(entry.id)
+                if (response.Status == "success") {
+                    ProvenanceQueue.dequeue(entry.id)
+                }
 
                 val manifestOption = entry.toManifestOption()
                 val (manifestFile, embeddedImageFile) =
