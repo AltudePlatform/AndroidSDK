@@ -142,7 +142,7 @@ data class C2paManifest(
                 softwareAgent = softwareAgent,
                 timestamp     = System.currentTimeMillis() / 1000
             )
-            val claimJson    = canonicalJson.encodeToString(draft)
+            val claimJson    = hashingJson.encodeToString(draft)
             val manifestHash = sha256Hex(claimJson.toByteArray(Charsets.UTF_8))
             return draft.copy(manifestHash = manifestHash)
         }
