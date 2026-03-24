@@ -688,8 +688,10 @@ object Provenance {
     )
 
     private fun <T> Result<T>.mapFailure(): Result<T> =
-        onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
-            .let { this }
+        fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) }
+        )
 
     /**
      * Extracts the `hash` field from the on-chain payload JSON string.
