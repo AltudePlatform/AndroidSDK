@@ -58,7 +58,6 @@ object GaslessManager {
     suspend fun transferToken(option: ISendOption, signer: TransactionSigner? = null): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "transfer")
             validateSignerAccount(signerToUse, option.account)
             // After biometric unlock the public key is always available - use it as account
             val ownerKey = signerToUse.publicKey
@@ -117,7 +116,6 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val finalSigners = resolveSignersForBatch(options, signers)
-                ensureBiometricAuth(finalSigners.first(), "batch-transfer")
                 val transferInstructions = mutableListOf<TransactionInstruction>()
 
                 options.forEach { option ->
@@ -181,7 +179,6 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val signerToUse = resolveSigner(option.account, signer)
-                ensureBiometricAuth(signerToUse, "create-account")
                 validateSignerAccount(signerToUse, option.account)
                 val ownerKey = signerToUse.publicKey
 
@@ -239,7 +236,6 @@ object GaslessManager {
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "close-account")
             validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
                 ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
@@ -310,7 +306,6 @@ object GaslessManager {
     ): Result<AltudeTransaction> = withContext(Dispatchers.IO) {
         try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "swap")
             validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
@@ -443,7 +438,6 @@ object GaslessManager {
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val signerToUse = resolveSigner(option.account, signer)
-            ensureBiometricAuth(signerToUse, "swap")
             validateSignerAccount(signerToUse, option.account)
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
@@ -537,13 +531,6 @@ object GaslessManager {
         } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
-    }
-
-    private suspend fun ensureBiometricAuth(signer: TransactionSigner, purpose: String) {
-        // No-op: biometric authentication is handled during actual transaction signing
-        // in AltudeTransactionBuilder.setSigners(). Performing a dummy signMessage() here
-        // would trigger a redundant biometric prompt for VaultSigner in PerOperation mode
-        // and an unnecessary signature for custom signers.
     }
 
     private fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {

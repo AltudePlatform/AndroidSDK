@@ -91,8 +91,8 @@ object AltudeGasStation {
             // Step 6: Generate mnemonic for backward compatibility (best-effort — don't fail init)
             try {
                 Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
-            } catch (_: CancellationException) {
-                throw CancellationException()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.w("AltudeGasStation", "saveMnemonic failed (non-fatal): ${e.message}")
             }

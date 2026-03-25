@@ -89,6 +89,7 @@ object VaultStorage {
 
     // ── public API ────────────────────────────────────────────────────────────
 
+    @Suppress("UNUSED_PARAMETER")
     fun initializeKeystore(context: Context, appId: String, requireBiometric: Boolean = true) {
         try {
             buildMasterKey(context, requireBiometric)
