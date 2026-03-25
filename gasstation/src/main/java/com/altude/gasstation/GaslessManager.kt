@@ -32,6 +32,7 @@ import com.altude.gasstation.helper.Utility
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solanapublickeys.PublicKey
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -58,6 +59,7 @@ object GaslessManager {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "transfer")
+            validateSignerAccount(signerToUse, option.account)
             // After biometric unlock the public key is always available - use it as account
             val ownerKey = signerToUse.publicKey
             val pubKeyMint = PublicKey(option.token)
@@ -104,7 +106,9 @@ object GaslessManager {
             )
 
             Result.success(serialized)
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -166,7 +170,9 @@ object GaslessManager {
                 )
 
                 Result.success(serialized)
-            } catch (e: Throwable) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
         }
@@ -176,6 +182,7 @@ object GaslessManager {
             return@withContext try {
                 val signerToUse = resolveSigner(option.account, signer)
                 ensureBiometricAuth(signerToUse, "create-account")
+                validateSignerAccount(signerToUse, option.account)
                 val ownerKey = signerToUse.publicKey
 
                 val txInstructions = mutableListOf<TransactionInstruction>()
@@ -219,7 +226,9 @@ object GaslessManager {
                     Base64.NO_WRAP
                 )
                 Result.success(serialized)
-            } catch (e: Throwable) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
         }
@@ -231,6 +240,7 @@ object GaslessManager {
         return@withContext try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "close-account")
+            validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
                 ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
                 ?: throw IllegalArgumentException("Account public key required to close accounts")
@@ -287,7 +297,9 @@ object GaslessManager {
                 Base64.NO_WRAP
             )
             Result.success(serialized)
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -299,6 +311,7 @@ object GaslessManager {
         try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "swap")
+            validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
@@ -417,7 +430,9 @@ object GaslessManager {
                 Base64.NO_WRAP
             )
             Result.success(AltudeTransaction(serializedTx))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -429,6 +444,7 @@ object GaslessManager {
         try {
             val signerToUse = resolveSigner(option.account, signer)
             ensureBiometricAuth(signerToUse, "swap")
+            validateSignerAccount(signerToUse, option.account)
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
             val service = SwapConfig.createService(SwapService::class.java)
@@ -492,7 +508,9 @@ object GaslessManager {
             val serialized = tx.serialize()
 
             Result.success(serialized)
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -514,15 +532,18 @@ object GaslessManager {
             if (quoteResponse.isError)
                 Result.failure<String>(Exception(quoteResponse.error))
             Result.success(quoteResponse)
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
     private suspend fun ensureBiometricAuth(signer: TransactionSigner, purpose: String) {
-        withContext(Dispatchers.Main) {
-            signer.signMessage("auth:$purpose".toByteArray())
-        }
+        // No-op: biometric authentication is handled during actual transaction signing
+        // in AltudeTransactionBuilder.setSigners(). Performing a dummy signMessage() here
+        // would trigger a redundant biometric prompt for VaultSigner in PerOperation mode
+        // and an unnecessary signature for custom signers.
     }
 
     private fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
@@ -530,11 +551,16 @@ object GaslessManager {
         requireNotNull(signer) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
-        // If account is blank, use the signer's public key (resolved after biometric unlock)
+        // Defer account-match validation: the signer's publicKey may not be available
+        // until after biometric unlock (VaultSigner throws VaultLockedException if not
+        // yet cached). The check is performed in validateSignerAccount() after unlock.
+        return signer
+    }
+
+    private fun validateSignerAccount(signer: TransactionSigner, account: String) {
         if (account.isNotBlank() && signer.publicKey.toBase58() != account) {
             throw IllegalArgumentException("Signer public key ${signer.publicKey.toBase58()} does not match requested account $account")
         }
-        return signer
     }
 
     private fun resolveSignerForAccount(signers: List<TransactionSigner>, account: String): TransactionSigner {

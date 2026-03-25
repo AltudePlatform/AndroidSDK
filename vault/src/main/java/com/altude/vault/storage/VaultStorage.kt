@@ -23,6 +23,7 @@ object VaultStorage {
     private const val VAULT_FILE_SUFFIX = ".encrypted"
     private const val MASTER_KEY_ALIAS  = "vault_master_key"
     private const val ANDROID_KEYSTORE  = "AndroidKeyStore"
+    private const val BIOMETRIC_AUTH_VALIDITY_SECONDS = 30
 
     @Serializable
     data class VaultData(
@@ -34,9 +35,15 @@ object VaultStorage {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private fun isKeyPermanentlyInvalidated(e: Exception): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                e.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException"
+    private fun isKeyPermanentlyInvalidated(e: Exception): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException") return true
+            cause = cause.cause
+        }
+        return false
+    }
 
     private fun isStaleKeyset(e: Exception): Boolean {
         if (e is AEADBadTagException) return true
@@ -48,9 +55,9 @@ object VaultStorage {
         return false
     }
 
-    private fun buildMasterKey(context: Context): MasterKey {
+    private fun buildMasterKey(context: Context, requireBiometric: Boolean = false): MasterKey {
         // If a previous version left a stale auth-required key, getKey() returns null.
-        // Delete it so Builder creates a fresh non-auth-required key.
+        // Delete it so Builder creates a fresh key.
         try {
             val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
             if (ks.containsAlias(MASTER_KEY_ALIAS) && ks.getKey(MASTER_KEY_ALIAS, null) == null) {
@@ -60,9 +67,12 @@ object VaultStorage {
         } catch (e: Exception) {
             Log.w(TAG, "Keystore inspect failed — continuing: ${e.message}")
         }
-        return MasterKey.Builder(context, MASTER_KEY_ALIAS)
+        val builder = MasterKey.Builder(context, MASTER_KEY_ALIAS)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        if (requireBiometric) {
+            builder.setUserAuthenticationRequired(true, BIOMETRIC_AUTH_VALIDITY_SECONDS)
+        }
+        return builder.build()
     }
 
     private fun vaultFile(context: Context, appId: String) =
@@ -79,10 +89,9 @@ object VaultStorage {
 
     // ── public API ────────────────────────────────────────────────────────────
 
-    @Suppress("UNUSED_PARAMETER")
     fun initializeKeystore(context: Context, appId: String, requireBiometric: Boolean = true) {
         try {
-            buildMasterKey(context)
+            buildMasterKey(context, requireBiometric)
         } catch (e: Exception) {
             if (isKeyPermanentlyInvalidated(e)) throw BiometricInvalidatedException(cause = e)
             throw VaultInitFailedException("Failed to initialize keystore: ${e.message}", cause = e)
