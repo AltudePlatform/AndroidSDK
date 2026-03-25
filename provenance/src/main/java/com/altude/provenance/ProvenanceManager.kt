@@ -70,9 +70,28 @@ internal object ProvenanceManager {
             try {
                 val keypair   = getKeyPair(account)
                 val walletKey = keypair.publicKey.toBase58()
+
+                // 1. Fast path — SharedPreferences (zero extra RPC calls in normal use)
                 if (ProvenancePrefs.isSchemaCreated(walletKey))
                     return@withContext Result.success(null)
 
+                // 2. On-chain fallback — handles app reinstall / clear data.
+                //    The PDA is deterministic so we can always derive it without storing it.
+                //    If the account already exists on-chain, restore the flag and skip.
+                val schemaPda = deriveSchemaAddress(account)
+                val onChainAccount = runCatching {
+                    rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+                        schemaPda.toBase58(),
+                        isBase64 = true
+                    )
+                }.getOrNull()
+
+                if (onChainAccount?.value != null) {
+                    ProvenancePrefs.markSchemaCreated(walletKey)
+                    return@withContext Result.success(null)
+                }
+
+                // 3. Schema does not exist on-chain — build the createSchema instruction
                 val instruction = AttestationProgram.createSchema(
                     authority   = keypair.publicKey,
                     feePayer    = feePayerPubKey,
