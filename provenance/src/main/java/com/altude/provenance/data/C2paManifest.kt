@@ -55,7 +55,14 @@ data class C2paManifest(
      * SHA-256 hex of the canonical manifest JSON (without this field).
      * This is the value stored on-chain — a tamper-evident hash of the full claim.
      */
-    val manifestHash: String = ""
+    val manifestHash: String = "",
+    /**
+     * Solana Attestation PDA (Base58) returned after a successful on-chain attestation.
+     * Stored here so a verifier reading only the sidecar/embedded manifest can call
+     * [Provenance.verifyOnChain] without any backend or extra state.
+     * Empty string when the attestation has not yet been submitted (offline queue).
+     */
+    val attestationId: String = ""
 ) {
     companion object {
 

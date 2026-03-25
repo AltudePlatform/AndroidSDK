@@ -64,6 +64,13 @@ data class ProvenanceCertificate(
     val osVersion: String,
     val latitude: Double?,
     val longitude: Double?,
+    /**
+     * Solana Attestation PDA (Base58). Stored in the certificate so a verifier
+     * reading the sidecar/embedded manifest can call [Provenance.verifyOnChain]
+     * without any backend or extra state.
+     * Empty string before on-chain submission (offline queue).
+     */
+    val attestationId: String = "",
 ) {
 
     // ── Instance methods ──────────────────────────────────────────────────────
@@ -127,6 +134,8 @@ data class ProvenanceCertificate(
 
         val root = JSONObject()
         root.put("assertions", assertions)
+        // include attestationId so verifyOnChain can be called from sidecar/embedded alone
+        if (attestationId.isNotBlank()) root.put("attestationId", attestationId)
         root.put("captureTimestampMs", captureTimestampMs)
         root.put("claimGenerator", "altude-provenance-sdk/1.0")
         root.put("instanceId", instanceId)
@@ -185,6 +194,7 @@ data class ProvenanceCertificate(
                                          loc.getDouble("latitude") else null,
                 longitude          = if (loc != null && loc.has("longitude"))
                                          loc.getDouble("longitude") else null,
+                attestationId      = root.optString("attestationId", ""),
             )
         }.getOrNull()
     }

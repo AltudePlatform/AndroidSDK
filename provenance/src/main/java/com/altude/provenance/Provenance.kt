@@ -15,7 +15,6 @@ import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
 import com.altude.provenance.data.ProvenanceResult
 import com.altude.provenance.data.SubmitResult
-import com.altude.provenance.data.VerifyResponse
 import com.altude.provenance.data.VerifyResult
 import com.altude.provenance.interfaces.ProvenanceService
 import kotlinx.coroutines.Dispatchers
@@ -148,15 +147,18 @@ object Provenance {
                 ProvenancePrefs.markSchemaCreated(walletKey)
             }
 
-            // 6. Apply chosen manifest option — pass certificate so the file includes the signature
+            // 6. Apply chosen manifest option — inject attestationId so the sidecar/embedded
+            //    image contains the Solana PDA, enabling verifyOnChain from the image alone.
+            val manifestWithId   = payload.c2paManifest.copy(attestationId = attested.attestationId)
+            val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(payload.c2paManifest, manifestOption, attested.certificate)
+                applyManifestOption(manifestWithId, manifestOption, certificateWithId)
 
             Result.success(ProvenanceResult(
                 response          = response,
-                manifest          = payload.c2paManifest,
+                manifest          = manifestWithId,
                 attestationId     = attested.attestationId,
-                certificate       = attested.certificate,
+                certificate       = certificateWithId,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
             ))
@@ -310,15 +312,17 @@ object Provenance {
                     schemaMarked = true
                 }
 
-                // Apply chosen manifest option per image — include signature in file
+                // Apply chosen manifest option per image — inject attestationId for verifyOnChain
+                val manifestWithId    = payload.c2paManifest.copy(attestationId = attested.attestationId)
+                val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(payload.c2paManifest, manifestOption, attested.certificate)
+                    applyManifestOption(manifestWithId, manifestOption, certificateWithId)
 
                 ProvenanceResult(
                     response          = response,
-                    manifest          = payload.c2paManifest,
+                    manifest          = manifestWithId,
                     attestationId     = attested.attestationId,
-                    certificate       = attested.certificate,
+                    certificate       = certificateWithId,
                     manifestFile      = manifestFile,
                     embeddedImageFile = embeddedImageFile
                 )
@@ -364,11 +368,24 @@ object Provenance {
             // 2. Build + sign certificate — pure crypto, no network
             val certificate = ProvenanceManager.buildCertificate(payload, keypair)
 
-            // 3. Apply manifest option locally — include signature in file
-            val (manifestFile, embeddedImageFile) =
-                applyManifestOption(payload.c2paManifest, manifestOption, certificate)
+            // 3. Derive attestationId — pure PDA derivation, no network needed
+            val schemaPda     = ProvenanceManager.deriveSchemaAddress(payload.account)
+            val attester      = keypair.publicKey
+            val recipient     = if (payload.recipient.isBlank()) attester
+                                else com.altude.core.Programs.AttestationProgram.let {
+                                    foundation.metaplex.solanapublickeys.PublicKey(payload.recipient)
+                                }
+            val attestationId = com.altude.core.Programs.AttestationProgram
+                .deriveAttestationAddress(schemaPda, attester, recipient)
+                .toBase58()
 
-            // 4. Serialise manifest option for storage
+            // 4. Inject attestationId so sidecar/embedded image supports verifyOnChain
+            val manifestWithId    = payload.c2paManifest.copy(attestationId = attestationId)
+            val certificateWithId = certificate.copy(attestationId = attestationId)
+            val (manifestFile, embeddedImageFile) =
+                applyManifestOption(manifestWithId, manifestOption, certificateWithId)
+
+            // 5. Serialise manifest option for storage
             val (optType, optPath) = when (manifestOption) {
                 is ManifestOption.EmbedInImage -> "embed" to manifestOption.sourceFilePath
                 is ManifestOption.Both         -> "both"  to manifestOption.sourceFilePath
@@ -376,7 +393,7 @@ object Provenance {
                 else                           -> "sidecar" to ""
             }
 
-            // 5. Enqueue
+            // 6. Enqueue
             val queueId = java.util.UUID.randomUUID().toString()
             ProvenanceQueue.enqueue(
                 PendingAttestation(
@@ -386,7 +403,7 @@ object Provenance {
                     mime               = payload.mime,
                     name               = payload.name,
                     manifest           = payload.manifest,
-                    c2paManifest       = payload.c2paManifest,
+                    c2paManifest       = manifestWithId,
                     timestamp          = payload.timestamp,
                     account            = payload.account,
                     recipient          = payload.recipient,
@@ -394,7 +411,7 @@ object Provenance {
                     commitment         = payload.commitment.name,
                     latitude           = payload.latitude,
                     longitude          = payload.longitude,
-                    certificateJson    = certificate.toJson(),
+                    certificateJson    = certificateWithId.toJson(),
                     manifestOptionType = optType,
                     manifestOptionPath = optPath
                 )
@@ -402,7 +419,7 @@ object Provenance {
 
             OfflineAttestResult(
                 queueId           = queueId,
-                certificate       = certificate,
+                certificate       = certificateWithId,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
             )
@@ -504,14 +521,17 @@ object Provenance {
                     ProvenanceQueue.dequeue(entry.id)
                 }
 
+                // Ensure attestationId is in the manifest/certificate written to disk
+                val manifestWithId    = entry.c2paManifest.copy(attestationId = attestationId)
+                val certificateWithId = certificate?.copy(attestationId = attestationId)
                 val manifestOption = entry.toManifestOption()
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(entry.c2paManifest, manifestOption, certificate)
+                    applyManifestOption(manifestWithId, manifestOption, certificateWithId)
 
                 ProvenanceResult(
                     response          = response,
-                    manifest          = entry.c2paManifest,
-                    certificate       = certificate,
+                    manifest          = manifestWithId,
+                    certificate       = certificateWithId,
                     manifestFile      = manifestFile,
                     embeddedImageFile = embeddedImageFile,
                     attestationId     = attestationId
@@ -546,31 +566,6 @@ object Provenance {
     }
 
     // ── Online verification ───────────────────────────────────────────────────
-
-    /**
-     * Verifies an attested image online by its manifest hash
-     * ([C2paManifest.manifestHash] — stored on-chain).
-     */
-    suspend fun verifyByHash(hash: String): Result<VerifyResult> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val raw      = service().verifyByHash(hash).await()
-                val response = decodeJson<VerifyResponse>(raw)
-                response.toVerifyResult()
-            }.mapFailure()
-        }
-
-    /**
-     * Verifies an attested image online by its on-chain Attestation PDA (Base58).
-     */
-    suspend fun verifyByAttestationId(attestationId: String): Result<VerifyResult> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val raw      = service().verifyByAttestationId(attestationId).await()
-                val response = decodeJson<VerifyResponse>(raw)
-                response.toVerifyResult()
-            }.mapFailure()
-        }
 
     /**
      * Verifies an attested image **directly on-chain** via Solana RPC — no backend involved.
@@ -632,7 +627,7 @@ object Provenance {
                 message       = message,
                 attestationId = attestationId,
                 onChainHash   = onChainHash,
-                certificate   = null  // off-chain only; use verifyByAttestationId for full record
+                certificate   = null  // trustless on-chain only; no certificate stored server-side
             )
         }.mapFailure()
     }
@@ -686,14 +681,6 @@ object Provenance {
     private inline fun <reified T> decodeJson(element: JsonElement): T =
         json.decodeFromJsonElement(element)
 
-    private fun VerifyResponse.toVerifyResult() = VerifyResult(
-        isVerified    = Status.equals("verified", ignoreCase = true),
-        status        = Status,
-        message       = Message,
-        attestationId = attestationId,
-        onChainHash   = onChainHash,
-        certificate   = ProvenanceCertificate.fromJson(certificate)
-    )
 
     private fun <T> Result<T>.mapFailure(): Result<T> =
         fold(
