@@ -1,3 +1,57 @@
+# Status
+<div align="center">
+<table>
+  <tr>
+    <th align="center"> 
+      <b>Module</b>
+    </th>
+    <td align="center">
+      <b>Status</b>
+    </td
+  </tr>
+  <tr>
+    <td align="left"> 
+      Core
+    </td>
+    <td align="center">
+      Complete
+    </td
+  </tr>
+  <tr>
+    <td align="left"> 
+      Gas Station
+    </td>
+    <td align="center">
+      Complete
+    </td
+  </tr>
+  <tr>
+    <td align="left"> 
+      Vault
+    </td>
+    <td align="center">
+      In Construction
+    </td
+  </tr>
+   <tr>
+    <td align="left"> 
+      NFT
+    </td>
+    <td align="center">
+      In Construction
+    </td
+  </tr>
+   <tr>
+    <td align="left"> 
+      Smart-Account
+    </td>
+    <td align="center">
+      In Construction
+    </td
+  </tr>
+</table>
+</div>
+<hr/>
 <div align="center">
   <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
 
