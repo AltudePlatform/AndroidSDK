@@ -236,14 +236,41 @@ data class C2paManifest(
     }
 
     private fun embedPng(imageFile: File, json: String): File {
-        // Inject a tEXt chunk with keyword "C2PA" before the IEND chunk
-        val original  = imageFile.readBytes()
+        // Strip any existing tEXt chunk with keyword "C2PA", then inject a fresh one
+        // before the IEND chunk, making embedding idempotent across retries/resubmits.
+        val original = imageFile.readBytes()
+
+        // Walk all PNG chunks and drop every tEXt chunk whose keyword is "C2PA"
+        val stripped = ByteArrayOutputStream()
+        stripped.write(original, 0, 8) // PNG signature
+        var pos = 8
+        while (pos + 12 <= original.size) {
+            val length   = bytesToInt(original, pos)
+            val typeStr  = String(original, pos + 4, 4, Charsets.US_ASCII)
+            val chunkEnd = pos + 12 + length // 4 length + 4 type + data + 4 crc
+
+            if (chunkEnd > original.size) break // truncated / corrupted chunk
+
+            if (typeStr == "tEXt" && length >= 5) {
+                // Keyword is the bytes before the first null separator
+                val dataStart = pos + 8
+                val nullIdx   = original.indexOf(0x00.toByte(), dataStart, dataStart + length)
+                val keyword   = if (nullIdx >= 0) String(original, dataStart, nullIdx - dataStart, Charsets.ISO_8859_1) else ""
+                if (keyword == "C2PA") {
+                    pos = chunkEnd
+                    continue
+                }
+            }
+            stripped.write(original, pos, chunkEnd - pos)
+            pos = chunkEnd
+        }
+        val strippedBytes = stripped.toByteArray()
+
+        // Build a new tEXt chunk
         val keyword   = "C2PA"
         val text      = json.toByteArray(Charsets.UTF_8)
         val nullByte  = byteArrayOf(0x00)
         val chunkData = keyword.toByteArray(Charsets.UTF_8) + nullByte + text
-
-        // CRC covers chunk type + chunk data
         val chunkType = "tEXt".toByteArray(Charsets.UTF_8)
         val crcInput  = chunkType + chunkData
         val crc       = java.util.zip.CRC32().also { it.update(crcInput) }.value
@@ -255,15 +282,27 @@ data class C2paManifest(
             write(intToBytes(crc.toInt()))      // CRC   (4 bytes, big-endian)
         }.toByteArray()
 
-        // Find IEND chunk offset (last 12 bytes of a valid PNG)
-        val iendOffset = original.size - 12
-        val patched = original.copyOfRange(0, iendOffset) +
+        // Insert new chunk before IEND (last 12 bytes of a valid PNG)
+        val iendOffset = strippedBytes.size - 12
+        val patched = strippedBytes.copyOfRange(0, iendOffset) +
                       chunk +
-                      original.copyOfRange(iendOffset, original.size)
+                      strippedBytes.copyOfRange(iendOffset, strippedBytes.size)
 
         imageFile.writeBytes(patched)
         return imageFile
     }
+
+    /** Finds the first occurrence of [byte] in [array] within [fromIndex]..[toIndex). */
+    private fun ByteArray.indexOf(byte: Byte, fromIndex: Int, toIndex: Int): Int {
+        for (i in fromIndex until minOf(toIndex, size)) if (this[i] == byte) return i
+        return -1
+    }
+
+    private fun bytesToInt(array: ByteArray, offset: Int): Int =
+        ((array[offset].toInt() and 0xFF) shl 24) or
+        ((array[offset + 1].toInt() and 0xFF) shl 16) or
+        ((array[offset + 2].toInt() and 0xFF) shl 8) or
+        (array[offset + 3].toInt() and 0xFF)
 
     private fun intToBytes(value: Int): ByteArray = byteArrayOf(
         (value shr 24 and 0xFF).toByte(),
