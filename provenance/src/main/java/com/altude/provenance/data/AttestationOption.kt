@@ -3,4 +3,6 @@ package com.altude.provenance.data
 /**
  * Commitment levels for on-chain confirmation.
  */
-enum class Commitment { processed, confirmed, finalized }
+enum class AttestationOption { processed, confirmed, finalized }
+
+typealias Commitment = AttestationOption

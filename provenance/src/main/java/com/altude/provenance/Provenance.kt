@@ -500,7 +500,9 @@ object Provenance {
                 }
 
                 // Remove from queue ONLY on success
-                ProvenanceQueue.dequeue(entry.id)
+                if (response.Status == "success") {
+                    ProvenanceQueue.dequeue(entry.id)
+                }
 
                 val manifestOption = entry.toManifestOption()
                 val (manifestFile, embeddedImageFile) =
@@ -656,9 +658,17 @@ object Provenance {
                 Pair(runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull(), null)
             }
             is ManifestOption.EmbedInImage -> {
-                Pair(null, runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
-                }.getOrNull())
+                val embedded = runCatching {
+                    manifest.embedInto(java.io.File(option.sourceFilePath))
+                }.getOrNull()
+                if (embedded != null) {
+                    // Successfully embedded into image; no sidecar created.
+                    Pair(null, embedded)
+                } else {
+                    // Embedding failed (e.g., unsupported format). Fall back to sidecar as documented.
+                    val sidecar = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
+                    Pair(sidecar, null)
+                }
             }
             is ManifestOption.Both -> {
                 val sidecar  = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
@@ -686,8 +696,10 @@ object Provenance {
     )
 
     private fun <T> Result<T>.mapFailure(): Result<T> =
-        onFailure { e -> Result.failure<T>(Exception(e.message ?: e.javaClass.simpleName, e)) }
-            .let { this }
+        fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) }
+        )
 
     /**
      * Extracts the `hash` field from the on-chain payload JSON string.
