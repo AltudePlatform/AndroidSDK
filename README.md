@@ -1,4 +1,39 @@
-# Status
+<div align="center">
+  <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
+
+  # Altude Android SDK
+  
+**Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
+
+***Fully Gasless, non-custodial and Simple***
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.2.0-blue.svg)](https://kotlinlang.org)
+
+[Website](https://altude.so) • [Documentation](https://docs.altude.so) • [Discord](https://discord.gg/9gPsQeZD7x) • [Twitter](x.com/altudeso)
+
+</div>
+
+---
+
+## 🌟 Overview
+
+Altude is a comprehensive wallet infrastructure platform designed to simplify building non-custodial wallets on Solana. The Android SDK provides powerful, easy-to-use tools for developers to integrate wallet functionality, gasless transactions, provenance tracking, and more into their Android applications.
+
+Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provides the building blocks you need to create seamless user experiences on Solana.
+
+## ✨ Features
+
+- **🔑 Wallet Management** - Secure key generation, mnemonic support, and encrypted storage
+- **⛽ Gasless Transactions** - Fully gasless SDK
+- **💸 Token Operations** - Send, receive, and swap SPL tokens gasless
+- **🖼️ NFT Support** - Create collections and mint NFTs without gas fees using Metaplex standards
+- **📊 Provenance Tracking** - Gasless tools for tracking asset provenance on Solana
+- **🔐 Enterprise Security** - Built-in encryption and secure key management
+- **🚀 Developer Friendly** - Clean APIs with full Kotlin coroutine support
+
+- # Status
 <div align="center">
 <table>
   <tr>
@@ -52,40 +87,6 @@
 </table>
 </div>
 <hr/>
-<div align="center">
-  <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
-
-  # Altude Android SDK
-  
-**Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
-
-***Fully Gasless, non-custodial and Simple***
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/kotlin-2.2.0-blue.svg)](https://kotlinlang.org)
-
-[Website](https://altude.so) • [Documentation](https://docs.altude.so) • [Discord](https://discord.gg/9gPsQeZD7x) • [Twitter](x.com/altudeso)
-
-</div>
-
----
-
-## 🌟 Overview
-
-Altude is a comprehensive wallet infrastructure platform designed to simplify building non-custodial wallets on Solana. The Android SDK provides powerful, easy-to-use tools for developers to integrate wallet functionality, gasless transactions, provenance tracking, and more into their Android applications.
-
-Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provides the building blocks you need to create seamless user experiences on Solana.
-
-## ✨ Features
-
-- **🔑 Wallet Management** - Secure key generation, mnemonic support, and encrypted storage
-- **⛽ Gasless Transactions** - Fully gasless SDK
-- **💸 Token Operations** - Send, receive, and swap SPL tokens gasless
-- **🖼️ NFT Support** - Create collections and mint NFTs without gas fees using Metaplex standards
-- **📊 Provenance Tracking** - Gasless tools for tracking asset provenance on Solana
-- **🔐 Enterprise Security** - Built-in encryption and secure key management
-- **🚀 Developer Friendly** - Clean APIs with full Kotlin coroutine support
 
 ## 📦 Modules
 
