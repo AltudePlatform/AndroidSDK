@@ -40,9 +40,12 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     <th align="center"> 
       <b>Module</b>
     </th>
-    <td align="center">
+    <th align="center">
       <b>Status</b>
-    </td
+    </th>
+    <th align="center">
+      <b>Audit Status</b>
+    </th>
   </tr>
   <tr>
     <td align="left"> 
@@ -50,7 +53,10 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
     <td align="center">
       Complete
-    </td
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
   </tr>
   <tr>
     <td align="left"> 
@@ -58,7 +64,10 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
     <td align="center">
       Complete
-    </td
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
   </tr>
   <tr>
     <td align="left"> 
@@ -66,7 +75,10 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
     <td align="center">
       In Construction
-    </td
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
   </tr>
    <tr>
     <td align="left"> 
@@ -74,7 +86,10 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
     <td align="center">
       In Construction
-    </td
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
   </tr>
    <tr>
     <td align="left"> 
@@ -82,7 +97,10 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
     <td align="center">
       In Construction
-    </td
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
   </tr>
 </table>
 </div>
