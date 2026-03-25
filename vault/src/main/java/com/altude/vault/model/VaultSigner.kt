@@ -91,11 +91,12 @@ class VaultSigner(
     private val appId: String,
     private val authMode: VaultAuthMode = VaultAuthMode.PerOperation,
     private val walletIndex: Int = 0,
-    private val authMessages: AuthMessages = AuthMessages()
+    private val authMessages: AuthMessages = AuthMessages(),
+    initialPublicKey: PublicKey? = null
 ) : TransactionSigner {
 
-    // Cache public key after first derivation
-    private var cachedPublicKey: PublicKey? = null
+    // Cache public key after first derivation - can be pre-set at construction
+    private var cachedPublicKey: PublicKey? = initialPublicKey
 
     /**
      * Custom messages for biometric authentication prompts.
@@ -199,20 +200,23 @@ class VaultSigner(
          * @param appId Unique app identifier (typically package name)
          * @param walletIndex Wallet index for multi-wallet support (default: 0)
          * @param authMessages Custom messages for biometric prompts
+         * @param initialPublicKey Optional initial public key (for testing, recovery, etc.)
          * @return VaultSigner with PerOperation auth mode
          */
         fun create(
             context: Context,
             appId: String,
             walletIndex: Int = 0,
-            authMessages: AuthMessages = AuthMessages()
+            authMessages: AuthMessages = AuthMessages(),
+            initialPublicKey: PublicKey? = null
         ): VaultSigner {
             return VaultSigner(
                 context = context,
                 appId = appId,
                 authMode = VaultAuthMode.PerOperation,
                 walletIndex = walletIndex,
-                authMessages = authMessages
+                authMessages = authMessages,
+                initialPublicKey = initialPublicKey
             )
         }
 
@@ -225,6 +229,7 @@ class VaultSigner(
          * @param sessionTTLSeconds How long to cache the keypair (default: 45s, typical 30-60s)
          * @param walletIndex Wallet index for multi-wallet support (default: 0)
          * @param authMessages Custom messages for biometric prompts
+         * @param initialPublicKey Optional initial public key (for testing, recovery, etc.)
          * @return VaultSigner with SessionBased auth mode
          */
         fun createWithSession(
@@ -232,16 +237,17 @@ class VaultSigner(
             appId: String,
             sessionTTLSeconds: Int = 45,
             walletIndex: Int = 0,
-            authMessages: AuthMessages = AuthMessages()
+            authMessages: AuthMessages = AuthMessages(),
+            initialPublicKey: PublicKey? = null
         ): VaultSigner {
             return VaultSigner(
                 context = context,
                 appId = appId,
                 authMode = VaultAuthMode.SessionBased(sessionTTLSeconds),
                 walletIndex = walletIndex,
-                authMessages = authMessages
+                authMessages = authMessages,
+                initialPublicKey = initialPublicKey
             )
         }
     }
 }
-

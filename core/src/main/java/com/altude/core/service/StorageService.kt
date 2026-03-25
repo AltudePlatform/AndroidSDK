@@ -23,19 +23,14 @@ data class SeedData(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
-
         other as SeedData
-
         if (accountAddress != other.accountAddress) return false
         if (mnemonic != other.mnemonic) return false
         if (passphrase != other.passphrase) return false
         if (privateKey != null && other.privateKey != null) {
             if (!privateKey.contentEquals(other.privateKey)) return false
-        } else if (privateKey != other.privateKey) {
-            return false
-        }
+        } else if (privateKey != other.privateKey) return false
         if (type != other.type) return false
-
         return true
     }
 
@@ -50,221 +45,156 @@ data class SeedData(
 }
 
 object StorageService {
-    private const val TAG = "SecureStorage"
-    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-    private const val MASTER_KEY_ALIAS = "altude_secure_master"
-    private const val SEED_FILE_PREFIX = "encrypted_seed_"
-    private const val SEED_FILE_SUFFIX = ".dat"
-    private const val ENCRYPTED_FILE_KEYSET_PREF = "vault_encrypted_file_keyset"
+    private const val TAG                      = "SecureStorage"
+    private const val ANDROID_KEYSTORE         = "AndroidKeyStore"
+    private const val MASTER_KEY_ALIAS         = "altude_secure_master"
+    private const val SEED_FILE_PREFIX         = "encrypted_seed_"
+    private const val SEED_FILE_SUFFIX         = ".dat"
+    private const val ENCRYPTED_FILE_KEYSET_PREF  = "vault_encrypted_file_keyset"
     private const val ENCRYPTED_FILE_KEYSET_ALIAS = "vault_encrypted_file_keyset_alias"
 
     private lateinit var appContext: Context
 
     fun init(context: Context) {
-        appContext = context.applicationContext // prevents memory leaks
+        appContext = context.applicationContext
     }
 
-    fun clearAll(): Boolean {
-        if (!::appContext.isInitialized) {
-            Log.w(TAG, "StorageService.clearAll() called before init; nothing to clear")
-            return false
-        }
-        var deletedAny = false
-        listEncryptedSeedFiles().forEach { file ->
-            if (file.delete()) {
-                deletedAny = true
+    // ── MasterKey ─────────────────────────────────────────────────────────────
+
+    private fun buildMasterKey(): MasterKey {
+        // Guard: if a stale auth-required key exists, getKey() returns null → delete it
+        try {
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
+            if (ks.containsAlias(MASTER_KEY_ALIAS) && ks.getKey(MASTER_KEY_ALIAS, null) == null) {
+                Log.w(TAG, "Stale auth-required key '$MASTER_KEY_ALIAS' — deleting.")
+                ks.deleteEntry(MASTER_KEY_ALIAS)
+                runCatching { appContext.deleteSharedPreferences(ENCRYPTED_FILE_KEYSET_PREF) }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not inspect keystore alias: ${e.message}")
         }
-        clearMasterKeyState()
-        return deletedAny
-    }
-
-    private fun getSeedFileName(accountAddress: String): String = "$SEED_FILE_PREFIX$accountAddress$SEED_FILE_SUFFIX"
-    private fun seedFile(accountAddress: String): File = File(appContext.filesDir, getSeedFileName(accountAddress))
-
-    private fun buildMasterKey(): MasterKey =
-        MasterKey.Builder(appContext, MASTER_KEY_ALIAS)
+        return MasterKey.Builder(appContext, MASTER_KEY_ALIAS)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
+    }
 
     private fun encryptedFile(target: File, masterKey: MasterKey): EncryptedFile =
         EncryptedFile.Builder(
-            appContext,
-            target,
-            masterKey,
+            appContext, target, masterKey,
             EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
         )
             .setKeysetPrefName(ENCRYPTED_FILE_KEYSET_PREF)
             .setKeysetAlias(ENCRYPTED_FILE_KEYSET_ALIAS)
             .build()
 
-    private fun writeEncryptedSeed(target: File, serializedSeed: String) {
-        val masterKey = buildMasterKey()
-        encryptedFile(target, masterKey).openFileOutput().use { output ->
-            output.write(serializedSeed.toByteArray(Charsets.UTF_8))
-        }
-    }
+    // ── helpers ───────────────────────────────────────────────────────────────
 
-    private fun resetKeyMaterial(seedFile: File) {
-        if (seedFile.exists()) {
-            seedFile.delete()
-        }
-        clearMasterKeyState()
-    }
+    private fun getSeedFileName(addr: String) = "$SEED_FILE_PREFIX$addr$SEED_FILE_SUFFIX"
+    private fun seedFile(addr: String) = File(appContext.filesDir, getSeedFileName(addr))
 
-    private fun clearMasterKeyState() {
-        runCatching {
-            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
-            keyStore.load(null)
-            if (keyStore.containsAlias(MASTER_KEY_ALIAS)) {
-                keyStore.deleteEntry(MASTER_KEY_ALIAS)
-            }
-        }.onFailure { Log.w(TAG, "Unable to clear keystore alias", it) }
-
-        runCatching {
-            appContext.deleteSharedPreferences(ENCRYPTED_FILE_KEYSET_PREF)
-        }.onFailure { Log.w(TAG, "Unable to clear encrypted file keyset", it) }
-    }
+    private fun listEncryptedSeedFiles(): List<File> =
+        appContext.filesDir
+            .listFiles { _, n -> n.startsWith(SEED_FILE_PREFIX) && n.endsWith(SEED_FILE_SUFFIX) }
+            ?.toList() ?: emptyList()
 
     private fun Throwable.isRecoverableKeystoreError(): Boolean {
-        var current: Throwable? = this
-        while (current != null) {
-            if (current is AEADBadTagException) return true
-            if (current::class.java.name.contains("KeyStore", ignoreCase = true)) return true
-            current = current.cause
+        var cur: Throwable? = this
+        while (cur != null) {
+            if (cur is AEADBadTagException) return true
+            if (cur::class.java.name.contains("KeyStore", ignoreCase = true)) return true
+            cur = cur.cause
         }
         return false
     }
 
-    suspend fun storePrivateKeyByteArray(privateKeyByteArray: ByteArray) {
-
-        val keyPair = SolanaEddsa.createKeypairFromSecretKey(privateKeyByteArray.copyOfRange(0,32))
-        val accountAddress = keyPair.publicKey.toBase58()
-        val data = SeedData(
-            accountAddress,
-            "", "",
-            privateKey =  privateKeyByteArray,
-            type ="privatekey"
-        )
-        storeWalletSeed(accountAddress,data)
-    }
-    suspend fun storeMnemonic(seedPhrase: String, passPhrase: String = ""){
-        val mnemonic = Mnemonic(seedPhrase, passPhrase)
-        val keyPair = mnemonic.getKeyPair()
-        val accountAddress = keyPair.publicKey.toBase58()
-        val data = SeedData(
-            accountAddress,
-            seedPhrase, passPhrase,
-            privateKey =null,
-            type ="mnemonic"
-        )
-        storeWalletSeed(accountAddress,data)
-    }
-
-
-    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
-        val targetFile = seedFile(accountAddress)
-        if (targetFile.exists()) {
-            Log.i(TAG, "Seed for $accountAddress already exists. Skipping.")
-            return
+    private fun clearMasterKeyState() {
+        runCatching {
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
+            if (ks.containsAlias(MASTER_KEY_ALIAS)) ks.deleteEntry(MASTER_KEY_ALIAS)
         }
+        runCatching { appContext.deleteSharedPreferences(ENCRYPTED_FILE_KEYSET_PREF) }
+    }
 
-        val serializedSeed = Json.encodeToString(seedData)
-
-        try {
-            writeEncryptedSeed(targetFile, serializedSeed)
-            Log.i(TAG, "Seed stored securely for $accountAddress")
-        } catch (first: Exception) {
-            if (!first.isRecoverableKeystoreError()) {
-                Log.e(TAG, "Error storing seed for $accountAddress", first)
-                throw Error("Failed to store seed securely: $first")
-            }
-
-            Log.w(TAG, "Keystore mismatch detected for $accountAddress. Resetting key material.", first)
-            resetKeyMaterial(targetFile)
-
-            try {
-                writeEncryptedSeed(targetFile, serializedSeed)
-                Log.i(TAG, "Seed stored securely after keystore reset for $accountAddress")
-            } catch (retry: Exception) {
-                Log.e(TAG, "Retry failed while storing seed for $accountAddress", retry)
-                throw Error("Failed to store seed securely after key reset: $retry")
-            }
+    private fun writeEncryptedSeed(target: File, json: String) {
+        encryptedFile(target, buildMasterKey()).openFileOutput().use {
+            it.write(json.toByteArray(Charsets.UTF_8))
         }
     }
 
+    // ── public API ────────────────────────────────────────────────────────────
 
-    //    fun retrieveDecryptedSeed(accountAddress: String): SeedData? {
-//        try {
-//            val file = File(context.filesDir, getSeedFileName(accountAddress))
-//            if (!file.exists()) return null
-//
-//            val encryptedBytes = FileInputStream(file).use { it.readBytes() }
-//
-//            val keyAlias = getKeyAlias()
-//            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
-//            keyStore.load(null)
-//
-//            if (!keyStore.containsAlias(keyAlias)) return null
-//
-//            val privateKey = keyStore.getKey(keyAlias, null) as PrivateKey
-//            val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
-//            cipher.init(Cipher.DECRYPT_MODE, privateKey)
-//            val decryptedJson = cipher.doFinal(encryptedBytes).toString(Charsets.UTF_8)
-//            val data = Json.decodeFromString<SeedData>(decryptedJson)
-//
-//            return data
-//
-//        } catch (e: Exception) {
-//            Log.e("SecureStorage", "Error retrieving seed for $accountAddress", e)
-//            return null
-//        }
-//    }
-    fun listStoredWalletAddresses(): List<String> {
-        return appContext.filesDir.listFiles()
+    fun clearAll(): Boolean {
+        if (!::appContext.isInitialized) return false
+        listEncryptedSeedFiles().forEach { it.delete() }
+        clearMasterKeyState()
+        return true
+    }
+
+    fun listStoredWalletAddresses(): List<String> =
+        appContext.filesDir.listFiles()
             ?.filter { it.name.startsWith(SEED_FILE_PREFIX) && it.name.endsWith(SEED_FILE_SUFFIX) }
             ?.map { it.name.removePrefix(SEED_FILE_PREFIX).removeSuffix(SEED_FILE_SUFFIX) }
             ?: emptyList()
-    }
-
-    private fun listEncryptedSeedFiles(): List<File> {
-        return appContext.filesDir
-            .listFiles { _, name -> name.startsWith(SEED_FILE_PREFIX) && name.endsWith(SEED_FILE_SUFFIX) }
-            ?.toList()
-            ?: emptyList()
-    }
 
     fun deleteWallet(accountAddress: String): Boolean = seedFile(accountAddress).delete()
 
-    fun getDecryptedSeeds(): List<SeedData?> {
-        val encryptedFiles = listEncryptedSeedFiles()
-        val masterKey = buildMasterKey()
+    suspend fun storePrivateKeyByteArray(privateKeyByteArray: ByteArray) {
+        val keyPair = SolanaEddsa.createKeypairFromSecretKey(privateKeyByteArray.copyOfRange(0, 32))
+        storeWalletSeed(keyPair.publicKey.toBase58(), SeedData(
+            keyPair.publicKey.toBase58(), "", "", privateKey = privateKeyByteArray, type = "privatekey"
+        ))
+    }
 
-        return encryptedFiles.map { file ->
+    suspend fun storeMnemonic(seedPhrase: String, passPhrase: String = "") {
+        val mnemonic = Mnemonic(seedPhrase, passPhrase)
+        val address = mnemonic.getKeyPair().publicKey.toBase58()
+        storeWalletSeed(address, SeedData(address, seedPhrase, passPhrase, null, "mnemonic"))
+    }
+
+    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
+        val file = seedFile(accountAddress)
+        if (file.exists()) { Log.i(TAG, "Seed for $accountAddress already exists. Skipping."); return }
+
+        val json = Json.encodeToString(seedData)
+        try {
+            writeEncryptedSeed(file, json)
+            Log.i(TAG, "Seed stored for $accountAddress")
+        } catch (first: Exception) {
+            if (!first.isRecoverableKeystoreError()) {
+                Log.e(TAG, "Error storing seed for $accountAddress", first)
+                throw RuntimeException("Failed to store seed: $first", first)
+            }
+            Log.w(TAG, "Keystore mismatch — resetting key material for $accountAddress", first)
+            file.delete()
+            clearMasterKeyState()
             try {
-                val decryptedBytes = encryptedFile(file, masterKey).openFileInput().use { it.readBytes() }
-                Json.decodeFromString<SeedData>(decryptedBytes.toString(Charsets.UTF_8))
-            } catch (e: Exception) {
-                Log.e(TAG, "Error decrypting ${file.name}", e)
-                null
+                writeEncryptedSeed(file, json)
+                Log.i(TAG, "Seed stored after key reset for $accountAddress")
+            } catch (retry: Exception) {
+                Log.e(TAG, "Retry failed for $accountAddress", retry)
+                throw RuntimeException("Failed to store seed after reset: $retry", retry)
             }
         }
     }
 
     fun getDecryptedSeed(accountAddress: String = ""): SeedData? {
-        val targetFile = if (accountAddress.isBlank()) {
-            listEncryptedSeedFiles().firstOrNull()
-        } else {
-            seedFile(accountAddress).takeIf { it.exists() }
-        } ?: return null
-
+        val file = if (accountAddress.isBlank()) listEncryptedSeedFiles().firstOrNull()
+                   else seedFile(accountAddress).takeIf { it.exists() }
+        file ?: return null
         return try {
-            val masterKey = buildMasterKey()
-            val decryptedBytes = encryptedFile(targetFile, masterKey).openFileInput().use { it.readBytes() }
-            Json.decodeFromString<SeedData>(decryptedBytes.toString(Charsets.UTF_8))
+            val bytes = encryptedFile(file, buildMasterKey()).openFileInput().use { it.readBytes() }
+            Json.decodeFromString<SeedData>(bytes.toString(Charsets.UTF_8))
         } catch (e: Exception) {
             Log.e(TAG, "Decryption failed for $accountAddress", e)
-            throw Error("Decryption failed for $accountAddress")
+            null
         }
     }
+
+    fun getDecryptedSeeds(): List<SeedData?> =
+        listEncryptedSeedFiles().map { file ->
+            try {
+                val bytes = encryptedFile(file, buildMasterKey()).openFileInput().use { it.readBytes() }
+                Json.decodeFromString<SeedData>(bytes.toString(Charsets.UTF_8))
+            } catch (e: Exception) { Log.e(TAG, "Error decrypting ${file.name}", e); null }
+        }
 }

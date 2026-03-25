@@ -41,8 +41,25 @@ object BiometricHandler {
         description: String = "Use your biometric or device credential to sign transaction",
         onSuccess: () -> T
     ): T {
-        // First, check if biometric is available
-        checkBiometricAvailability(activity)
+        // Check availability — throws BiometricNotAvailableException only when
+        // BOTH BIOMETRIC_STRONG|DEVICE_CREDENTIAL and DEVICE_CREDENTIAL alone fail.
+        // On Android 9 (API 28), canAuthenticate(DEVICE_CREDENTIAL) returns
+        // BIOMETRIC_ERROR_UNSUPPORTED, so we catch that case and let the system
+        // prompt handle it (it shows a PIN/password dialog natively).
+        try {
+            checkBiometricAvailability(activity)
+        } catch (e: BiometricNotAvailableException) {
+            // Re-throw only if device genuinely has no screen lock at all.
+            // BIOMETRIC_ERROR_UNSUPPORTED on older Android = API limitation, not
+            // a real absence of screen lock — fall through to let the prompt show.
+            val msg = e.message ?: ""
+            if (!msg.contains("unsupported", ignoreCase = true) &&
+                !msg.contains("code: 12", ignoreCase = true)   // BIOMETRIC_ERROR_UNSUPPORTED = 12
+            ) {
+                throw e
+            }
+            // else: fall through — the BiometricPrompt will handle it
+        }
 
         return suspendCancellableCoroutine { continuation ->
             val callback = object : BiometricPrompt.AuthenticationCallback() {
@@ -129,65 +146,76 @@ object BiometricHandler {
     fun checkBiometricAvailability(context: Context) {
         val biometricManager = BiometricManager.from(context)
 
-        // Check if biometric is available
-        val canAuthenticate = biometricManager.canAuthenticate(
+        // Strategy: accept PIN/pattern/password (DEVICE_CREDENTIAL) alone.
+        // BIOMETRIC_STRONG (fingerprint/face) is preferred but not required.
+        //
+        // Why this matters:
+        //   canAuthenticate(BIOMETRIC_STRONG | DEVICE_CREDENTIAL) returns
+        //   BIOMETRIC_ERROR_NONE_ENROLLED on many devices when no fingerprint is
+        //   enrolled — even if a PIN is set — because the combined check requires
+        //   *both* to be enrollable, not just one.
+        //
+        //   We check DEVICE_CREDENTIAL first (sufficient for vault security),
+        //   then try the combined check for best UX (fingerprint prompt).
+
+        // 1. Try the combined authenticator (fingerprint/face + PIN fallback)
+        val combinedResult = biometricManager.canAuthenticate(
             BiometricManager.Authenticators.BIOMETRIC_STRONG or
                     BiometricManager.Authenticators.DEVICE_CREDENTIAL
         )
+        if (combinedResult == BiometricManager.BIOMETRIC_SUCCESS) return
 
-        when (canAuthenticate) {
-            BiometricManager.BIOMETRIC_SUCCESS -> {
-                // All good, biometric is available
-                return
-            }
+        // 2. Fall back to DEVICE_CREDENTIAL only (PIN/pattern/password is enough)
+        val credentialResult = biometricManager.canAuthenticate(
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        )
+        if (credentialResult == BiometricManager.BIOMETRIC_SUCCESS) return
 
-            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
+        // 3. Neither is available — use credentialResult as the definitive error code
+        // (credentialResult tells us exactly why even PIN/pattern failed)
+        val errorCode = credentialResult
+
+        when (errorCode) {
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
                 throw BiometricNotAvailableException(
-                    "No biometric or device credential is set up",
-                    "Go to Settings > Security > Biometric or Screen Lock to enable authentication"
+                    message = "No screen lock is set up on this device",
+                    remediation = "A PIN, pattern, password, or fingerprint is required.\n\n" +
+                            "1. Open Settings\n" +
+                            "2. Navigate to Security > Screen Lock\n" +
+                            "3. Set a PIN, pattern, password, or enroll a fingerprint\n" +
+                            "4. Return to the app and tap Initialize again"
                 )
-            }
 
-            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
                 throw BiometricNotAvailableException(
-                    "Biometric hardware is not available",
-                    "This device does not support biometric authentication"
+                    "Biometric hardware is temporarily unavailable",
+                    "Restart the device and try again"
                 )
-            }
 
-            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
+            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE ->
                 throw BiometricNotAvailableException(
                     "No biometric hardware detected",
-                    "This device does not support biometric authentication"
+                    "This device does not support fingerprint/face authentication. " +
+                            "Please set a PIN or pattern as screen lock."
                 )
-            }
 
-            BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED -> {
+            BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED ->
                 throw BiometricNotAvailableException(
-                    "Biometric security update required",
-                    "Update your device to use biometric authentication"
+                    "A security update is required",
+                    "Update your device software to use biometric authentication"
                 )
-            }
 
-            BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED -> {
+            BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED ->
                 throw BiometricNotAvailableException(
-                    "Biometric authentication is not supported",
-                    "This device does not support biometric authentication"
+                    "Biometric authentication is not supported on this device",
+                    "Please set a PIN or pattern screen lock"
                 )
-            }
 
-            BiometricManager.BIOMETRIC_STATUS_UNKNOWN -> {
+            else ->
                 throw BiometricNotAvailableException(
-                    "Biometric status unknown",
-                    "Unable to determine biometric availability. Try again later."
+                    "Authentication unavailable (code: $errorCode)",
+                    "Ensure a screen lock (PIN, pattern, password, or fingerprint) is set up in Settings > Security"
                 )
-            }
-
-            else -> {
-                throw BiometricNotAvailableException(
-                    "Biometric unavailable (code: $canAuthenticate)"
-                )
-            }
         }
     }
 }

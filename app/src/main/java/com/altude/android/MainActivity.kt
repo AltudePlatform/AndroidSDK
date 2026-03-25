@@ -1,69 +1,46 @@
 package com.altude.android
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.altude.android.ui.theme.AltudesdkTheme
-import kotlinx.coroutines.runBlocking
+import android.widget.Button
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 
+/**
+ * Main launcher — choose which SDK example to run.
+ */
+class MainActivity : AppCompatActivity() {
 
-class MainActivity : ComponentActivity() {
-
-    override  fun onCreate(savedInstanceState: Bundle?) = runBlocking {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
 
-        // ✅ Call the suspend transferToken
-//        lifecycleScope.launch {
-//            GasStationSdk.transferToken(
-//                TransferOptions(
-//                    source = "YourSourceWalletAddress",
-//                    destination = "DestinationWalletAddress",
-//                    amount = 1.0,
-//                    mintToken = Token.USDC
-//                )
-//            ){ result ->
-//                result
-//                    .onSuccess { println("✅ Sent: $it") }
-//                    .onFailure { println("❌ Failed: ${it.message}") }
-//            }
-//        }
-
-//        Altude .setApiKey(this,"myAPIKey")
-
-        setContent {
-            AltudesdkTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
-            }
+        findViewById<Button>(R.id.btnVaultExample).setOnClickListener {
+            startActivity(Intent(this, VaultExampleActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btnSignerExamples).setOnClickListener {
+            startActivity(Intent(this, SignerExamplesActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btnExternalSigner).setOnClickListener {
+            startActivity(Intent(this, ExternalSignerExampleActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btnErrorHandling).setOnClickListener {
+            startActivity(Intent(this, ErrorHandlingExampleActivity::class.java))
+        }
+
+        // Show build info so it's always obvious which APK / version is running
+        val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        else
+            @Suppress("DEPRECATION") packageManager.getPackageInfo(packageName, 0)
+
+        findViewById<TextView>(R.id.tvBuildInfo).text =
+            "pkg: $packageName  •  v${pInfo.versionName}"
     }
 }
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    AltudesdkTheme {
-        Greeting("Android")
-    }
-}

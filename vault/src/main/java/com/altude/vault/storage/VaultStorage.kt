@@ -1,194 +1,158 @@
 package com.altude.vault.storage
 
 import android.content.Context
-import android.security.keystore.KeyPermanentlyInvalidatedException
+import android.os.Build
+import android.util.Log
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import com.altude.vault.model.BiometricInvalidatedException
 import com.altude.vault.model.VaultDecryptionFailedException
-import com.altude.vault.model.VaultException
 import com.altude.vault.model.VaultInitFailedException
+import com.altude.vault.model.VaultStorageCorruptedException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 
-/**
- * Vault storage handles encrypted persistence of the root seed using Android Keystore.
- * All data is encrypted at rest with AES-256-GCM via EncryptedFile.
- *
- * File location: context.filesDir/vault_seed_<appId>.encrypted
- * Encryption: Android Keystore master key with biometric/device credential gating (optional)
- */
 object VaultStorage {
 
+    private const val TAG               = "VaultStorage"
     private const val VAULT_FILE_PREFIX = "vault_seed_"
     private const val VAULT_FILE_SUFFIX = ".encrypted"
-    private const val MASTER_KEY_ALIAS = "vault_master_key"
+    private const val MASTER_KEY_ALIAS  = "vault_master_key"
+    private const val ANDROID_KEYSTORE  = "AndroidKeyStore"
+    private const val BIOMETRIC_AUTH_VALIDITY_SECONDS = 30
 
     @Serializable
     data class VaultData(
-        @SerialName("seed_blob")
-        val seedBlob: String, // Base64-encoded encrypted seed
-
-        @SerialName("app_id")
-        val appId: String,
-
-        @SerialName("created_at_ms")
-        val createdAtMs: Long,
-
-        @SerialName("version")
-        val version: Int = 1 // For future format changes
+        @SerialName("seed_blob")     val seedBlob:    String,
+        @SerialName("app_id")        val appId:       String,
+        @SerialName("created_at_ms") val createdAtMs: Long,
+        @SerialName("version")       val version:     Int = 1
     )
 
-    /**
-     * Initialize vault storage for the given app.
-     * Creates a master key in Android Keystore with optional biometric gating.
-     *
-     * @param context Application context
-     * @param appId Unique app identifier for this vault (typically package name)
-     * @param requireBiometric Whether to require biometric/device credential (default: true)
-     * @throws VaultException if keystore initialization fails
-     */
-    fun initializeKeystore(
-        context: Context,
-        appId: String,
-        requireBiometric: Boolean = true
-    ) {
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private fun isKeyPermanentlyInvalidated(e: Exception): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException") return true
+            cause = cause.cause
+        }
+        return false
+    }
+
+    private fun isStaleKeyset(e: Exception): Boolean {
+        if (e is AEADBadTagException) return true
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is AEADBadTagException) return true
+            cause = cause.cause
+        }
+        return false
+    }
+
+    private fun buildMasterKey(context: Context, requireBiometric: Boolean = false): MasterKey {
+        // If a previous version left a stale auth-required key, getKey() returns null.
+        // Delete it so Builder creates a fresh key.
         try {
-            val masterKeySpec = MasterKey.Builder(context, MASTER_KEY_ALIAS)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .apply {
-                    if (requireBiometric) {
-                        setUserAuthenticationRequired(true, 3600) // 1 hour TTL
-                    }
-                }
-                .build()
-            // The MasterKey is automatically stored; this just initializes/validates it
-        } catch (e: KeyPermanentlyInvalidatedException) {
-            throw BiometricInvalidatedException(cause = e)
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
+            if (ks.containsAlias(MASTER_KEY_ALIAS) && ks.getKey(MASTER_KEY_ALIAS, null) == null) {
+                Log.w(TAG, "Stale auth-required key detected — deleting.")
+                ks.deleteEntry(MASTER_KEY_ALIAS)
+            }
         } catch (e: Exception) {
-            throw VaultInitFailedException(
-                "Failed to initialize keystore: ${e.message}",
-                cause = e
-            )
+            Log.w(TAG, "Keystore inspect failed — continuing: ${e.message}")
+        }
+        val builder = MasterKey.Builder(context, MASTER_KEY_ALIAS)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        if (requireBiometric) {
+            builder.setUserAuthenticationRequired(true, BIOMETRIC_AUTH_VALIDITY_SECONDS)
+        }
+        return builder.build()
+    }
+
+    private fun vaultFile(context: Context, appId: String) =
+        File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
+
+    private fun purgeVault(context: Context, appId: String) {
+        vaultFile(context, appId).delete()
+        runCatching {
+            context.getSharedPreferences(
+                "__androidx_security_crypto_encrypted_file_pref__", Context.MODE_PRIVATE
+            ).edit().remove(vaultFile(context, appId).absolutePath).apply()
         }
     }
 
-    /**
-     * Store an encrypted seed blob in vault storage.
-     * The seed is serialized to JSON and encrypted using EncryptedFile.
-     *
-     * @param context Application context
-     * @param appId App identifier (used in filename)
-     * @param seedBytes Raw seed bytes to encrypt and store
-     * @throws VaultException if storage fails
-     */
-    fun storeSeed(
-        context: Context,
-        appId: String,
-        seedBytes: ByteArray
-    ) {
-        try {
-            val masterKey = MasterKey.Builder(context, MASTER_KEY_ALIAS)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
+    // ── public API ────────────────────────────────────────────────────────────
 
-            val vaultFile = File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
+    @Suppress("UNUSED_PARAMETER")
+    fun initializeKeystore(context: Context, appId: String, requireBiometric: Boolean = true) {
+        try {
+            buildMasterKey(context, requireBiometric)
+        } catch (e: Exception) {
+            if (isKeyPermanentlyInvalidated(e)) throw BiometricInvalidatedException(cause = e)
+            throw VaultInitFailedException("Failed to initialize keystore: ${e.message}", cause = e)
+        }
+    }
+
+    fun storeSeed(context: Context, appId: String, seedBytes: ByteArray) {
+        try {
+            val masterKey = buildMasterKey(context)
+            val file = vaultFile(context, appId)
+            if (file.exists()) file.delete()
 
             val encryptedFile = EncryptedFile.Builder(
-                context,
-                vaultFile,
-                masterKey,
+                context, file, masterKey,
                 EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
             ).build()
 
             val vaultData = VaultData(
-                seedBlob = android.util.Base64.encodeToString(seedBytes, android.util.Base64.NO_WRAP),
-                appId = appId,
+                seedBlob    = android.util.Base64.encodeToString(seedBytes, android.util.Base64.NO_WRAP),
+                appId       = appId,
                 createdAtMs = System.currentTimeMillis()
             )
-
-            val jsonString = Json.encodeToString(VaultData.serializer(), vaultData)
-            encryptedFile.openFileOutput().use { output ->
-                output.write(jsonString.toByteArray())
+            encryptedFile.openFileOutput().use {
+                it.write(Json.encodeToString(VaultData.serializer(), vaultData).toByteArray())
             }
-        } catch (e: KeyPermanentlyInvalidatedException) {
-            throw BiometricInvalidatedException(cause = e)
         } catch (e: Exception) {
-            throw VaultInitFailedException(
-                "Failed to store seed: ${e.message}",
-                cause = e
-            )
+            if (isKeyPermanentlyInvalidated(e)) throw BiometricInvalidatedException(cause = e)
+            if (isStaleKeyset(e)) { purgeVault(context, appId); throw VaultStorageCorruptedException(cause = e) }
+            throw VaultInitFailedException("Failed to store seed: ${e.message}", cause = e)
         }
     }
 
-    /**
-     * Retrieve and decrypt seed bytes from vault storage.
-     * This operation may prompt for biometric/device credential if configured.
-     *
-     * @param context Application context
-     * @param appId App identifier (used to locate file)
-     * @return Decrypted seed bytes
-     * @throws BiometricInvalidatedException if biometric enrollment changed
-     * @throws VaultDecryptionFailedException if decryption fails
-     */
     fun retrieveSeed(context: Context, appId: String): ByteArray {
         try {
-            val masterKey = MasterKey.Builder(context, MASTER_KEY_ALIAS)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            val vaultFile = File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
-            if (!vaultFile.exists()) {
-                throw VaultDecryptionFailedException(
-                    "Vault file not found for appId: $appId"
-                )
-            }
+            val masterKey = buildMasterKey(context)
+            val file = vaultFile(context, appId)
+            if (!file.exists()) throw VaultDecryptionFailedException("Vault file not found for appId: $appId")
 
             val encryptedFile = EncryptedFile.Builder(
-                context,
-                vaultFile,
-                masterKey,
+                context, file, masterKey,
                 EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
             ).build()
 
-            val jsonString = encryptedFile.openFileInput().bufferedReader().use { it.readText() }
-            val vaultData = Json.decodeFromString(VaultData.serializer(), jsonString)
-
-            return android.util.Base64.decode(vaultData.seedBlob, android.util.Base64.NO_WRAP)
-        } catch (e: KeyPermanentlyInvalidatedException) {
-            throw BiometricInvalidatedException(cause = e)
-        } catch (e: Exception) {
-            throw VaultDecryptionFailedException(
-                "Failed to decrypt seed: ${e.message}",
-                cause = e
-            )
+            val json = encryptedFile.openFileInput().bufferedReader().use { it.readText() }
+            val data = Json.decodeFromString(VaultData.serializer(), json)
+            return android.util.Base64.decode(data.seedBlob, android.util.Base64.NO_WRAP)
+        } catch (e: VaultDecryptionFailedException) { throw e }
+        catch (e: Exception) {
+            if (isKeyPermanentlyInvalidated(e)) throw BiometricInvalidatedException(cause = e)
+            if (isStaleKeyset(e)) { purgeVault(context, appId); throw VaultStorageCorruptedException(cause = e) }
+            throw VaultDecryptionFailedException("Failed to decrypt seed: ${e.message}", cause = e)
         }
     }
 
-    /**
-     * Check if a vault exists for the given app.
-     *
-     * @param context Application context
-     * @param appId App identifier
-     * @return true if vault file exists
-     */
-    fun vaultExists(context: Context, appId: String): Boolean {
-        val vaultFile = File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
-        return vaultFile.exists()
-    }
+    fun vaultExists(context: Context, appId: String): Boolean =
+        vaultFile(context, appId).exists()
 
-    /**
-     * Clear/delete vault storage (destructive operation).
-     * This is typically called when resetting the app or on uninstall.
-     *
-     * @param context Application context
-     * @param appId App identifier
-     * @return true if vault was deleted, false if didn't exist
-     */
     fun clearVault(context: Context, appId: String): Boolean {
-        val vaultFile = File(context.filesDir, "$VAULT_FILE_PREFIX${appId}$VAULT_FILE_SUFFIX")
-        return vaultFile.delete()
+        val existed = vaultExists(context, appId)
+        purgeVault(context, appId)
+        return existed
     }
 }

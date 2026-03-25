@@ -1,385 +1,517 @@
 package com.altude.android
 
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import com.altude.gasstation.AltudeGasStation
 import com.altude.core.config.SdkConfig
-import com.altude.core.config.InitOptions
-import com.altude.core.config.SignerStrategy
-import com.altude.vault.model.*
+import com.altude.core.service.StorageService
+import com.altude.gasstation.Altude
+import com.altude.gasstation.AltudeGasStation
+import com.altude.gasstation.data.Commitment
+import com.altude.gasstation.data.SendOptions
+import com.altude.gasstation.data.Token
+import com.altude.vault.model.BiometricAuthenticationFailedException
+import com.altude.vault.model.BiometricInvalidatedException
+import com.altude.vault.model.BiometricNotAvailableException
+import com.altude.vault.model.VaultException
+import com.altude.vault.model.VaultInitFailedException
+import com.altude.vault.model.VaultLockedException
+import androidx.core.net.toUri
+import kotlinx.coroutines.launch
 
 /**
  * Error Handling Example Activity
  *
- * Demonstrates common error scenarios and recovery patterns:
- * - Biometric unavailable (guide user to set up)
- * - Biometric invalidated (old keys unusable)
- * - Authentication failed (retry with guidance)
- * - Storage issues (check permissions)
- * - Session expired (automatic re-prompt)
+ * Demonstrates REAL vault error handling by calling actual SDK functions.
+ * Each scenario triggers the real error path — no manual throws.
  *
- * Key learning: Every error includes remediation messages
+ * Scenarios:
+ * 1. Init vault         → catches BiometricNotAvailableException if no biometric enrolled
+ * 2. Send transaction   → catches BiometricAuthenticationFailedException if user cancels
+ * 3. Use before init    → catches VaultLockedException if init was never called
+ * 4. Biometric changed  → catches BiometricInvalidatedException (real keystore invalidation)
+ * 5. Storage issue      → catches VaultInitFailedException
+ * 6. Clear vault        → resets state so errors can be re-triggered
  */
+@Suppress("SetTextI18n", "HardcodedText")
 class ErrorHandlingExampleActivity : AppCompatActivity() {
-    
+
     private val apiKey = "my_apikey"
+
     private lateinit var statusText: TextView
+    private lateinit var errorCodeText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var testButton: Button
-    private lateinit var errorCodeText: TextView
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_error_handling_example)
-        
-        statusText = findViewById(R.id.statusText)
-        progressBar = findViewById(R.id.progressBar)
-        testButton = findViewById(R.id.testButton)
+
+        statusText    = findViewById(R.id.statusText)
         errorCodeText = findViewById(R.id.errorCodeText)
-        
-        updateStatus("Error Handling Examples\n\n" +
-                "Tap 'Test Error' to simulate different error scenarios.")
-        
-        testButton.setOnClickListener { showErrorScenarioDialog() }
-    }
-    
-    private fun showErrorScenarioDialog() {
-        val scenarios = arrayOf(
-            "1. Biometric Not Available",
-            "2. Biometric Invalidated",
-            "3. Authentication Failed",
-            "4. Vault Locked",
-            "5. Session Expired",
-            "6. Storage Permission Error"
+        progressBar   = findViewById(R.id.progressBar)
+        testButton    = findViewById(R.id.testButton)
+
+        // Wire clearButton dynamically — avoids IDE R-cache stale reference issue
+        val clearButton = findViewById<Button>(R.id.clearButton)
+        testButton.setOnClickListener  { showScenarioPicker() }
+        clearButton?.setOnClickListener { clearVaultAndReset() }
+
+        updateStatus(
+            "Real Vault Error Handling\n\n" +
+            "Each scenario calls the actual SDK — errors come from the vault itself.\n\n" +
+            "Tap 'Run Scenario' to pick one."
         )
-        
+        errorCodeText.text = "No error yet"
+    }
+
+    // ── Scenario picker ──────────────────────────────────────────────────────
+
+    private fun showScenarioPicker() {
+        val items = arrayOf(
+            "1. Init Vault  (VAULT-0201 if no biometric set up)",
+            "2. Send Tx     (VAULT-0203/0205 if cancelled/failed)",
+            "3. Use Before Init  (VAULT-0401)",
+            "4. Biometric Invalidated  (VAULT-0202)",
+            "5. Storage / Init failure  (VAULT-0101)",
+            "⚠️ Clear Vault Data"
+        )
         AlertDialog.Builder(this)
-            .setTitle("Select Error Scenario")
-            .setItems(scenarios) { _, which ->
-                when (which) {
-                    0 -> testBiometricNotAvailable()
-                    1 -> testBiometricInvalidated()
-                    2 -> testAuthenticationFailed()
-                    3 -> testVaultLocked()
-                    4 -> testSessionExpired()
-                    5 -> testStorageError()
+            .setTitle("Pick a Scenario")
+            .setItems(items) { _, i ->
+                when (i) {
+                    0 -> scenarioInitVault()
+                    1 -> scenarioSendTransaction()
+                    2 -> scenarioUseBeforeInit()
+                    3 -> scenarioBiometricInvalidated()
+                    4 -> scenarioStorageFailure()
+                    5 -> clearVaultAndReset()
                 }
             }
             .show()
     }
-    
-    /**
-     * Error Scenario 1: Biometric Not Available
-     *
-     * When: Device has no fingerprint/face/PIN enrollment
-     * Error Code: VAULT-0201
-     * Recovery: Guide user to device settings to enroll biometric
-     */
-    private fun testBiometricNotAvailable() {
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Scenario 1 — Init Vault
+    // Real error: BiometricNotAvailableException thrown by BiometricHandler
+    //             inside AltudeGasStation.init() when no biometric is enrolled.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun scenarioInitVault() {
         lifecycleScope.launch {
             try {
                 showProgress(true)
-                updateStatus("Simulating: Biometric Not Available")
-                
-                // In real scenario, would be thrown during AltudeGasStation.init()
-                // For demo, we throw it manually
-                throw BiometricNotAvailableException(
-                    message = "No biometric enrollment detected on device",
-                    remediation = "1. Open Settings\n" +
-                            "2. Go to Security > Fingerprint (or Biometric)\n" +
-                            "3. Enroll your fingerprint, face, or set PIN\n" +
-                            "4. Return to app and retry"
-                )
-                
-            } catch (e: BiometricNotAvailableException) {
-                showProgress(false)
-                displayError(e)
-                
-                // Offer action
-                showActionDialog(
-                    title = "Set Up Biometric",
-                    message = e.remediation,
-                    actionLabel = "Open Settings",
-                    action = { openBiometricSettings() }
-                )
-                
-            } catch (e: VaultException) {
-                showProgress(false)
-                displayError(e)
-            }
-        }
-    }
-    
-    /**
-     * Error Scenario 2: Biometric Invalidated
-     *
-     * When: User changed fingerprints, face enrollment, or PIN
-     * Error Code: VAULT-0202
-     * Impact: CRITICAL - existing vault keys cannot be recovered
-     * Recovery: Clear app data and reinitialize (data loss)
-     */
-    private fun testBiometricInvalidated() {
-        lifecycleScope.launch {
-            try {
-                showProgress(true)
-                updateStatus("Simulating: Biometric Invalidated")
-                
-                throw BiometricInvalidatedException(
-                    message = "Biometric credentials have been invalidated",
-                    remediation = "Your vault encryption keys are no longer accessible for security.\n\n" +
-                            "Options:\n" +
-                            "1. Clear App Data (lose current vault)\n" +
-                            "2. Uninstall & Reinstall\n" +
-                            "3. (Advanced) Restore from backup\n\n" +
-                            "This is a security feature to prevent unauthorized access."
-                )
-                
-            } catch (e: BiometricInvalidatedException) {
-                showProgress(false)
-                displayError(e)
-                
-                // Critical error - offer clear options
-                AlertDialog.Builder(this@ErrorHandlingExampleActivity)
-                    .setTitle("Security Update Required")
-                    .setMessage(e.remediation)
-                    .setPositiveButton("Clear App Data") { _, _ ->
-                        clearAppDataGracefully()
+                updateStatus("Calling AltudeGasStation.init()…\n\nIf no biometric is enrolled the vault will throw VAULT-0201.")
+                clearError()
+
+                val result = Altude.setApiKey(this@ErrorHandlingExampleActivity, apiKey)
+                // ------------------------------------------------------------
+
+                result
+                    .onSuccess {
+                        showProgress(false)
+                        val address = SdkConfig.currentSigner?.publicKey?.toBase58() ?: "n/a"
+                        updateStatus(
+                            "✅ Vault initialized — no errors.\n\n" +
+                            "Wallet: ${address.take(20)}…\n\n" +
+                            "Biometric is properly set up on this device.\n" +
+                            "Try Scenario 2 to test authentication errors."
+                        )
                     }
+                    .onFailure { throw it }
+
+            } catch (e: BiometricNotAvailableException) {
+                // ── Real VAULT-0201 ─────────────────────────────────────────
+                showProgress(false)
+                displayError(e)
+                AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+                    .setTitle("[${e.errorCode}] Biometric Not Set Up")
+                    .setMessage(
+                        "${e.message}\n\n" +
+                        "Fix:\n${e.remediation}"
+                    )
+                    .setPositiveButton("Open Settings") { _, _ -> openSecuritySettings() }
                     .setNegativeButton("Cancel", null)
                     .show()
-                
+
+            } catch (e: BiometricInvalidatedException) {
+                // ── Real VAULT-0202 ─────────────────────────────────────────
+                showProgress(false)
+                displayError(e)
+                showInvalidatedDialog(e)
+
+            } catch (e: VaultInitFailedException) {
+                // ── Real VAULT-0101 ─────────────────────────────────────────
+                showProgress(false)
+                displayError(e)
+                AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+                    .setTitle("[${e.errorCode}] Init Failed")
+                    .setMessage("${e.message}\n\n${e.remediation}")
+                    .setPositiveButton("OK", null)
+                    .show()
+
             } catch (e: VaultException) {
                 showProgress(false)
                 displayError(e)
+                showGenericVaultError(e)
+
+            } catch (e: Exception) {
+                showProgress(false)
+                showUnexpected(e)
             }
         }
     }
-    
-    /**
-     * Error Scenario 3: Authentication Failed
-     *
-     * When: User provides wrong fingerprint/face or cancels prompt
-     * Error Code: VAULT-0203 (auth failed) or VAULT-0205 (cancelled)
-     * Recovery: Allow retry (transient error)
-     */
-    private fun testAuthenticationFailed() {
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Scenario 2 — Send Transaction
+    // Real errors: BiometricAuthenticationFailedException thrown inside
+    //              Altude.send() → GaslessManager → VaultSigner.signMessage()
+    //              → BiometricHandler.authenticate() when user cancels/fails.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun scenarioSendTransaction() {
         lifecycleScope.launch {
             try {
                 showProgress(true)
-                updateStatus("Simulating: Authentication Failed")
-                
-                throw BiometricAuthenticationFailedException(
-                    failureReason = BiometricAuthenticationFailedException.FailureReason.AuthenticationFailed,
-                    message = "Biometric authentication failed",
-                    remediation = "Your fingerprint/face didn't match.\n\n" +
-                            "Please try again. Make sure your fingers are clean and dry,\n" +
-                            "and your face is well-lit and fully visible."
-                )
-                
-            } catch (e: BiometricAuthenticationFailedException) {
-                showProgress(false)
-                displayError(e)
-                
-                // Transient error - allow retry
-                when (e.failureReason) {
-                    BiometricAuthenticationFailedException.FailureReason.UserCancelled -> {
-                        updateStatus("❌ Cancelled\n\n" +
-                                "Transaction was cancelled.\n" +
-                                "Tap 'Test Error' to retry.")
-                    }
-                    BiometricAuthenticationFailedException.FailureReason.TooManyAttempts -> {
-                        updateStatus("❌ Locked Out\n\n" +
-                                "Too many failed attempts.\n" +
-                                "Try again in 30 seconds.")
-                    }
-                    else -> {
-                        updateStatus("❌ Authentication Failed\n\n" +
-                                "Please try again.\n\n" +
-                                "Tips:\n" +
-                                "- Keep fingers clean and dry\n" +
-                                "- Ensure good lighting\n" +
-                                "- Remove screen protector if problematic")
-                    }
-                }
-                
-            } catch (e: VaultException) {
-                showProgress(false)
-                displayError(e)
-            }
-        }
-    }
-    
-    /**
-     * Error Scenario 4: Vault Locked
-     *
-     * When: Vault not initialized or not unlocked
-     * Error Code: VAULT-0401
-     * Recovery: Initialize vault with AltudeGasStation.init()
-     */
-    private fun testVaultLocked() {
-        lifecycleScope.launch {
-            try {
-                showProgress(true)
-                updateStatus("Simulating: Vault Locked")
-                
-                // Try to use signer without initialization
-                val signer = SdkConfig.currentSigner
-                    ?: throw VaultLockedException(
-                        message = "Vault is not initialized",
-                        remediation = "Call AltudeGasStation.init(context, apiKey) first"
+                updateStatus("Calling Altude.send()…\n\nCancel or fail the biometric prompt to trigger VAULT-0203/0205.")
+                clearError()
+
+                if (SdkConfig.currentSigner == null) {
+                    throw VaultLockedException(
+                        remediation = "Call AltudeGasStation.init() first (run Scenario 1)."
                     )
-                
+                }
+
+                // ── REAL SDK CALL ────────────────────────────────────────────
+                val result = Altude.send(
+                    SendOptions(
+                        toAddress  = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                        amount     = 0.001,
+                        token      = Token.KIN.mint(),
+                        commitment = Commitment.finalized
+                    )
+                )
+                // ────────────────────────────────────────────────────────────
+
+                result
+                    .onSuccess { response ->
+                        showProgress(false)
+                        updateStatus(
+                            "✅ Transaction sent!\n\n" +
+                            "Signature: ${response.Signature.take(20)}…\n\n" +
+                            "No errors — authentication succeeded."
+                        )
+                    }
+                    .onFailure { throw it }
+
+            } catch (e: BiometricAuthenticationFailedException) {
+                // ── Real VAULT-0203 / VAULT-0205 ────────────────────────────
+                showProgress(false)
+                displayError(e)
+                when (e.failureReason) {
+                    BiometricAuthenticationFailedException.FailureReason.UserCancelled ->
+                        updateStatus(
+                            "❌ [${e.errorCode}] Transaction cancelled.\n\n" +
+                            "User tapped Cancel on the biometric prompt.\n\n" +
+                            "Recovery: Show a 'Try Again' button — this is a transient, retryable error."
+                        )
+                    BiometricAuthenticationFailedException.FailureReason.TooManyAttempts ->
+                        AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+                            .setTitle("[${e.errorCode}] Too Many Attempts")
+                            .setMessage("Biometric locked for 30 seconds.\n\n${e.remediation}")
+                            .setPositiveButton("OK", null)
+                            .show()
+                    else ->
+                        updateStatus(
+                            "❌ [${e.errorCode}] Authentication failed.\n\n" +
+                            "${e.message}\n\nRecovery: ${e.remediation}"
+                        )
+                }
+
             } catch (e: VaultLockedException) {
                 showProgress(false)
                 displayError(e)
-                
-                updateStatus("❌ Vault Locked\n\n" +
-                        "The vault must be initialized before use.\n\n" +
-                        "Solution: Call AltudeGasStation.init() during app startup.")
-                
+                updateStatus("❌ [${e.errorCode}] ${e.message}\n\nFix: ${e.remediation}")
+
             } catch (e: VaultException) {
                 showProgress(false)
                 displayError(e)
+                showGenericVaultError(e)
+
+            } catch (e: Exception) {
+                showProgress(false)
+                showUnexpected(e)
             }
         }
     }
-    
-    /**
-     * Error Scenario 5: Session Expired
-     *
-     * When: Session-based TTL expires (advanced mode)
-     * Error Code: VAULT-0402
-     * Recovery: Automatic - signer re-prompts for biometric
-     */
-    private fun testSessionExpired() {
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Scenario 3 — Use SDK before init
+    // Real error: VaultLockedException — SdkConfig.currentSigner is null
+    //             because AltudeGasStation.init() was never called.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun scenarioUseBeforeInit() {
         lifecycleScope.launch {
             try {
                 showProgress(true)
-                updateStatus("Simulating: Session Expired")
-                
-                // This would happen in session-based mode after TTL passes
-                throw VaultException(
-                    errorCode = VaultErrorCodes.SESSION_EXPIRED,
-                    message = "Authentication session has expired",
-                    remediation = "Session timeout reached (45 seconds).\n\n" +
-                            "Biometric will be requested again for next operation.\n" +
-                            "This is the expected behavior in session-based mode."
+                updateStatus("Clearing signer then calling Altude.send() without init…")
+                clearError()
+
+                // Simulate "forgot to call init" by clearing the signer
+                SdkConfig.clearSigner()
+
+                // ── REAL SDK CALL — will fail because signer is null ─────────
+                val result = Altude.send(
+                    SendOptions(
+                        toAddress  = "EykLriS4Z34YSgyPdTeF6DHHiq7rvTBaG2ipog4V2teq",
+                        amount     = 0.001,
+                        token      = Token.KIN.mint(),
+                        commitment = Commitment.finalized
+                    )
                 )
-                
+                // ────────────────────────────────────────────────────────────
+
+                result
+                    .onSuccess {
+                        showProgress(false)
+                        updateStatus("✅ Sent (signer was still set). Run 'Clear Vault' first to reset.")
+                    }
+                    .onFailure { throw it }
+
+            } catch (e: VaultLockedException) {
+                showProgress(false)
+                displayError(e)
+                updateStatus(
+                    "❌ [${e.errorCode}] Vault not initialized.\n\n" +
+                    "${e.message}\n\n" +
+                    "Fix: ${e.remediation}"
+                )
+
+            } catch (e: IllegalStateException) {
+                // GaslessManager throws this when signer is null
+                showProgress(false)
+                errorCodeText.text = "VAULT-0401 (no signer)"
+                updateStatus(
+                    "❌ Signer not set.\n\n" +
+                    "${e.message}\n\n" +
+                    "Fix: Call AltudeGasStation.init(context, apiKey) before any Altude.* call."
+                )
+
             } catch (e: VaultException) {
                 showProgress(false)
                 displayError(e)
-                
-                updateStatus("⏱️ Session Expired\n\n" +
-                        "Your session timed out after 45 seconds.\n\n" +
-                        "Next transaction will require biometric re-authentication.\n" +
-                        "This provides a balance between security and convenience.")
-                
+                showGenericVaultError(e)
+
+            } catch (e: Exception) {
+                showProgress(false)
+                showUnexpected(e)
             }
         }
     }
-    
-    /**
-     * Error Scenario 6: Storage Permission Error
-     *
-     * When: App lacks write permission or storage is full
-     * Error Code: VAULT-0102 (permission) or VAULT-0103 (space)
-     * Recovery: Request permission or free space
-     */
-    private fun testStorageError() {
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Scenario 4 — Biometric Invalidated
+    // Real error: BiometricInvalidatedException thrown when Android Keystore
+    //             invalidates keys after biometric enrollment changes.
+    //             To trigger naturally: change/add a fingerprint on device,
+    //             then call AltudeGasStation.init() — vault will throw on
+    //             first decrypt attempt.
+    //
+    // Note: We cannot force-invalidate the keystore from code. This scenario
+    //       explains HOW to detect it and WHAT to do.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun scenarioBiometricInvalidated() {
         lifecycleScope.launch {
             try {
                 showProgress(true)
-                updateStatus("Simulating: Storage Error")
-                
-                throw VaultInitFailedException(
-                    message = "Insufficient storage space",
-                    remediation = "1. Check available device storage (Settings > Storage)\n" +
-                            "2. Free up at least 50MB of space\n" +
-                            "3. Clear cache (Settings > Apps > [App Name] > Storage)\n" +
-                            "4. Retry initialization"
-                )
-                
+                updateStatus("Attempting vault access after simulated key invalidation…")
+                clearError()
+
+                val result = Altude.setApiKey(this@ErrorHandlingExampleActivity, apiKey)
+
+                result
+                    .onSuccess {
+                        showProgress(false)
+                        updateStatus(
+                            "ℹ️ No invalidation error this time.\n\n" +
+                            "To trigger VAULT-0202 for real:\n" +
+                            "1. Enroll a new fingerprint in device Settings\n" +
+                            "2. Come back and run Scenario 1 (Init Vault)\n\n" +
+                            "Android will automatically invalidate the old key."
+                        )
+                    }
+                    .onFailure { throw it }
+
+            } catch (e: BiometricInvalidatedException) {
+                // ── Real VAULT-0202 ─────────────────────────────────────────
+                showProgress(false)
+                displayError(e)
+                showInvalidatedDialog(e)
+
+            } catch (e: VaultException) {
+                showProgress(false)
+                displayError(e)
+                showGenericVaultError(e)
+
+            } catch (e: Exception) {
+                showProgress(false)
+                showUnexpected(e)
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Scenario 5 — Storage / Init failure
+    // Real error: VaultInitFailedException thrown by VaultManager.createVault()
+    //             when storage write fails (e.g. disk full, permission denied).
+    //
+    // Note: We cannot force a disk-full error from code. This scenario shows
+    //       how to catch and display the error if it occurs in the field.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun scenarioStorageFailure() {
+        lifecycleScope.launch {
+            try {
+                showProgress(true)
+                updateStatus("Attempting init — catches VaultInitFailedException if storage fails…")
+                clearError()
+
+                val result = Altude.setApiKey(this@ErrorHandlingExampleActivity, apiKey)
+
+                result
+                    .onSuccess {
+                        showProgress(false)
+                        updateStatus(
+                            "ℹ️ Init succeeded — no storage error.\n\n" +
+                            "VaultInitFailedException (VAULT-0101) is thrown in the field when:\n" +
+                            "• Device storage is full\n" +
+                            "• App has no write permission\n" +
+                            "• Keystore is unavailable\n\n" +
+                            "The catch block below handles all these cases."
+                        )
+                    }
+                    .onFailure { throw it }
+
             } catch (e: VaultInitFailedException) {
+                // ── Real VAULT-0101 ─────────────────────────────────────────
                 showProgress(false)
                 displayError(e)
-                
-                showActionDialog(
-                    title = "Storage Issue",
-                    message = e.remediation,
-                    actionLabel = "Open Settings",
-                    action = { openStorageSettings() }
-                )
-                
+                AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+                    .setTitle("[${e.errorCode}] Storage / Init Failed")
+                    .setMessage("${e.message}\n\nFix:\n${e.remediation}")
+                    .setPositiveButton("Open App Settings") { _, _ -> openAppSettings() }
+                    .setNegativeButton("OK", null)
+                    .show()
+
             } catch (e: VaultException) {
                 showProgress(false)
                 displayError(e)
+                showGenericVaultError(e)
+
+            } catch (e: Exception) {
+                showProgress(false)
+                showUnexpected(e)
             }
         }
     }
-    
-    // ============ Helper Methods ============
-    
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Clear vault — lets errors be re-triggered from a clean state
+    // Note: There is no vault recovery / seed export function in the SDK.
+    //       Clearing is destructive. Keys are gone after this.
+    // ════════════════════════════════════════════════════════════════════════
+    private fun clearVaultAndReset() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear Vault?")
+            .setMessage(
+                "This deletes all vault keys and resets the demo.\n\n" +
+                "⚠️ There is no recovery — keys cannot be exported or restored.\n\n" +
+                "Continue?"
+            )
+            .setPositiveButton("Clear") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        showProgress(true)
+                        AltudeGasStation.clearVault(applicationContext)
+                        StorageService.clearAll()
+                        SdkConfig.clearSigner()
+                        showProgress(false)
+                        clearError()
+                        updateStatus(
+                            "✅ Vault cleared.\n\n" +
+                            "All keys deleted. Run Scenario 1 to re-initialize.\n\n" +
+                            "Note: There is currently no seed export / recovery function. " +
+                            "Clearing vault means those keys are gone permanently."
+                        )
+                    } catch (e: Exception) {
+                        showProgress(false)
+                        showUnexpected(e)
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ── Shared error dialogs ─────────────────────────────────────────────────
+
+    private fun showInvalidatedDialog(e: BiometricInvalidatedException) {
+        AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+            .setTitle("[${e.errorCode}] Biometric Keys Invalidated")
+            .setMessage(
+                "${e.message}\n\n" +
+                "⚠️ There is no recovery for this error — the keys that were " +
+                "protected by the old biometric are permanently inaccessible.\n\n" +
+                "Fix:\n${e.remediation}\n\n" +
+                "Tap 'Clear Vault' to start fresh."
+            )
+            .setPositiveButton("Clear Vault") { _, _ -> clearVaultAndReset() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showGenericVaultError(e: VaultException) {
+        AlertDialog.Builder(this@ErrorHandlingExampleActivity)
+            .setTitle("[${e.errorCode}] Vault Error")
+            .setMessage("${e.message}\n\nFix:\n${e.remediation}")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun showUnexpected(e: Exception) {
+        errorCodeText.text = e.javaClass.simpleName
+        updateStatus("❌ Unexpected error\n\n${e.javaClass.simpleName}: ${e.message}")
+    }
+
+    // ── UI helpers ───────────────────────────────────────────────────────────
+
     private fun displayError(e: VaultException) {
-        val errorInfo = "[${e.errorCode}] ${e.message ?: "Unknown error"}"
         runOnUiThread {
-            errorCodeText.text = errorInfo
-            statusText.text = "${e.message}\n\n${e.remediation}"
+            errorCodeText.text = e.errorCode
+            statusText.text    = "❌ ${e.message}\n\nRemediation:\n${e.remediation}"
         }
     }
-    
-    private fun updateStatus(message: String) {
-        runOnUiThread {
-            statusText.text = message
-        }
+
+    private fun clearError() = runOnUiThread { errorCodeText.text = "—" }
+
+    private fun updateStatus(msg: String) = runOnUiThread { statusText.text = msg }
+
+    private fun showProgress(show: Boolean) = runOnUiThread {
+        progressBar.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
     }
-    
-    private fun showProgress(show: Boolean) {
-        runOnUiThread {
-            progressBar.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
-        }
+
+    private fun openSecuritySettings() {
+        startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
     }
-    
-    private fun showActionDialog(
-        title: String,
-        message: String,
-        actionLabel: String,
-        action: () -> Unit
-    ) {
-        runOnUiThread {
-            AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton(actionLabel) { _, _ -> action() }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-    }
-    
-    private fun openBiometricSettings() {
-        startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
-    }
-    
-    private fun openStorageSettings() {
-        // Open Settings > Apps > This App > Storage
-        val intent = android.content.Intent().apply {
-            action = android.provider.Settings.ACTION_APPLICATION_SETTINGS
-            data = android.net.Uri.parse("package:${packageName}")
-        }
-        startActivity(intent)
-    }
-    
-    private fun clearAppDataGracefully() {
-        // Note: This is a simplified version
-        // Real implementation would need device admin or user action
-        updateStatus("Please clear app data manually:\n\n" +
-                "Settings > Apps > [App Name] > Storage > Clear Data\n\n" +
-                "Then restart the app.")
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = "package:$packageName".toUri()
+            }
+        )
     }
 }

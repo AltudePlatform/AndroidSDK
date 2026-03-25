@@ -6,10 +6,11 @@ import com.altude.core.config.InitOptions
 import com.altude.core.config.SdkConfig
 import com.altude.core.config.SignerStrategy
 import com.altude.core.helper.Mnemonic
-import com.altude.core.model.TransactionSigner
 import com.altude.core.service.StorageService
 import com.altude.vault.manager.VaultManager
 import com.altude.vault.model.VaultSigner
+import com.altude.vault.model.VaultStorageCorruptedException
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * ModernAltudeGasStation provides the modern SDK initialization API with Vault as the default signer.
@@ -74,30 +75,32 @@ object AltudeGasStation {
             // Step 2: Initialize Core SDK services
             SdkConfig.setApiKey(context, apiKey)
 
-            // Step 3: Set up signer based on strategy
-            val strategy: SignerStrategy = options.signerStrategy // Create local variable for smart casting
-            val signer = when (strategy) {
-                is SignerStrategy.VaultDefault -> {
-                    // Create VaultSigner - takes care of vault initialization internally
-                    createVaultSigner(context, options)
-                }
-
-                is SignerStrategy.External -> {
-                    // Use external signer directly
-                    strategy.signer
-                }
-            }
-
-            // Step 4: Set the signer in SdkConfig for all subsequent operations
-            SdkConfig.setSigner(signer)
-
-            // Step 5: Initialize storage for backward compatibility with legacy APIs
+            // Step 3: Initialize storage first so we can read stored wallet addresses
             StorageService.init(context)
 
-            // Generate mnemonic for backward compatibility (legacy Altude.setApiKey behavior)
-            Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
+            // Step 4: Set up signer based on strategy
+            val strategy: SignerStrategy = options.signerStrategy
+            val signer = when (strategy) {
+                is SignerStrategy.VaultDefault -> createVaultSigner(context, options)
+                is SignerStrategy.External -> strategy.signer
+            }
+
+            // Step 5: Set the signer in SdkConfig for all subsequent operations
+            SdkConfig.setSigner(signer)
+
+            // Step 6: Generate mnemonic for backward compatibility (best-effort — don't fail init)
+            try {
+                Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("AltudeGasStation", "saveMnemonic failed (non-fatal): ${e.message}")
+            }
 
             Result.success(Unit)
+        } catch (e: com.altude.vault.model.VaultException) {
+            // Vault exceptions already have clear messages — pass through as-is
+            Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -118,12 +121,11 @@ object AltudeGasStation {
         val vaultOptions = options.signerStrategy as SignerStrategy.VaultDefault
 
         val appId = vaultOptions.appId.ifEmpty {
-            // Use package name as default app ID
             context.packageName
         }
 
-        // Create vault if it doesn't exist
-        if (!VaultManager.vaultExists(context, appId)) {
+        // Create vault if it doesn't exist.
+        suspend fun ensureVaultCreated() {
             VaultManager.createVault(
                 context,
                 appId,
@@ -131,12 +133,59 @@ object AltudeGasStation {
             )
         }
 
-        // Default to per-operation authentication (most secure)
-        // Apps can use VaultSigner.createWithSession() afterwards for batch operations
+        val isNewVault = !VaultManager.vaultExists(context, appId)
+
+        if (isNewVault) {
+            try {
+                ensureVaultCreated()
+            } catch (e: VaultStorageCorruptedException) {
+                VaultManager.clearVault(context, appId)
+                ensureVaultCreated()
+            }
+        }
+
+        // Unlock vault immediately — this prompts biometric ONCE at init time,
+        // derives the keypair, caches the session, and gives us the public key.
+        // This is the expected UX: user authenticates when tapping Initialize,
+        // not silently on the first transaction.
+        // If the vault keyset is stale (e.g. partial data clear), retry once
+        // after clearing the corrupted vault and recreating it.
+        val keypair = try {
+            VaultManager.unlockVault(
+                context = context,
+                appId = appId,
+                walletIndex = vaultOptions.walletIndex,
+                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
+                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
+                    title = if (isNewVault) "Set Up Vault" else "Unlock Vault",
+                    description = if (isNewVault)
+                        "Authenticate to secure your new wallet"
+                    else
+                        "Authenticate to unlock your wallet"
+                )
+            )
+        } catch (e: VaultStorageCorruptedException) {
+            VaultManager.clearVault(context, appId)
+            ensureVaultCreated()
+            VaultManager.unlockVault(
+                context = context,
+                appId = appId,
+                walletIndex = vaultOptions.walletIndex,
+                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
+                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
+                    title = "Set Up Vault",
+                    description = "Authenticate to secure your new wallet"
+                )
+            )
+        }
+
+        val publicKey = foundation.metaplex.solanapublickeys.PublicKey(keypair.publicKey.toByteArray())
+
         return VaultSigner.create(
             context = context,
             appId = appId,
-            walletIndex = vaultOptions.walletIndex
+            walletIndex = vaultOptions.walletIndex,
+            initialPublicKey = publicKey
         )
     }
 
