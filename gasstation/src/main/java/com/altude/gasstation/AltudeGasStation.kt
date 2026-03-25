@@ -10,6 +10,7 @@ import com.altude.core.service.StorageService
 import com.altude.vault.manager.VaultManager
 import com.altude.vault.model.VaultSigner
 import com.altude.vault.model.VaultStorageCorruptedException
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * ModernAltudeGasStation provides the modern SDK initialization API with Vault as the default signer.
@@ -90,7 +91,9 @@ object AltudeGasStation {
             // Step 6: Generate mnemonic for backward compatibility (best-effort — don't fail init)
             try {
                 Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
-            } catch (e: Throwable) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 android.util.Log.w("AltudeGasStation", "saveMnemonic failed (non-fatal): ${e.message}")
             }
 
@@ -145,19 +148,36 @@ object AltudeGasStation {
         // derives the keypair, caches the session, and gives us the public key.
         // This is the expected UX: user authenticates when tapping Initialize,
         // not silently on the first transaction.
-        val keypair = VaultManager.unlockVault(
-            context = context,
-            appId = appId,
-            walletIndex = vaultOptions.walletIndex,
-            sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
-            authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
-                title = if (isNewVault) "Set Up Vault" else "Unlock Vault",
-                description = if (isNewVault)
-                    "Authenticate to secure your new wallet"
-                else
-                    "Authenticate to unlock your wallet"
+        // If the vault keyset is stale (e.g. partial data clear), retry once
+        // after clearing the corrupted vault and recreating it.
+        val keypair = try {
+            VaultManager.unlockVault(
+                context = context,
+                appId = appId,
+                walletIndex = vaultOptions.walletIndex,
+                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
+                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
+                    title = if (isNewVault) "Set Up Vault" else "Unlock Vault",
+                    description = if (isNewVault)
+                        "Authenticate to secure your new wallet"
+                    else
+                        "Authenticate to unlock your wallet"
+                )
             )
-        )
+        } catch (e: VaultStorageCorruptedException) {
+            VaultManager.clearVault(context, appId)
+            ensureVaultCreated()
+            VaultManager.unlockVault(
+                context = context,
+                appId = appId,
+                walletIndex = vaultOptions.walletIndex,
+                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
+                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
+                    title = "Set Up Vault",
+                    description = "Authenticate to secure your new wallet"
+                )
+            )
+        }
 
         val publicKey = foundation.metaplex.solanapublickeys.PublicKey(keypair.publicKey.toByteArray())
 

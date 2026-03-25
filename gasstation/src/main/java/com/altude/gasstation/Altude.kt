@@ -28,6 +28,7 @@ import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.Token
 import com.altude.gasstation.data.TransactionResponse
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
@@ -106,7 +107,9 @@ object Altude {
 
             val res = service.sendTransaction(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -127,7 +130,9 @@ object Altude {
 
             val res = service.sendBatchTransaction(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -148,7 +153,9 @@ object Altude {
 
             val res = service.createAccount(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -168,7 +175,9 @@ object Altude {
 
             val res = service.closeAccount(request).await()
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -192,7 +201,9 @@ object Altude {
             closeAccount(CloseAccountOption(options.account, listOf(Token.SOL.mint(), options.inputMint).distinct()), signer).getOrNull()
 
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -214,7 +225,9 @@ object Altude {
             val res = service.swapTransaction(request).await()
 
             Result.success(deCodeJson<TransactionResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -229,7 +242,9 @@ object Altude {
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             Result.success(result.getOrThrow())
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -245,7 +260,9 @@ object Altude {
             val res = service.getHistory(options.offset.toString(), options.limit.toString(), account).await()
 
             Result.success(deCodeJson<GetHistoryData>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -268,7 +285,9 @@ object Altude {
 
             val res = service.getBalance(request).await()
             Result.success(deCodeJson<GetBalanceResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
@@ -283,7 +302,9 @@ object Altude {
 
             val res = service.getAccountInfo(request).await()
             Result.success(deCodeJson<GetAccountResponse>(res))
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
