@@ -230,40 +230,52 @@ data class ImageHashPayload internal constructor(
 // ── Wire types ────────────────────────────────────────────────────────────────
 
 /**
- * JSON body sent to `POST api/provenance/attestImageHash`.
- *
- * The backend's **only job** is to add a feePayer signature and broadcast the
- * signed transactions to Solana. Everything else is either:
- * - Already on-chain in the Attestation PDA (hash, attester, recipient, expiry)
- * - Stored locally on the device in the sidecar `.c2pa.json` file or embedded
- *   in the image metadata (manifest, certificate)
- *
- * No database storage is required on the backend side.
+ * JSON body sent to `POST api/provenance/createSchema`.
+ * Only called once per wallet — when the schema account does not yet exist on-chain.
  */
 @Serializable
-data class ImageHashRequest(
-    /**
-     * Base64-encoded signed `createSchema` tx.
-     * `null` when the schema already exists for this wallet — backend skips broadcast.
-     */
-    val signedSchemaTx: String? = null,
-    /** Base64-encoded signed `createAttestation` tx. Backend adds feePayer sig and broadcasts. */
-    val signedAttestationTx: String
+data class CreateSchemaRequest(
+    /** Base64-encoded signed `createSchema` Solana transaction. */
+    val signedTransaction: String,
+    val solanaClusterId: Int = 3
 )
 
 /**
- * Response from `POST api/provenance/attestImageHash`.
- * The backend broadcasts the signed transactions and returns the Solana tx signature.
- * Note: [attestationId] is NOT returned here — it is derived deterministically
- * client-side before the request is sent and exposed on [ProvenanceResult.attestationId].
+ * JSON body sent to `POST api/provenance/attest`.
+ * Sent for every image attestation after the schema is confirmed.
  */
 @Serializable
-data class ImageHashResponse(
+data class AttestRequest(
+    /** Base64-encoded signed `createAttestation` Solana transaction. */
+    val signedTransaction: String
+)
+
+/**
+ * Response from both `POST api/provenance/createSchema` and `POST api/provenance/attest`.
+ * Backend returns the same flexible structure for both endpoints with optional fields.
+ *
+ * Example response:
+ * ```json
+ * {
+ *   "Signature": "5Xq...",
+ *   "Message": "Attestation created successfully",
+ *   "Status": "Queued",
+ *   "SchemaId": "",
+ *   "AttestationId": ""
+ * }
+ * ```
+ */
+@Serializable
+data class ProvenanceResponse(
     val Status: String,
     val Message: String,
-    /** Solana transaction signature of the broadcast `createAttestation` tx. */
-    val Signature: String = ""
+    val Signature: String = "",
+    val SchemaId: String = "",
+    val AttestationId: String = ""
 )
+
+// Backward compatibility alias
+typealias ImageHashResponse = ProvenanceResponse
 
 /**
  * Returned to the SDK user after a successful attestation.
@@ -299,7 +311,7 @@ data class ProvenanceResult(
      * `null` when the device was offline and the attestation has been queued locally —
      * check [isQueued] to distinguish this case.
      */
-    val response: ImageHashResponse? = null,
+    val response: ProvenanceResponse? = null,
     /** The C2PA manifest built from the image. */
     val manifest: C2paManifest,
     /**

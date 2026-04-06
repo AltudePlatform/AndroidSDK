@@ -2,12 +2,13 @@ package com.altude.provenance
 
 import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
+import com.altude.provenance.data.AttestRequest
 import com.altude.provenance.data.AttestationResult
 import com.altude.provenance.data.C2paManifest
 import com.altude.provenance.data.Commitment
+import com.altude.provenance.data.CreateSchemaRequest
 import com.altude.provenance.data.ImageHashPayload
-import com.altude.provenance.data.ImageHashRequest
-import com.altude.provenance.data.ImageHashResponse
+import com.altude.provenance.data.ProvenanceResponse
 import com.altude.provenance.data.ManifestOption
 import com.altude.provenance.data.OfflineAttestResult
 import com.altude.provenance.data.PendingAttestation
@@ -87,6 +88,163 @@ object Provenance {
     private fun service(): ProvenanceService =
         SdkConfig.createService(ProvenanceService::class.java)
 
+    // ── Schema PDA management ─────────────────────────────────────────────────
+
+    /**
+     * Sets a predefined schema PDA for the current wallet.
+     * Use this when you already have a known schema PDA from a prior deployment.
+     * Calling this skips the need to create a new schema during attestation.
+     *
+     * This is useful for:
+     * - Testing on devnet with a pre-deployed schema
+     * - Multiple apps using the same schema
+     * - Restoring from a backup
+     *
+     * @param schemaPdaBase58 The schema PDA address in Base58 format
+     * @param account Optional wallet account (uses default if empty)
+     *
+     * @return Result indicating success or validation failure
+     *
+     * Example:
+     * ```kotlin
+     * val result = Provenance.setSchemaPda(
+     *     schemaPdaBase58 = "YOUR_SCHEMA_PDA_ADDRESS",
+     *     account = ""  // uses default wallet
+     * )
+     * if (result.isSuccess) {
+     *     // Now attestations will use this schema PDA directly
+     *     Provenance.attestImageHash(payload)
+     * }
+     * ```
+     */
+    suspend fun setSchemaPda(
+        schemaPdaBase58: String,
+        account: String = ""
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            ProvenanceManager.setSchemaPda(schemaPdaBase58, account)
+        }.mapCatching { Unit }
+    }
+
+    /**
+     * Resets the schema state for the current wallet.
+     * Use this when switching wallets or if you need to re-create the schema.
+     *
+     * @param account Optional wallet account (uses default if empty)
+     */
+    suspend fun resetSchema(account: String = "") {
+        ProvenanceManager.resetSchema(account)
+    }
+
+    /**
+     * Ensures schema creation and returns the transaction string if needed.
+     * This is a public wrapper for schema creation that can be used for debugging
+     * or manual transaction submission.
+     *
+     * @param account Optional wallet account (uses default if empty)
+     * @param commitment Transaction commitment level (default: "confirmed")
+     * @return Result containing the Base64 transaction string if schema needs to be created,
+     *         or null if schema already exists
+     */
+    suspend fun ensureSchemaTransaction(
+        account: String = "",
+        commitment: String = "confirmed"
+    ): Result<String?> = withContext(Dispatchers.IO) {
+        runCatching {
+            // Check if schema needs to be created and return the transaction if needed
+            val result = ProvenanceManager.ensureSchema(account, commitment)
+            
+            if (result.isFailure) {
+                throw result.exceptionOrNull()!!
+            }
+            
+            // Return the schema transaction as-is (null if already exists)
+            return@runCatching result.getOrNull()
+        }
+    }
+
+    /**
+     * Gets the schema PDA address for the given account.
+     * This is useful for displaying the expected schema address in debugging UIs.
+     *
+     * @param account Optional wallet account (uses default if empty)
+     * @return The schema PDA address in Base58 format
+     */
+    suspend fun getSchemaAddress(account: String = ""): String = withContext(Dispatchers.IO) {
+        ProvenanceManager.deriveSchemaAddress(account).toBase58()
+    }
+
+    /**
+     * Creates a schema on-chain for the given account.
+     * 
+     * This method will:
+     * 1. Check if the schema already exists
+     * 2. If not, create and submit a schema transaction
+     * 3. Mark the schema as created in local preferences
+     * 
+     * @param account Optional wallet account (uses default if empty)
+     * @param commitment Transaction commitment level (default: "confirmed")
+     * @return Result containing the schema creation response, or an error if the operation failed
+     * 
+     * Example:
+     * ```kotlin
+     * val result = Provenance.createSchema(account = "")
+     * if (result.isSuccess) {
+     *     val response = result.getOrThrow()
+     *     println("Schema created: ${response.Status}")
+     * } else {
+     *     println("Failed to create schema: ${result.exceptionOrNull()?.message}")
+     * }
+     * ```
+     */
+    suspend fun createSchema(
+        account: String = "",
+        commitment: String = "confirmed"
+    ): Result<ProvenanceResponse> = withContext(Dispatchers.IO) {
+        runCatching {
+            // 1. Check if schema needs to be created
+            val schemaTxResult = ProvenanceManager.ensureSchema(account, commitment)
+            
+            if (schemaTxResult.isFailure) {
+                throw schemaTxResult.exceptionOrNull()!!
+            }
+            
+            val schemaTx = schemaTxResult.getOrNull()
+            
+            // 2. If schema already exists, return success response
+            if (schemaTx == null) {
+                return@runCatching ProvenanceResponse(
+                    Status = "success",
+                    Message = "Schema already exists"
+                )
+            }
+            
+            // 3. Submit the schema transaction
+            val schemaRes = runCatching {
+                service().createSchema(CreateSchemaRequest(schemaTx)).await()
+            }.getOrElse { e ->
+                throw Exception("Failed to submit schema transaction: ${e.message}", e)
+            }
+            
+            val schemaResponse = runCatching {
+                decodeJson<ProvenanceResponse>(schemaRes)
+            }.getOrElse { e ->
+                throw Exception("Failed to parse createSchema response: ${e.message}", e)
+            }
+            
+            // 4. Check if the response indicates success
+            if (schemaResponse.Status != "success") {
+                throw Exception("Schema creation failed: ${schemaResponse.Message}")
+            }
+            
+            // 5. Mark schema as created in local preferences
+            val walletKey = ProvenanceManager.getKeyPair(account).publicKey.toBase58()
+            ProvenancePrefs.markSchemaCreated(walletKey)
+            
+            return@runCatching schemaResponse
+        }.mapFailure()
+    }
+
     // ── Single image ──────────────────────────────────────────────────────────
 
     /**
@@ -107,22 +265,41 @@ object Provenance {
         manifestOption: ManifestOption = ManifestOption.SidecarFile
     ): Result<ProvenanceResult> = withContext(Dispatchers.IO) {
         try {
-            // 1. Ensure schema
-            val schemaResult = ProvenanceManager.ensureSchema(
+            // 1. Check whether schema needs to be created (SharedPrefs → on-chain RPC fallback)
+            val schemaTxResult = ProvenanceManager.ensureSchema(
                 account    = payload.account,
                 commitment = payload.commitment.name
             )
-            if (schemaResult.isFailure) {
-                val cause = schemaResult.exceptionOrNull()!!
+            if (schemaTxResult.isFailure) {
+                val cause = schemaTxResult.exceptionOrNull()!!
                 if (isNetworkError(cause))
                     return@withContext queueOffline(payload, manifestOption)
                 return@withContext Result.failure(cause)
             }
 
-            // 2. Derive Schema PDA
-            val schemaPda = ProvenanceManager.deriveSchemaAddress(payload.account)
+            // 2. If schema tx was built (schema didn't exist), submit it first and wait
+            val schemaTx = schemaTxResult.getOrNull()
+            if (schemaTx != null) {
+                val schemaRes = runCatching {
+                    service().createSchema(CreateSchemaRequest(schemaTx)).await()
+                }.getOrElse { e ->
+                    if (isNetworkError(e)) return@withContext queueOffline(payload, manifestOption)
+                    return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+                }
+                val schemaResponse = runCatching {
+                    decodeJson<ProvenanceResponse>(schemaRes)
+                }.getOrElse { e ->
+                    return@withContext Result.failure(Exception("Failed to parse createSchema response: ${e.message}", e))
+                }
+                if (schemaResponse.Status != "success")
+                    return@withContext Result.failure(Exception("createSchema failed: ${schemaResponse.Message}"))
+                // Mark schema confirmed after backend success
+                val walletKey = ProvenanceManager.getKeyPair(payload.account).publicKey.toBase58()
+                ProvenancePrefs.markSchemaCreated(walletKey)
+            }
 
-            // 3. Sign attestation tx + build ProvenanceCertificate offline
+            // 3. Derive Schema PDA + sign attestation tx offline
+            val schemaPda   = ProvenanceManager.deriveSchemaAddress(payload.account)
             val attestResult = ProvenanceManager.attest(payload, schemaPda)
             if (attestResult.isFailure) {
                 val cause = attestResult.exceptionOrNull()!!
@@ -130,26 +307,23 @@ object Provenance {
                     return@withContext queueOffline(payload, manifestOption)
                 return@withContext Result.failure(cause)
             }
-
             val attested = attestResult.getOrThrow()
 
-            // 4. Submit
-            val request = ImageHashRequest(
-                signedSchemaTx      = schemaResult.getOrNull(),
-                signedAttestationTx = attested.signedTx
-            )
-            val res      = service().attestImageHash(request).await()
-            val response = decodeJson<ImageHashResponse>(res)
-
-            // 5. Mark schema confirmed ONLY after backend success
-            if (response.Status == "success") {
-                val walletKey = ProvenanceManager.getKeyPair(payload.account).publicKey.toBase58()
-                ProvenancePrefs.markSchemaCreated(walletKey)
+            // 4. Submit attestation tx
+            val attestRes = runCatching {
+                service().attest(AttestRequest(attested.signedTx)).await()
+            }.getOrElse { e ->
+                if (isNetworkError(e)) return@withContext queueOffline(payload, manifestOption)
+                return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+            }
+            val response = runCatching {
+                decodeJson<ProvenanceResponse>(attestRes)
+            }.getOrElse { e ->
+                return@withContext Result.failure(Exception("Failed to parse attest response: ${e.message}", e))
             }
 
-            // 6. Apply chosen manifest option — inject attestationId so the sidecar/embedded
-            //    image contains the Solana PDA, enabling verifyOnChain from the image alone.
-            val manifestWithId   = payload.c2paManifest.copy(attestationId = attested.attestationId)
+            // 5. Apply chosen manifest option — inject attestationId for verifyOnChain
+            val manifestWithId    = payload.c2paManifest.copy(attestationId = attested.attestationId)
             val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
             val (manifestFile, embeddedImageFile) =
                 applyManifestOption(manifestWithId, manifestOption, certificateWithId)
@@ -163,7 +337,6 @@ object Provenance {
                 embeddedImageFile = embeddedImageFile
             ))
         } catch (e: Throwable) {
-            // Any unhandled network error at the backend call stage
             if (isNetworkError(e))
                 return@withContext queueOffline(payload, manifestOption)
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
@@ -225,12 +398,12 @@ object Provenance {
         val first = payloads.first()
 
         // ── 1. Schema — once per wallet ───────────────────────────────────────
-        val schemaResult = ProvenanceManager.ensureSchema(
+        val schemaTxResult = ProvenanceManager.ensureSchema(
             account    = first.account,
             commitment = first.commitment.name
         )
-        if (schemaResult.isFailure) {
-            val cause = schemaResult.exceptionOrNull()!!
+        if (schemaTxResult.isFailure) {
+            val cause = schemaTxResult.exceptionOrNull()!!
             if (isNetworkError(cause)) {
                 // Offline — queue all items locally and return immediately
                 payloads.forEachIndexed { i, p ->
@@ -250,23 +423,54 @@ object Provenance {
                 return@flow
             }
             payloads.forEachIndexed { i, p ->
-                emit(AttestationResult(i, p.name, p.hash,
-                    Result.failure(cause)))
+                emit(AttestationResult(i, p.name, p.hash, Result.failure(cause)))
             }
             return@flow
         }
 
-        // ── 2. Keypair + PDA — once per batch ─────────────────────────────────
-        val keypair   = ProvenanceManager.getKeyPair(first.account)
+        // ── 2. Submit createSchema if the schema didn't exist yet ─────────────
+        val schemaTx = schemaTxResult.getOrNull()
+        val keypair  = ProvenanceManager.getKeyPair(first.account)
         val walletKey = keypair.publicKey.toBase58()
-        val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        var schemaMarked = ProvenancePrefs.isSchemaCreated(walletKey)
+        if (schemaTx != null) {
+            runCatching {
+                val schemaRes = service().createSchema(CreateSchemaRequest(schemaTx)).await()
+                val schemaResponse = runCatching {
+                    decodeJson<ProvenanceResponse>(schemaRes)
+                }.getOrElse { throw Exception("Failed to parse createSchema response: ${it.message}", it) }
+                if (schemaResponse.Status != "success")
+                    error(schemaResponse.Message)
+                ProvenancePrefs.markSchemaCreated(walletKey)
+            }.onFailure { e ->
+                val cause = if (isNetworkError(e)) e else e
+                payloads.forEachIndexed { i, p ->
+                    if (isNetworkError(cause)) {
+                        val offlineResult = runCatching {
+                            val offline = attestOffline(p, manifestOption).getOrThrow()
+                            ProvenanceResult(
+                                manifest          = p.c2paManifest,
+                                certificate       = offline.certificate,
+                                manifestFile      = offline.manifestFile,
+                                embeddedImageFile = offline.embeddedImageFile,
+                                isQueued          = true,
+                                queueId           = offline.queueId
+                            )
+                        }
+                        emit(AttestationResult(i, p.name, p.hash, offlineResult))
+                    } else {
+                        emit(AttestationResult(i, p.name, p.hash, Result.failure(Exception(cause.message, cause))))
+                    }
+                }
+                return@flow
+            }
+        }
 
-        // ── 3. Blockhash — once; refreshed every 30 s ─────────────────────────
+        // ── 3. PDA + blockhash — once per batch ───────────────────────────────
+        val schemaPda          = ProvenanceManager.deriveSchemaAddress(first.account)
         var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment.name)
         var blockhashFetchedAt = System.currentTimeMillis()
 
-        // ── 4. Sequential loop ─────────────────────────────────────────────────
+        // ── 4. Sequential loop — one attest call per image ────────────────────
         payloads.forEachIndexed { index, payload ->
             // Refresh blockhash if older than 30 s to stay well within validity window
             if (System.currentTimeMillis() - blockhashFetchedAt > 30_000L) {
@@ -300,17 +504,10 @@ object Provenance {
                     .attestWithPrefetched(payload, schemaPda, keypair, blockhash)
                     .getOrThrow()
 
-                val request = ImageHashRequest(
-                    signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
-                    signedAttestationTx = attested.signedTx
-                )
-                val res      = service().attestImageHash(request).await()
-                val response = decodeJson<ImageHashResponse>(res)
-
-                if (!schemaMarked && index == 0 && response.Status == "success") {
-                    ProvenancePrefs.markSchemaCreated(walletKey)
-                    schemaMarked = true
-                }
+                val attestRes  = service().attest(AttestRequest(attested.signedTx)).await()
+                val response   = runCatching {
+                    decodeJson<ProvenanceResponse>(attestRes)
+                }.getOrElse { throw Exception("Failed to parse attest response: ${it.message}", it) }
 
                 // Apply chosen manifest option per image — inject attestationId for verifyOnChain
                 val manifestWithId    = payload.c2paManifest.copy(attestationId = attested.attestationId)
@@ -454,14 +651,14 @@ object Provenance {
         val first = pending.first()
 
         // ── Schema — once ──────────────────────────────────────────────────────
-        val schemaResult = ProvenanceManager.ensureSchema(
+        val schemaTxResult = ProvenanceManager.ensureSchema(
             account    = first.account,
             commitment = first.commitment
         )
-        if (schemaResult.isFailure) {
+        if (schemaTxResult.isFailure) {
             pending.forEach { p ->
                 emit(SubmitResult(p.id, p.name, p.hash,
-                    Result.failure(schemaResult.exceptionOrNull()!!)))
+                    Result.failure(schemaTxResult.exceptionOrNull()!!)))
             }
             return@flow
         }
@@ -470,13 +667,30 @@ object Provenance {
         val keypair   = ProvenanceManager.getKeyPair(first.account)
         val walletKey = keypair.publicKey.toBase58()
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        var schemaMarked = ProvenancePrefs.isSchemaCreated(walletKey)
+
+        // ── Submit createSchema if the schema didn't exist yet ─────────────────
+        val schemaTx = schemaTxResult.getOrNull()
+        if (schemaTx != null) {
+            runCatching {
+                val schemaRes      = service().createSchema(CreateSchemaRequest(schemaTx)).await()
+                val schemaResponse = decodeJson<ProvenanceResponse>(schemaRes)
+                if (schemaResponse.Status != "success")
+                    error(schemaResponse.Message)
+                ProvenancePrefs.markSchemaCreated(walletKey)
+            }.onFailure { e ->
+                pending.forEach { p ->
+                    emit(SubmitResult(p.id, p.name, p.hash,
+                        Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))))
+                }
+                return@flow
+            }
+        }
 
         // ── Blockhash — once; refreshed every 30 s ────────────────────────────
         var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment)
         var blockhashFetchedAt = System.currentTimeMillis()
 
-        pending.forEachIndexed { index, entry ->
+        pending.forEach { entry ->
             if (System.currentTimeMillis() - blockhashFetchedAt > 30_000L) {
                 blockhash          = ProvenanceManager.fetchBlockhash(entry.commitment)
                 blockhashFetchedAt = System.currentTimeMillis()
@@ -504,17 +718,10 @@ object Provenance {
                 val (signedTx, attestationId) = ProvenanceManager.buildTx(payload, schemaPda, keypair, blockhash)
                 val certificate = ProvenanceCertificate.fromJson(entry.certificateJson)
 
-                val request = ImageHashRequest(
-                    signedSchemaTx      = if (index == 0) schemaResult.getOrNull() else null,
-                    signedAttestationTx = signedTx
-                )
-                val res      = service().attestImageHash(request).await()
-                val response = decodeJson<ImageHashResponse>(res)
-
-                if (!schemaMarked && index == 0 && response.Status == "success") {
-                    ProvenancePrefs.markSchemaCreated(walletKey)
-                    schemaMarked = true
-                }
+                val attestRes = service().attest(AttestRequest(signedTx)).await()
+                val response  = runCatching {
+                    decodeJson<ProvenanceResponse>(attestRes)
+                }.getOrElse { throw Exception("Failed to parse attest response: ${it.message}", it) }
 
                 // Remove from queue ONLY on success
                 if (response.Status == "success") {
@@ -685,7 +892,34 @@ object Provenance {
     private fun <T> Result<T>.mapFailure(): Result<T> =
         fold(
             onSuccess = { Result.success(it) },
-            onFailure = { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) }
+            onFailure = { e -> 
+                val message = e.message ?: e.javaClass.simpleName
+                val improvedMessage = when {
+                    // Handle "sanitize accounts offsets" error - usually means program doesn't exist
+                    message.contains("sanitize accounts offsets", ignoreCase = true) -> {
+                        val isDevnet = com.altude.core.Programs.AttestationProgram.isDevnet
+                        val networkName = if (isDevnet) "DevNet" else "Mainnet"
+                        val programId = com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()
+                        "The Solana Attestation Service program may not be deployed on $networkName. " +
+                        "Program ID: $programId. " +
+                        "Original error: $message. " +
+                        "If using DevNet, you may need to deploy your own SAS instance or switch to Mainnet."
+                    }
+                    // Handle blockhash errors
+                    message.contains("blockhash not found", ignoreCase = true) -> {
+                        "Transaction blockhash expired. Please try again with a fresh blockhash. Original error: $message"
+                    }
+                    // Handle simulation failures
+                    message.contains("simulation failed", ignoreCase = true) -> {
+                        "Transaction simulation failed. This may indicate: " +
+                        "1) The program is not deployed on this network, " +
+                        "2) Insufficient funds for rent, or " +
+                        "3) Invalid transaction parameters. Original error: $message"
+                    }
+                    else -> message
+                }
+                Result.failure(Exception(improvedMessage, e)) 
+            }
         )
 
     /**

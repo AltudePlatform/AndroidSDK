@@ -7,11 +7,13 @@ import com.altude.core.config.SdkConfig
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.HotSigner
+import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
+import foundation.metaplex.rpc.Commitment
 import org.json.JSONObject
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
@@ -51,12 +53,38 @@ internal object ProvenanceManager {
         } ?: throw IllegalStateException("No seed found in storage")
     }
 
+    /**
+     * Gets the wallet key (Base58 address) for a given account.
+     * If account is empty, uses the default wallet.
+     */
+    suspend fun getWalletKey(account: String = ""): String {
+        return getKeyPair(account).publicKey.toBase58()
+    }
+
     // ── PDA ───────────────────────────────────────────────────────────────────
 
     internal suspend fun deriveSchemaAddress(account: String = ""): PublicKey {
-        val keypair   = getKeyPair(account)
+        val keypair   = getKeyPair(account)  // Normalizes account (empty → default)
         val walletKey = keypair.publicKey.toBase58()
+        // Validate public key and program ID before PDA derivation
+        if (!isValidBase58(walletKey)) {
+            throw IllegalArgumentException("Invalid Base58 public key for wallet: $walletKey")
+        }
+        try {
+            PublicKey(walletKey)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Invalid Base58 public key for wallet: $walletKey", e)
+        }
+        val programId = AttestationProgram.PROGRAM_ID
+        println("[DEBUG] keypair.publicKey: $walletKey")
+        println("[DEBUG] AttestationProgram.PROGRAM_ID: ${programId.toBase58()}")
         return schemaPdaCache.getOrPut(walletKey) {
+            // 1. Check if a predefined schema PDA is stored
+            val predefinedPda = ProvenancePrefs.getSchemaPda(walletKey)
+            if (predefinedPda != null) {
+                return@getOrPut PublicKey(predefinedPda)
+            }
+            // 2. Otherwise derive it normally
             AttestationProgram.deriveSchemaAddress(
                 authority = keypair.publicKey,
                 name      = SCHEMA_NAME
@@ -64,12 +92,35 @@ internal object ProvenanceManager {
         }
     }
 
+    /**
+     * Sets a predefined schema PDA for the wallet.
+     * Use this when you already have a known schema PDA (e.g., from devnet testing or deployment).
+     * This skips the need to create a new schema for the wallet.
+     *
+     * @param schemaPdaBase58 The schema PDA in Base58 format
+     * @param account The wallet account (empty string uses default wallet)
+     */
+    suspend fun setSchemaPda(schemaPdaBase58: String, account: String = "") {
+        val walletKey = getWalletKey(account)  // Normalizes account (empty → default)
+        
+        // Validate it's a valid Base58 public key
+        try {
+            PublicKey(schemaPdaBase58)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Invalid Base58 schema PDA: $schemaPdaBase58", e)
+        }
+        
+        // Store in prefs and cache
+        ProvenancePrefs.setSchemaPda(walletKey, schemaPdaBase58)
+        schemaPdaCache[walletKey] = PublicKey(schemaPdaBase58)
+    }
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     suspend fun ensureSchema(account: String, commitment: String): Result<String?> =
         withContext(Dispatchers.IO) {
             try {
-                val keypair   = getKeyPair(account)
+                val keypair   = getKeyPair(account)  // Normalizes account (empty → default)
                 val walletKey = keypair.publicKey.toBase58()
 
                 // 1. Fast path — SharedPreferences (zero extra RPC calls in normal use)
@@ -79,7 +130,11 @@ internal object ProvenanceManager {
                 // 2. On-chain fallback — handles app reinstall / clear data.
                 //    The PDA is deterministic so we can always derive it without storing it.
                 //    If the account already exists on-chain, restore the flag and skip.
-                val schemaPda = deriveSchemaAddress(account)
+                val schemaPda = runCatching {
+                    deriveSchemaAddress(keypair.publicKey.toBase58())
+                }.getOrElse { e ->
+                    error("Failed to derive schema PDA (check AttestationProgram.PROGRAM_ID is valid Base58): ${e.message}")
+                }
                 val onChainAccount = runCatching {
                     rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
                         schemaPda.toBase58(),
@@ -93,6 +148,12 @@ internal object ProvenanceManager {
                 }
 
                 // 3. Schema does not exist on-chain — build the createSchema instruction
+                println("[DEBUG] Building createSchema instruction...")
+                println("[DEBUG] Authority: ${keypair.publicKey.toBase58()}")
+                println("[DEBUG] FeePayer: ${feePayerPubKey.toBase58()}")
+                println("[DEBUG] Program ID: ${AttestationProgram.PROGRAM_ID.toBase58()}")
+                println("[DEBUG] Is DevNet: ${AttestationProgram.isDevnet}")
+                
                 val instruction = AttestationProgram.createSchema(
                     authority   = keypair.publicKey,
                     feePayer    = feePayerPubKey,
@@ -101,18 +162,36 @@ internal object ProvenanceManager {
                     fieldNames  = listOf("type", "hash", "mime", "name", "timestamp"),
                     isRevocable = true
                 )
+                
+                println("[DEBUG] Instruction accounts:")
+                instruction.keys.forEachIndexed { index, meta ->
+                    println("[DEBUG]   [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
+                }
+                println("[DEBUG] Instruction data length: ${instruction.data.size} bytes")
+                println("[DEBUG] Instruction data (hex): ${instruction.data.joinToString("") { "%02x".format(it) }}")
+                
                 val blockhash = rpc.getLatestBlockhash(commitment = commitment).blockhash
-                val tx = AltudeTransactionBuilder()
+                println("[DEBUG] Blockhash: $blockhash")
+                
+                val tx = AltudeTransactionBuilder(TransactionVersion.Legacy)
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhash)
                     .addInstruction(instruction)
                     .setSigners(listOf(HotSigner(keypair)))
                     .build()
+                val bytearraytx = tx.serialize(SerializeConfig(requireAllSignatures = false))
+                
+                println("[DEBUG] Serialized transaction length: ${bytearraytx.size} bytes")
+                
+                val txString = Base64.encodeToString(
+                    bytearraytx,
+                    Base64.NO_WRAP
+                )
+                
+                println("[DEBUG] Base64 transaction: $txString")
+                
                 Result.success(
-                    Base64.encodeToString(
-                        tx.serialize(SerializeConfig(requireAllSignatures = false)),
-                        Base64.NO_WRAP
-                    )
+                    txString
                 )
             } catch (e: Throwable) {
                 Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
@@ -121,7 +200,7 @@ internal object ProvenanceManager {
 
     suspend fun resetSchema(account: String = "") {
         runCatching {
-            val walletKey = getKeyPair(account).publicKey.toBase58()
+            val walletKey = getWalletKey(account)  // Normalizes account (empty → default)
             ProvenancePrefs.reset(walletKey)
             schemaPdaCache.remove(walletKey)
         }
@@ -160,15 +239,43 @@ internal object ProvenanceManager {
     // ── Network helpers ───────────────────────────────────────────────────────
 
     /**
-     * Fetches a fresh Solana blockhash.
+     * Fetches a fresh Solana blockhash with retry logic.
      * Call ONCE before a batch and share the result — Solana blockhashes are valid
      * for ~150 slots (~90 s). [attestWithPrefetched] refreshes automatically every
      * 30 s when used via [Provenance.attestBatch].
+     * 
+     * Includes retry logic to handle RPC failures and rate limiting.
      */
-    internal suspend fun fetchBlockhash(commitment: String): String =
-        rpc.getLatestBlockhash(commitment = commitment).blockhash
+    internal suspend fun fetchBlockhash(commitment: String): String {
+        var lastException: Exception? = null
+        
+        // Try up to 3 times with exponential backoff
+        repeat(3) { attempt ->
+            try {
+                val result = rpc.getLatestBlockhash(commitment = commitment)
+                return result.blockhash
+            } catch (e: Exception) {
+                lastException = e
+                println("Blockhash fetch attempt ${attempt + 1} failed: ${e.message}")
+                
+                // If this is not the last attempt, wait before retrying
+                if (attempt < 2) {
+                    val delayMs = 500L * (attempt + 1) // 500ms, 1000ms
+                    kotlinx.coroutines.delay(delayMs)
+                }
+            }
+        }
+        
+        // All attempts failed, throw the last exception
+        throw Exception("Failed to fetch blockhash after 3 attempts: ${lastException?.message}", lastException)
+    }
 
     // ── Base58 → ByteArray helper ─────────────────────────────────────────────
+
+    private fun isValidBase58(str: String): Boolean {
+        val alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        return str.all { it in alphabet }
+    }
 
     /**
      * Decodes a Base58-encoded Solana public key to its raw 32-byte array.
@@ -177,6 +284,9 @@ internal object ProvenanceManager {
      */
     private fun decodeBase58(encoded: String): ByteArray {
         val alphabet    = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        if (!isValidBase58(encoded)) {
+            throw IllegalArgumentException("Invalid Base58 string: $encoded")
+        }
         val leadingZeros = encoded.takeWhile { it == '1' }.length
         var bigInt = java.math.BigInteger.ZERO
         for (c in encoded) {

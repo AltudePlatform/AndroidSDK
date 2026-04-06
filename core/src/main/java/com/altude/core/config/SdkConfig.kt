@@ -30,7 +30,7 @@ import kotlin.time.ExperimentalTime
 object SdkConfig {
 
 
-    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:5000/"//
+    private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:54363/"//
     var apiKey: String = ""
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = false
@@ -114,7 +114,54 @@ object SdkConfig {
     fun setNetwork(isDevnet: Boolean){
         this.isDevnet = isDevnet
     }
-
+    
+    /**
+     * Validates that the API configuration is compatible with the requested network.
+     * Helps prevent Address Lookup Table errors by detecting cluster mismatches.
+     */
+    fun validateNetworkConfiguration(): String? {
+        val rpcUrl = apiConfig.RpcUrl.lowercase()
+        val environment = apiConfig.RpcEnvironment.lowercase()
+        
+        if (isDevnet) {
+            // Check if devnet is configured but API points to mainnet
+            if (!rpcUrl.contains("devnet") && (rpcUrl.contains("mainnet") || environment.contains("mainnet"))) {
+                return "ALT Error Risk: API key configured for $environment but SDK set to DevNet. " +
+                       "This will cause Address Lookup Table errors because mainnet ALTs don't exist on DevNet. " +
+                       "Please use a DevNet-configured API key."
+            }
+        } else {
+            // Check if mainnet is configured but API points to devnet
+            if (rpcUrl.contains("devnet") || environment.contains("devnet")) {
+                return "Network Mismatch: API key configured for DevNet but SDK set to mainnet. " +
+                       "Consider using setNetwork(isDevnet = true) or get a mainnet API key."
+            }
+        }
+        
+        return null // Configuration is valid
+    }
+    
+    /**
+     * Gets the expected cluster name based on current configuration
+     */
+    fun getExpectedCluster(): String {
+        return if (isDevnet) "devnet" else "mainnet"
+    }
+    
+    /**
+     * Gets the actual cluster from API configuration
+     */
+    fun getActualCluster(): String {
+        val rpcUrl = apiConfig.RpcUrl.lowercase()
+        val environment = apiConfig.RpcEnvironment.lowercase()
+        
+        return when {
+            rpcUrl.contains("devnet") || environment.contains("devnet") -> "devnet"
+            rpcUrl.contains("mainnet") || environment.contains("mainnet") -> "mainnet"
+            else -> "unknown ($environment)"
+        }
+    }
+    
     //fun setConfig()
 
 

@@ -17,6 +17,7 @@ internal object ProvenancePrefs {
 
     private const val PREFS_NAME    = "altude_provenance"
     private const val SCHEMA_PREFIX = "schema_created_"
+    private const val SCHEMA_PDA_PREFIX = "schema_pda_"
 
     private fun prefs() = StorageService.getContext()
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -36,10 +37,35 @@ internal object ProvenancePrefs {
         prefs().edit { putBoolean("$SCHEMA_PREFIX$walletAddress", true) }
 
     /**
-     * Clears the schema flag for [walletAddress].
+     * Stores a predefined schema PDA for [walletAddress].
+     * Call this with a known schema PDA to skip schema creation entirely.
+     *
+     * @param walletAddress The wallet address
+     * @param schemaPdaBase58 The schema PDA in Base58 format
+     */
+    fun setSchemaPda(walletAddress: String, schemaPdaBase58: String) {
+        prefs().edit {
+            putString("$SCHEMA_PDA_PREFIX$walletAddress", schemaPdaBase58)
+            putBoolean("$SCHEMA_PREFIX$walletAddress", true)  // mark as created too
+        }
+    }
+
+    /**
+     * Retrieves a previously stored schema PDA for [walletAddress].
+     *
+     * @return The schema PDA in Base58 format, or null if not set
+     */
+    fun getSchemaPda(walletAddress: String): String? =
+        prefs().getString("$SCHEMA_PDA_PREFIX$walletAddress", null)
+
+    /**
+     * Clears the schema flag and PDA for [walletAddress].
      * Call on wallet switch or logout via Provenance.resetSession().
      */
     fun reset(walletAddress: String) =
-        prefs().edit { remove("$SCHEMA_PREFIX$walletAddress") }
+        prefs().edit {
+            remove("$SCHEMA_PREFIX$walletAddress")
+            remove("$SCHEMA_PDA_PREFIX$walletAddress")
+        }
 }
 
