@@ -12,9 +12,18 @@ import com.altude.core.data.JsonRpc20Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -204,28 +213,63 @@ class AltudeRpc(val endpoint: String) {
     )
 
     @kotlinx.serialization.Serializable
-    data class RpcContext(val slot: Long)
+    data class RpcContext(
+        val slot: Long,
+        // Present in many RPC responses; optional so older payloads still decode.
+        val apiVersion: String? = null
+    )
 
     // ── Solana account (base64 encoding) ─────────────────────────────────────
+
+    /**
+     * Some Solana RPC fields are u64 and can exceed Kotlin Long.
+     * Example: rentEpoch = 18446744073709551615 (u64::MAX)
+     *
+     * This serializer accepts either a JSON number or string and always returns a String.
+     */
+    object U64AsStringSerializer : KSerializer<String> {
+        override val descriptor: SerialDescriptor =
+            PrimitiveSerialDescriptor("U64AsString", PrimitiveKind.STRING)
+
+        override fun deserialize(decoder: Decoder): String {
+            // Prefer JSON-aware decoding so we can accept numeric primitives.
+            val jsonDecoder = decoder as? JsonDecoder
+            if (jsonDecoder != null) {
+                val element = jsonDecoder.decodeJsonElement() as? JsonPrimitive
+                    ?: return "0"
+                // JsonPrimitive.content works for both numeric and string primitives and avoids Long overflow.
+                return element.content
+            }
+            return runCatching { decoder.decodeString() }.getOrElse { "0" }
+        }
+
+        override fun serialize(encoder: Encoder, value: String) {
+            encoder.encodeString(value)
+        }
+    }
 
     /**
      * Raw account data returned by `getAccountInfo` with `encoding: "base64"`.
      * [data] is a two-element array: [base64EncodedBytes, "base64"].
      */
-    @kotlinx.serialization.Serializable
+    @Serializable
     data class SolanaAccountValue(
         val data:       List<String> = emptyList(),
         val executable: Boolean      = false,
         val lamports:   Long         = 0L,
         val owner:      String       = "",
-        val rentEpoch:  Long         = 0L
+        // Solana RPC returns u64 here; use String to avoid overflow.
+        @Serializable(with = U64AsStringSerializer::class)
+        val rentEpoch:  String       = "0",
+        // Included in base64 getAccountInfo responses.
+        val space:      Int?         = null
     )
 
     /**
      * Top-level `result` wrapper for `getAccountInfo`.
      * Use with `getAccountInfo<SolanaAccountResult>(pubkey, isBase64 = true)`.
      */
-    @kotlinx.serialization.Serializable
+    @Serializable
     data class SolanaAccountResult(
         val context: RpcContext,
         val value:   SolanaAccountValue?
