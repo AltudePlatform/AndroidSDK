@@ -12,6 +12,7 @@ import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ManifestOption
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
+import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -1192,5 +1193,202 @@ class ProvenanceInstrumentedTest {
                     "provenance test [$tag] timestamp=${System.currentTimeMillis()}".toByteArray()
                 )
             }
-}
 
+    /**
+     * Unit test for AttestationProgram.createCredential instruction encoding and account metas.
+     */
+    @Test
+    fun testCreateCredentialInstruction() = runBlocking {
+        // Use real wallet keypair (like other tests)
+        val keypair = ProvenanceManager.getKeyPair()
+        val payer = keypair.publicKey
+        val authority = keypair.publicKey
+        val schema = ProvenanceManager.deriveSchemaAddress()
+        val credentialName = "test-credential"
+        val credential = com.altude.core.Programs.AttestationProgram.deriveCredentialAddress(
+            authority = authority,
+            name = credentialName
+        )
+        val systemProgram = com.altude.core.Programs.Utility.SYSTEM_PROGRAM_ID
+
+        val signers = listOf(authority)
+
+        val ix = com.altude.core.Programs.AttestationProgram.createCredential(
+            payer = payer,
+            credential = credential,
+            authority = authority,
+            systemProgram = systemProgram,
+            name = credentialName,
+            signers = signers
+        )
+
+        // Check program ID
+        assertEquals(com.altude.core.Programs.AttestationProgram.PROGRAM_ID, ix.programId)
+        // Check account metas
+        assertEquals(payer, ix.keys[0].publicKey)
+        assertTrue(ix.keys[0].isSigner && ix.keys[0].isWritable)
+        assertEquals(credential, ix.keys[1].publicKey)
+        assertFalse(ix.keys[1].isSigner)
+        assertTrue(ix.keys[1].isWritable)
+        assertEquals(authority, ix.keys[2].publicKey)
+        assertTrue(ix.keys[2].isSigner)
+        assertFalse(ix.keys[2].isWritable)
+        assertEquals(systemProgram, ix.keys[3].publicKey)
+        assertFalse(ix.keys[3].isSigner)
+        assertFalse(ix.keys[3].isWritable)
+        // Check data encoding
+        val expectedPrefix = byteArrayOf(0)
+        assertTrue(ix.data.copyOfRange(0, 1).contentEquals(expectedPrefix))
+        // Check name encoding (UTF-8, length-prefixed)
+        val nameBytes = credentialName.toByteArray(Charsets.UTF_8)
+        val nameLen = ix.data[1].toInt()
+        assertEquals(nameBytes.size, nameLen)
+        assertTrue(ix.data.copyOfRange(2, 2 + nameLen).contentEquals(nameBytes))
+        // Check signers encoding
+        val numSigners = ix.data[2 + nameLen].toInt()
+        assertEquals(signers.size, numSigners)
+        // Each signer is 32 bytes
+        val signersStart = 2 + nameLen + 1
+        for (i in 0 until numSigners) {
+            val signerBytes = signers[i].toByteArray()
+            val ixBytes = ix.data.copyOfRange(signersStart + i * 32, signersStart + (i + 1) * 32)
+            assertTrue(ixBytes.contentEquals(signerBytes))
+        }
+    }
+
+    /**
+     * End-to-end test for Provenance.createCredential API.
+     * Calls the high-level method and asserts the result.
+     */
+    @Test
+    fun testCreateCredentialEndToEnd() = runBlocking {
+        if (API_KEY.isBlank() || TEST_MNEMONIC.isBlank()) {
+            println("⚠️  Skipped — fill in API_KEY and TEST_MNEMONIC"); return@runBlocking
+        }
+
+        val credentialName = "test-credential-" + System.currentTimeMillis()
+        println("Creating credential with name: $credentialName")
+
+        val result = Provenance.createCredential(
+            name = credentialName,
+            account = "",
+            commitment = "confirmed"
+        )
+
+        result
+            .onSuccess { response ->
+                println("✅ Credential creation succeeded!")
+                println("Status: ${response.Status}")
+                println("Message: ${response.Message}")
+                assertEquals("Expected success status", "success", response.Status)
+                assertNotNull("Response message should not be null", response.Message)
+            }
+            .onFailure { e ->
+                println("❌ Credential creation failed: ${e.message}")
+                fail("Credential creation should succeed: ${e.message}")
+            }
+
+        assertTrue("Credential creation must succeed", result.isSuccess)
+    }
+
+    /**
+     * Creates a credential on-chain and prints the derived credential PDA.
+     * This is a full end-to-end test: it creates the credential, derives the PDA, and prints it for manual use.
+     */
+    @Test
+    fun testCreateCredentialAndPrintPda() = runBlocking {
+        if (API_KEY.isBlank() || TEST_MNEMONIC.isBlank()) {
+            println("⚠️  Skipped — fill in API_KEY and TEST_MNEMONIC"); return@runBlocking
+        }
+        val keypair = ProvenanceManager.getKeyPair()
+        //val payer = keypair.publicKey
+        val feepayer = PublicKey(SdkConfig.apiConfig.FeePayer)
+        //val schema = ProvenanceManager.deriveSchemaAddress()
+        val credentialName = "chen-credential" + System.currentTimeMillis()
+        println("Creating credential with name: $credentialName")
+        val result = Provenance.createCredential(
+            name = credentialName,
+            account = "",
+            commitment = "confirmed"
+        )
+        result
+            .onSuccess { response ->
+                println("✅ Credential creation succeeded!")
+                println("Status: ${response.Status}")
+                println("Message: ${response.Message}")
+                // Derive and print the PDA
+                val credentialPda = com.altude.core.Programs.AttestationProgram.deriveCredentialAddress(
+                    authority = keypair.publicKey,
+                    name = credentialName
+                )
+                val pdaBase58 = credentialPda.toBase58()
+                println("Credential PDA for name '$credentialName': $pdaBase58")
+                assertEquals("PDA must be 44 Base58 chars", 44, pdaBase58.length)
+                assertFalse("PDA must not be blank", pdaBase58.isBlank())
+            }
+            .onFailure { e ->
+                println("❌ Credential creation failed: ${e.message}")
+                fail("Credential creation should succeed: ${e.message}")
+            }
+        assertTrue("Credential creation must succeed", result.isSuccess)
+    }
+
+    /**
+     * Prints Schema PDA + createSchema preview (accounts + data hex) for a known credential PDA.
+     *
+     * You requested to hardcode this credential PDA:
+     *   5cWZLg1oCHwh4rcZJmHFsmGHSgi1PBb1bWpo9D41Y82P
+     */
+    @Test
+    fun testPrintSchemaPdaFromKnownCredentialPda() = runBlocking {
+        if (TEST_MNEMONIC.isBlank()) {
+            println("⚠️  Skipped — fill in TEST_MNEMONIC to run")
+            return@runBlocking
+        }
+
+        val credentialPdaBase58 = "82QXj3ShSfB8hVB4yrjUQ6zgbkKF4UevYicKdwm4dbhq"//5cWZLg1oCHwh4rcZJmHFsmGHSgi1PBb1bWpo9D41Y82P"
+        println("Creating schema using credentialPda: $credentialPdaBase58")
+
+        // Derive schema PDA deterministically from the provided credential PDA.
+        // Seeds (per AttestationProgram):
+        //   ["schema", credentialPda(32 bytes), schemaName(utf8), version(1 byte)]
+        val credentialPda = foundation.metaplex.solanapublickeys.PublicKey(credentialPdaBase58)
+        // Manual schema name (do not depend on ProvenanceManager.SCHEMA_NAME)
+        val schemaName = "image_hash"
+        val schemaVersion = 0
+
+        println("Attestation programId: ${com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()}")
+        println("Schema name: '$schemaName'  version=$schemaVersion")
+        println("Credential PDA (parsed): ${credentialPda.toBase58()}")
+        println("Schema PDA seeds: ['schema', credentialPda, '$schemaName', 0x00]")
+
+        val schemaPda = com.altude.core.Programs.AttestationProgram.deriveSchemaAddress(
+            credential = credentialPda,
+            name = schemaName,
+            version = schemaVersion
+        )
+        println("✅ Derived Schema PDA: ${schemaPda.toBase58()}")
+
+        val result = Provenance.createSchema(
+            account = "",
+            commitment = "confirmed",
+            credentialPda = credentialPdaBase58,
+            schemaName = schemaName
+        )
+
+        result
+            .onSuccess { response ->
+                println("✅ createSchema response")
+                println("Status: ${response.Status}")
+                println("Message: ${response.Message}")
+                println("Signature: ${response.Signature}")
+                println("SchemaId: ${response.SchemaId}")
+            }
+            .onFailure { e ->
+                println("❌ createSchema failed: ${e.message}")
+                fail("createSchema should succeed: ${e.message}")
+            }
+
+        assertTrue("createSchema must succeed", result.isSuccess)
+    }
+}

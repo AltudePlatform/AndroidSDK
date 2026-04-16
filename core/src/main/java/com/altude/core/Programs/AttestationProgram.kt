@@ -3,6 +3,7 @@ package com.altude.core.Programs
 import android.util.Log
 import com.altude.core.Programs.Utility.SYSTEM_PROGRAM_ID
 import com.altude.core.config.SdkConfig
+import com.altude.core.network.AltudeRpc
 import com.solana.publickey.SolanaPublicKey
 import foundation.metaplex.solana.transactions.AccountMeta
 import foundation.metaplex.solana.transactions.TransactionInstruction
@@ -24,9 +25,6 @@ import java.security.MessageDigest
 object AttestationProgram {
 
     private const val TAG = "AttestationProgram"
-    
-    // Solana sysvar addresses
-    val RENT_SYSVAR = PublicKey("SysvarRent111111111111111111111111111111111")
 
     /**
      * On-chain program address for the Solana Attestation Service.
@@ -35,20 +33,17 @@ object AttestationProgram {
     
     private var devnetProgramId: SolanaPublicKey = SolanaPublicKey.from("22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG")
 
-    fun setDevnetProgramId(programIdBase58: String) {
-        devnetProgramId = SolanaPublicKey.from(programIdBase58)
-    }
-
+    /**
+     * Program id selection must be stable even before [SdkConfig.initialize] finishes.
+     *
+     * Prefer the explicit SDK network flag (set via SdkConfig.setNetwork), and fall back
+     * to any hint in the RpcUrl if apiConfig is already populated.
+     */
     val PROGRAM_ID: PublicKey
-        get() = PublicKey(
-            if (SdkConfig.apiConfig.RpcUrl.lowercase().contains("devnet")) 
-                devnetProgramId.base58() 
-            else 
-                MAINNET_PROGRAM_ID.base58()
-        )
-    
+        get() = PublicKey(if (isDevnet) devnetProgramId.base58() else MAINNET_PROGRAM_ID.base58())
+
     val isDevnet: Boolean
-        get() = SdkConfig.apiConfig.RpcUrl.lowercase().contains("devnet")
+        get() = SdkConfig.isDevnet || SdkConfig.apiConfig.RpcUrl.lowercase().contains("devnet")
 
     // ── Anchor discriminators (computed dynamically using SHA256) ─────────────
     
@@ -65,316 +60,609 @@ object AttestationProgram {
         return disc
     }
     
+    // Lazy-computed discriminators
+    var discCreateSchema: ByteArray = ByteArray(8)
+    var discAttest: ByteArray = ByteArray(8)
+
+
     /**
-     * Instruction name variant to use for createSchema.
-     * SAS may use different naming conventions.
-     * 
-     * Change this if you get error 0x0 (discriminator mismatch)
+     * How instruction data is prefixed.
+     *
+     * IMPORTANT:
+     * The deployed Solana Attestation Service program (22zo...) does not expose an Anchor IDL
+     * account on mainnet in practice (IDL PDA missing), and it behaves like a non-Anchor program.
+     * In that case, Anchor 8-byte discriminators will produce "InvalidInstructionData".
      */
-    enum class InstructionVariant(val schemaName: String, val attestName: String, val revokeName: String) {
-        // Standard Anchor snake_case
-        SNAKE_CASE("create_schema", "attest", "revoke"),
-        // CamelCase
-        CAMEL_CASE("createSchema", "attest", "revoke"),
-        // Register variants
-        REGISTER("register", "attest", "revoke"),
-        REGISTER_SCHEMA("register_schema", "create_attestation", "revoke_attestation"),
-        // Initialize variants
-        INIT("init", "attest", "revoke"),
-        INIT_SCHEMA("init_schema", "attest", "revoke"),
-        INITIALIZE("initialize", "attest", "revoke"),
-        INITIALIZE_SCHEMA("initialize_schema", "attest", "revoke"),
-        // Create variants
-        CREATE("create", "attest", "revoke"),
-        // Add variants
-        ADD_SCHEMA("add_schema", "add_attestation", "remove_attestation"),
-        // New variants
-        NEW_SCHEMA("new_schema", "new_attestation", "delete_attestation"),
-    }
-    
-    // Default variant - try SNAKE_CASE first (most common in Anchor)
-    var instructionVariant = InstructionVariant.SNAKE_CASE
-    
-    // Whether to include Rent sysvar in accounts (some programs require it)
-    var includeRentSysvar = true
-    
-    // Lazy-computed discriminators (recomputed when variant changes)
-    private var cachedVariant: InstructionVariant? = null
-    private var discCreateSchema: ByteArray = ByteArray(8)
-    private var discAttest: ByteArray = ByteArray(8)
-    private var discRevoke: ByteArray = ByteArray(8)
-    
-    private fun ensureDiscriminators() {
-        if (cachedVariant != instructionVariant) {
-            discCreateSchema = computeDiscriminator(instructionVariant.schemaName)
-            discAttest = computeDiscriminator(instructionVariant.attestName)
-            discRevoke = computeDiscriminator(instructionVariant.revokeName)
-            cachedVariant = instructionVariant
-            
-            Log.d(TAG, "Using instruction variant: ${instructionVariant.name}")
-            Log.d(TAG, "  ${instructionVariant.schemaName}: ${discCreateSchema.toHexString()}")
-            Log.d(TAG, "  ${instructionVariant.attestName}: ${discAttest.toHexString()}")
-            Log.d(TAG, "  ${instructionVariant.revokeName}: ${discRevoke.toHexString()}")
-        }
+    enum class InstructionPrefixMode {
+        /** Anchor: 8-byte discriminator prefix `sha256("global:<name>")[0..8]` */
+        ANCHOR_DISCRIMINATOR,
+        /** Native enum/tag: 1-byte instruction index (0=createSchema, 1=attest, 2=revoke) */
+        NATIVE_U8_INDEX,
+        /** No prefix at all (rare; for legacy raw-borsh programs) */
+        NONE,
     }
 
     /**
-     * Debug function to print all discriminator variants
+     * Default prefix mode.
+     * For the public SAS program on Mainnet (22zo...) we default to native index.
      */
-    fun printAllDiscriminatorVariants() {
-        Log.d(TAG, "=== All Discriminator Variants ===")
-        for (variant in InstructionVariant.values()) {
-            val disc = computeDiscriminator(variant.schemaName)
-            Log.d(TAG, "  ${variant.name}.${variant.schemaName}: ${disc.toHexString()} [${disc.joinToString(",") { (it.toInt() and 0xFF).toString() }}]")
-        }
+    var instructionPrefixMode: InstructionPrefixMode = InstructionPrefixMode.NATIVE_U8_INDEX
+
+    fun ensureDiscriminators() {
+        if (instructionPrefixMode != InstructionPrefixMode.ANCHOR_DISCRIMINATOR) return
+        // Discriminators are already computed or fetched from chain
+        Log.d(TAG, "Discriminators loaded from chain or defaults")
     }
-    
+
     /**
-     * Try to find the correct instruction variant by testing each one.
-     * Call this before createSchema to iterate through variants.
+     * Fetch the on-chain Anchor IDL for the SAS program and extract the correct
+     * instruction discriminators. Call this once at startup or when an
+     * InvalidInstructionData error is encountered.
+     *
+     * The Anchor IDL is stored at:
+     *   PDA = findProgramAddress(["anchor:idl"], programId)
+     * Account format:
+     *   8  bytes  account discriminator (skip)
+     *   32 bytes  authority (skip)
+     *   4  bytes  data length (u32 LE)
+     *   N  bytes  JSON IDL string
+     *
+     * @return true if discriminators were successfully updated from the IDL.
      */
-    fun nextVariant(): Boolean {
-        val variants = InstructionVariant.values()
-        val currentIndex = variants.indexOf(instructionVariant)
-        return if (currentIndex < variants.size - 1) {
-            instructionVariant = variants[currentIndex + 1]
-            cachedVariant = null // Force recompute
-            Log.d(TAG, "Switching to variant: ${instructionVariant.name} (${instructionVariant.schemaName})")
-            true
-        } else {
-            Log.d(TAG, "No more variants to try")
+    suspend fun fetchDiscriminatorsFromChain(rpcEndpoint: String): Boolean {
+        if (instructionPrefixMode != InstructionPrefixMode.ANCHOR_DISCRIMINATOR) return false
+        return try {
+            val rpc = AltudeRpc(rpcEndpoint)
+
+            // Derive IDL PDA: findProgramAddress(["anchor:idl"], programId)
+            val idlSeed = "anchor:idl".toByteArray(StandardCharsets.UTF_8)
+            val idlPda = PublicKey.findProgramAddress(listOf(idlSeed), PROGRAM_ID).address
+            Log.d(TAG, "Fetching on-chain IDL from PDA: ${idlPda.toBase58()}")
+
+            val accountResult = rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+                idlPda.toBase58(), isBase64 = true
+            )
+            val base64Data = accountResult.value?.data?.firstOrNull() ?: run {
+                Log.w(TAG, "IDL account not found at ${idlPda.toBase58()}")
+                return false
+            }
+
+            val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+            Log.d(TAG, "IDL account data: ${bytes.size} bytes")
+
+            if (bytes.size < 44) {
+                Log.w(TAG, "IDL account too small: ${bytes.size} bytes")
+                return false
+            }
+
+            // Skip 8-byte account discriminator + 32-byte authority = 40 bytes
+            var offset = 40
+            val dataLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            offset += 4
+
+            if (bytes.size < offset + dataLen || dataLen <= 0) {
+                Log.w(TAG, "IDL data length mismatch: dataLen=$dataLen, available=${bytes.size - offset}")
+                return false
+            }
+
+            val idlData = bytes.sliceArray(offset until offset + dataLen)
+            // Try raw UTF-8 JSON first (newer Anchor), fall back to skip 4-byte header
+            val idlJson = tryDecodeIdlJson(idlData) ?: run {
+                Log.w(TAG, "Failed to decode IDL JSON")
+                return false
+            }
+
+            Log.d(TAG, "IDL JSON (first 800 chars): ${idlJson.take(800)}")
+
+            // Extract discriminators from IDL JSON
+            val createSchemaDisc = extractDiscriminatorFromIDL(
+                idlJson, "createSchema", "create_schema", "create", "initialize", "registerSchema"
+            )
+            val attestDisc = extractDiscriminatorFromIDL(
+                idlJson, "attest", "createAttestation", "create_attestation"
+            )
+            val revokeDisc = extractDiscriminatorFromIDL(
+                idlJson, "revokeAttestation", "revoke", "revoke_attestation", "deleteAttestation"
+            )
+
+            if (createSchemaDisc != null) {
+                Log.d(TAG, "✅ On-chain createSchema discriminator: ${createSchemaDisc.toHexString()}")
+            }
+            if (attestDisc != null) {
+                Log.d(TAG, "✅ On-chain attest discriminator: ${attestDisc.toHexString()}")
+            }
+            if (revokeDisc != null) {
+                Log.d(TAG, "✅ On-chain revoke discriminator: ${revokeDisc.toHexString()}")
+            }
+
+
+            createSchemaDisc != null
+
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchDiscriminatorsFromChain failed: ${e.message}")
             false
         }
     }
-    
+
     /**
-     * Reset to the first variant
+     * Try to decode IDL bytes as a JSON string.
+     * Handles:
+     *  - Raw UTF-8 JSON (Anchor 0.30+)
+     *  - 4-byte length-prefixed JSON (some Anchor versions)
      */
-    fun resetVariant() {
-        instructionVariant = InstructionVariant.values().first()
-        cachedVariant = null
+    private fun tryDecodeIdlJson(data: ByteArray): String? {
+        // Try raw UTF-8
+        val raw = runCatching { String(data, StandardCharsets.UTF_8) }.getOrNull()
+        if (raw != null && (raw.trimStart().startsWith("{") || raw.trimStart().startsWith("["))) {
+            return raw
+        }
+        // Try with 4-byte length prefix
+        if (data.size >= 4) {
+            val len = ByteBuffer.wrap(data, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            if (len > 0 && len <= data.size - 4) {
+                val withOffset = runCatching {
+                    String(data, 4, len, StandardCharsets.UTF_8)
+                }.getOrNull()
+                if (withOffset != null && withOffset.trimStart().startsWith("{")) return withOffset
+            }
+        }
+        // Try from offset 8 (skip some header)
+        if (data.size > 8) {
+            val from8 = runCatching { String(data, 8, data.size - 8, StandardCharsets.UTF_8) }.getOrNull()
+            if (from8 != null && from8.trimStart().startsWith("{")) return from8
+        }
+        return null
     }
+
+    /**
+     * Searches IDL JSON for a discriminator array associated with any of the given instruction names.
+     *
+     * Handles both:
+     *  - IDL v2 (explicit `"discriminator":[...]` per instruction)
+     *  - IDL v1 (no discriminator field — falls back to computing from name found in IDL)
+     */
+    private fun extractDiscriminatorFromIDL(idlJson: String, vararg names: String): ByteArray? {
+        // --- Pass 1: IDL v2 — explicit discriminator arrays ---
+        for (name in names) {
+            val namePattern = "\"$name\""
+            var searchFrom = 0
+            while (true) {
+                val nameIdx = idlJson.indexOf(namePattern, searchFrom)
+                if (nameIdx < 0) break
+                searchFrom = nameIdx + 1
+
+                val windowStart = maxOf(0, nameIdx - 100)
+                val windowEnd = minOf(idlJson.length, nameIdx + 600)
+                val window = idlJson.substring(windowStart, windowEnd)
+
+                val discPattern = "\"discriminator\":"
+                val discIdx = window.indexOf(discPattern)
+                if (discIdx < 0) continue
+
+                val arrayStart = window.indexOf('[', discIdx + discPattern.length)
+                val arrayEnd = window.indexOf(']', if (arrayStart >= 0) arrayStart else 0)
+                if (arrayStart < 0 || arrayEnd < 0) continue
+
+                val arrayContent = window.substring(arrayStart + 1, arrayEnd)
+                val bytes = arrayContent.split(',')
+                    .mapNotNull { it.trim().toIntOrNull() }
+                    .map { it.and(0xFF).toByte() }
+                    .toByteArray()
+
+                if (bytes.size == 8) {
+                    Log.d(TAG, "IDL v2: discriminator for '$name': ${bytes.toHexString()}")
+                    return bytes
+                }
+            }
+        }
+
+        // --- Pass 2: IDL v1 — find the actual instruction name, compute discriminator ---
+        // Scan for any instruction name that starts with our known names and compute from it.
+        // The IDL lists instructions under "instructions":[{"name":"createSchema",...}]
+        val instructionsIdx = idlJson.indexOf("\"instructions\"")
+        if (instructionsIdx >= 0) {
+            val instructionsSection = idlJson.substring(instructionsIdx,
+                minOf(idlJson.length, instructionsIdx + 3000))
+            for (name in names) {
+                val namePattern = "\"name\":\"$name\""
+                if (instructionsSection.contains(namePattern)) {
+                    // Convert camelCase IDL name to snake_case for discriminator computation
+                    val snakeName = camelToSnakeCase(name)
+                    val disc = computeDiscriminator(snakeName)
+                    Log.d(TAG, "IDL v1: instruction '$name' (→ '$snakeName') discriminator: ${disc.toHexString()}")
+                    return disc
+                }
+            }
+        }
+
+        return null
+    }
+
+    /** Converts camelCase or PascalCase to snake_case */
+    private fun camelToSnakeCase(name: String): String {
+        return name.fold(StringBuilder()) { acc, c ->
+            if (c.isUpperCase() && acc.isNotEmpty()) acc.append('_').append(c.lowercaseChar())
+            else acc.append(c.lowercaseChar())
+        }.toString()
+    }
+
+    /**
+     * Logs the full on-chain IDL so developers can inspect the exact instruction
+     * names and discriminators used by the deployed program.
+     */
+    suspend fun logOnChainIDL(rpcEndpoint: String) {
+        try {
+            val rpc = AltudeRpc(rpcEndpoint)
+            // If this account doesn't exist, the program is most likely not Anchor.
+            val idlSeed = "anchor:idl".toByteArray(StandardCharsets.UTF_8)
+            val idlPda = PublicKey.findProgramAddress(listOf(idlSeed), PROGRAM_ID).address
+            Log.d(TAG, "IDL PDA: ${idlPda.toBase58()}")
+
+            val accountResult = rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+                idlPda.toBase58(), isBase64 = true
+            )
+            val base64Data = accountResult.value?.data?.firstOrNull() ?: run {
+                Log.w(TAG, "IDL account NOT FOUND. Program may not be an Anchor program.")
+                return
+            }
+
+            val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+            Log.d(TAG, "IDL account raw bytes: ${bytes.size}")
+            Log.d(TAG, "IDL account first 50 hex: ${bytes.take(50).joinToString("") { "%02x".format(it) }}")
+
+            if (bytes.size >= 44) {
+                var offset = 40
+                val dataLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+                offset += 4
+                Log.d(TAG, "IDL data length: $dataLen")
+
+                if (dataLen > 0 && bytes.size >= offset + dataLen) {
+                    val idlData = bytes.sliceArray(offset until offset + dataLen)
+                    val idlJson = tryDecodeIdlJson(idlData)
+                    if (idlJson != null) {
+                        // Log in 1000-char chunks
+                        val chunkSize = 1000
+                        for (i in idlJson.indices step chunkSize) {
+                            Log.d(TAG, "IDL[${i}..${minOf(i + chunkSize, idlJson.length)}]: ${idlJson.substring(i, minOf(i + chunkSize, idlJson.length))}")
+                        }
+                    } else {
+                        Log.w(TAG, "IDL data not parseable as JSON. Raw hex (first 100): ${idlData.take(100).joinToString("") { "%02x".format(it) }}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "logOnChainIDL failed: ${e.message}")
+        }
+    }
+
 
     // ── PDA seeds ─────────────────────────────────────────────────────────────
 
-    /** Derives the Schema PDA: seeds = ["schema", authority, name] */
-    suspend fun deriveSchemaAddress(authority: PublicKey, name: String): PublicKey {
+    /**
+     * Seed helper used by SAS PDAs.
+     *
+     * SAS derives PDAs with name seeds truncated to the first 32 UTF-8 bytes:
+     *   Buffer.from(name, 'utf8').slice(0, 32)
+     */
+    private fun utf8SeedTrunc32(value: String): ByteArray {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        return if (bytes.size <= 32) bytes else bytes.copyOfRange(0, 32)
+    }
+
+    /**
+     * Derives the Credential PDA:
+     * seeds = ["credential", authority, name(utf8 truncated to 32 bytes)]
+     */
+    suspend fun deriveCredentialAddress(
+        authority: PublicKey,
+        name: String
+    ): PublicKey {
         val seeds = listOf(
-            "schema".toByteArray(StandardCharsets.UTF_8),
-            authority.toByteArray(),
-            name.toByteArray(StandardCharsets.UTF_8)
+            "credential".toByteArray(StandardCharsets.UTF_8),
+            authority.publicKeyBytes,
+            utf8SeedTrunc32(name)
         )
         return PublicKey.findProgramAddress(seeds, PROGRAM_ID).address
     }
 
     /**
-     * Derives the Attestation PDA.
-     * seeds = ["attestation", schema, attester, recipient, nonce]
+     * Derives the Schema PDA:
+     * seeds = ["schema", credential, name(utf8 truncated to 32 bytes), version(u8)]
+     */
+    suspend fun deriveSchemaAddress(
+        credential: PublicKey,
+        name: String,
+        version: Int = 0
+    ): PublicKey {
+        val versionByte = byteArrayOf((version and 0xFF).toByte())
+        val seeds = listOf(
+            "schema".toByteArray(StandardCharsets.UTF_8),
+            credential.publicKeyBytes,
+            utf8SeedTrunc32(name),
+            versionByte
+        )
+        return PublicKey.findProgramAddress(seeds, PROGRAM_ID).address
+    }
+
+    /**
+     * Derives the Attestation PDA:
+     * seeds = ["attestation", credential, schema, nonce]
      */
     suspend fun deriveAttestationAddress(
+        credential: PublicKey,
         schema: PublicKey,
-        attester: PublicKey,
-        recipient: PublicKey,
-        nonce: String = ""
+        nonce: PublicKey
     ): PublicKey {
-        val seeds = mutableListOf(
+        val seeds = listOf(
             "attestation".toByteArray(StandardCharsets.UTF_8),
-            schema.toByteArray(),
-            attester.toByteArray(),
-            recipient.toByteArray()
+            credential.publicKeyBytes,
+            schema.publicKeyBytes,
+            nonce.toByteArray()
         )
-        if (nonce.isNotBlank()) seeds += nonce.toByteArray(StandardCharsets.UTF_8)
         return PublicKey.findProgramAddress(seeds, PROGRAM_ID).address
     }
 
     // ── Instruction builders ──────────────────────────────────────────────────
 
     /**
-     * Creates a `createSchema` instruction.
+     * Field definition type for schemas.
+     */
+    enum class FieldType(val value: Int) {
+        STRING(0)
+    }
+
+    /** FieldDefinition: name and type (no values). */
+    data class FieldDefinition(
+        val name: String,
+        val fieldType: FieldType
+    )
+
+    /**
+     * Creates a `createSchema` instruction with string field names.
      *
-     * Accounts (order matches SAS IDL):
-     *   0. schema       [writable] — PDA
-     *   1. authority    [writable, signer] — Schema authority
-     *   2. payer        [writable, signer] — Rent payer (can be same as authority)
-     *   3. systemProgram [read-only]
+     * Schema defines the structure (field names and types), not the actual values.
+     * Actual values are provided later via `createAttestation()`.
+     *
+     * Accounts (per IDL):
+     *   0. payer         (writable, signer) — Rent payer
+     *   1. authority     (signer)           — Schema authority (not writable)
+     *   2. credential    (read-only)        — Credential the Schema is associated with
+     *   3. schema        (writable)         — PDA
+     *   4. systemProgram (read-only)
      */
     suspend fun createSchema(
+        payer: PublicKey,
         authority: PublicKey,
-        feePayer: PublicKey,
+        credential: PublicKey,
+        schema: PublicKey,
         name: String,
         description: String,
         fieldNames: List<String>,
-        isRevocable: Boolean
+        layout: ByteArray? = null
     ): TransactionInstruction {
-        ensureDiscriminators()
-        
-        val schemaPda = deriveSchemaAddress(authority, name)
-
-        Log.d(TAG, "Creating schema instruction:")
-        Log.d(TAG, "  authority: ${authority.toBase58()}")
-        Log.d(TAG, "  feePayer: ${feePayer.toBase58()}")
-        Log.d(TAG, "  schemaPda: ${schemaPda.toBase58()}")
-        Log.d(TAG, "  name: '$name' (${name.length} chars)")
-        Log.d(TAG, "  description: '$description' (${description.length} chars)")
-        Log.d(TAG, "  fieldNames: $fieldNames (${fieldNames.size} fields)")
-        Log.d(TAG, "  isRevocable: $isRevocable")
-        Log.d(TAG, "  programId: ${PROGRAM_ID.toBase58()}")
-
-        val nameBytes = name.toByteArray(StandardCharsets.UTF_8)
-        val descBytes = description.toByteArray(StandardCharsets.UTF_8)
-        val fieldNamesBytes = fieldNames.map { it.toByteArray(StandardCharsets.UTF_8) }
-
-        // Build instruction data using ByteArrayOutputStream for reliable concatenation
-        val baos = ByteArrayOutputStream()
-        
-        // 1. Discriminator (8 bytes)
-        baos.write(discCreateSchema)
-        
-        // 2. Name string (4-byte length + UTF-8 bytes)
-        baos.write(encodeU32(nameBytes.size))
-        baos.write(nameBytes)
-        
-        // 3. Description string (4-byte length + UTF-8 bytes)
-        baos.write(encodeU32(descBytes.size))
-        baos.write(descBytes)
-        
-        // 4. Field names Vec<String> (4-byte count + each string)
-        baos.write(encodeU32(fieldNamesBytes.size))
-        for (fb in fieldNamesBytes) {
-            baos.write(encodeU32(fb.size))
-            baos.write(fb)
-        }
-        
-        // 5. Is revocable (1 byte bool)
-        baos.write(if (isRevocable) 1 else 0)
-        
-        val data = baos.toByteArray()
-        
-        Log.d(TAG, "Instruction data length: ${data.size} bytes")
-        Log.d(TAG, "First 8 bytes (discriminator): ${data.sliceArray(0 until 8).toHexString()}")
-        Log.d(TAG, "Full instruction data hex: ${data.toHexString()}")
-
-        // Build accounts list - include Rent sysvar if configured
-        val accountsList = mutableListOf(
-            AccountMeta(schemaPda,         isSigner = false, isWritable = true),
-            AccountMeta(authority,         isSigner = true,  isWritable = true)
-        )
-        
-        // Add feePayer separately if different from authority
-        if (authority.toBase58() != feePayer.toBase58()) {
-            accountsList.add(AccountMeta(feePayer, isSigner = true, isWritable = true))
-        }
-        
-        // Add system program
-        accountsList.add(AccountMeta(SYSTEM_PROGRAM_ID, isSigner = false, isWritable = false))
-        
-        // Optionally add Rent sysvar (some Anchor programs require it)
-        if (includeRentSysvar) {
-            accountsList.add(AccountMeta(RENT_SYSVAR, isSigner = false, isWritable = false))
-        }
-        
-        val accounts = accountsList.toList()
-        
-        Log.d(TAG, "Accounts (${accounts.size}):")
-        accounts.forEachIndexed { i, acc ->
-            Log.d(TAG, "  [$i] ${acc.publicKey.toBase58()} signer=${acc.isSigner} writable=${acc.isWritable}")
-        }
-        
-        return TransactionInstruction(programId = PROGRAM_ID, keys = accounts, data = data)
+        // If no layout provided, default to all STRING (0x00) field types
+        val actualLayout = layout ?: ByteArray(fieldNames.size) { FieldType.STRING.value.toByte() }
+        return createSchemaWithFields(payer, authority, credential, schema, name, description, actualLayout, fieldNames)
     }
 
     /**
-     * Creates an `attest` instruction.
+     * Creates a `createSchema` instruction with typed field definitions.
+     */
+    suspend fun createSchemaWithFields(
+        payer: PublicKey,
+        authority: PublicKey,
+        credential: PublicKey,
+        schema: PublicKey,
+        name: String,
+        description: String,
+        layout: ByteArray,
+        fieldNames: List<String>,
+        systemProgram: PublicKey = SYSTEM_PROGRAM_ID
+    ): TransactionInstruction {
+        ensureDiscriminators()
+        val data = encodeCreateSchema(name, description, layout, fieldNames)
+        Log.d(TAG, "Encoded schema (hex): ${data.toHexString()}")
+
+        val accountsList = listOf(
+            AccountMeta(payer, isSigner = true, isWritable = true),
+            AccountMeta(authority, isSigner = true, isWritable = false),
+            AccountMeta(credential, isSigner = false, isWritable = false),
+            AccountMeta(schema, isSigner = false, isWritable = true),
+            AccountMeta(systemProgram, isSigner = false, isWritable = false)
+        )
+
+        return TransactionInstruction(
+            programId = PROGRAM_ID,
+            keys = accountsList,
+            data = data
+        )
+    }
+
+
+    /**
+     * Encodes createSchema instruction data per IDL:
+     *   [1 byte: discriminant=1] + [String: name] + [String: description] + [bytes: layout] + [Vec<String>: fieldNames]
+     */
+    private fun encodeCreateSchema(
+        name: String,
+        description: String,
+        layout: ByteArray,
+        fieldNames: List<String>
+    ): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(1)) // discriminant = 1 for CreateSchema (per IDL)
+        writeString(out, name)
+        writeString(out, description)
+        writeBytes(out, layout)
+        writeU32(out, fieldNames.size)
+        for (fn in fieldNames) {
+            writeString(out, fn)
+        }
+        return out.toByteArray()
+    }
+
+    /**
+     * Data class for createCredential instruction arguments.
+     */
+    data class CreateCredentialArgs(
+        val name: String,
+        val signers: List<PublicKey>
+    )
+
+    /**
+     * Builds a createCredential instruction.
      *
      * Accounts:
-     *   0. attestation  [writable] — PDA
-     *   1. schema       [read-only] — Schema PDA (must exist!)
-     *   2. attester     [writable, signer]
-     *   3. recipient    [read-only]
-     *   4. payer        [writable, signer]
-     *   5. systemProgram
+     *   0. payer        (writable, signer)
+     *   1. credential   (writable)
+     *   2. authority    (signer)
+     *   3. systemProgram (readonly)
+     *
+     * Data:
+     *   [1 byte: instruction_id=0] + [String: name] + [Vec<Pubkey>: signers]
      */
-    suspend fun createAttestation(
-        attester: PublicKey,
-        feePayer: PublicKey,
-        schemaPda: PublicKey,
-        recipient: PublicKey,
-        attestationData: ByteArray,
-        expireAt: Long = 0L,
-        nonce: String = ""
-    ): TransactionInstruction {
-        ensureDiscriminators()
-        
-        val attestationPda = deriveAttestationAddress(schemaPda, attester, recipient, nonce)
-
-        Log.d(TAG, "Creating attestation instruction:")
-        Log.d(TAG, "  attester: ${attester.toBase58()}")
-        Log.d(TAG, "  schemaPda: ${schemaPda.toBase58()}")
-        Log.d(TAG, "  recipient: ${recipient.toBase58()}")
-        Log.d(TAG, "  attestationPda: ${attestationPda.toBase58()}")
-        Log.d(TAG, "  attestationData length: ${attestationData.size}")
-        Log.d(TAG, "  expireAt: $expireAt")
-        Log.d(TAG, "  nonce: '$nonce'")
-
-        val nonceBytes = nonce.toByteArray(StandardCharsets.UTF_8)
-        
-        // Build instruction data using ByteArrayOutputStream
-        val baos = ByteArrayOutputStream()
-        
-        // 1. Discriminator (8 bytes)
-        baos.write(discAttest)
-        
-        // 2. Attestation data Vec<u8> (4-byte length + bytes)
-        baos.write(encodeU32(attestationData.size))
-        baos.write(attestationData)
-        
-        // 3. Expire at (i64, 8 bytes)
-        baos.write(encodeI64(expireAt))
-        
-        // 4. Nonce string (4-byte length + UTF-8 bytes)
-        baos.write(encodeU32(nonceBytes.size))
-        baos.write(nonceBytes)
-        
-        val data = baos.toByteArray()
-
-        Log.d(TAG, "Attestation instruction data length: ${data.size}")
-        Log.d(TAG, "First 8 bytes (discriminator): ${data.sliceArray(0 until 8).toHexString()}")
-
-        val accounts = listOf(
-            AccountMeta(attestationPda,    isSigner = false, isWritable = true),
-            AccountMeta(schemaPda,         isSigner = false, isWritable = false),
-            AccountMeta(attester,          isSigner = true,  isWritable = true),
-            AccountMeta(recipient,         isSigner = false, isWritable = false),
-            AccountMeta(feePayer,          isSigner = true,  isWritable = true),
-            AccountMeta(SYSTEM_PROGRAM_ID, isSigner = false, isWritable = false)
-        )
-        
-        return TransactionInstruction(programId = PROGRAM_ID, keys = accounts, data = data)
-    }
-
-    /**
-     * Creates a `revoke` instruction.
-     */
-    fun revokeAttestation(
+    fun createCredential(
+        payer: PublicKey,
+        credential: PublicKey,
         authority: PublicKey,
-        feePayer: PublicKey,
-        attestationPda: PublicKey,
-        schemaPda: PublicKey
+        systemProgram: PublicKey = SYSTEM_PROGRAM_ID,
+        name: String,
+        signers: List<PublicKey>
     ): TransactionInstruction {
-        ensureDiscriminators()
-        
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(0)) // instruction_id = 0 for createCredential
+        writeString(out, name)
+        writeU32(out, signers.size)
+        for (pk in signers) {
+            out.write(pk.publicKeyBytes)
+        }
+        val data = out.toByteArray()
         val accounts = listOf(
-            AccountMeta(attestationPda,    isSigner = false, isWritable = true),
-            AccountMeta(schemaPda,         isSigner = false, isWritable = false),
-            AccountMeta(authority,         isSigner = true,  isWritable = true),
-            AccountMeta(feePayer,          isSigner = true,  isWritable = true),
-            AccountMeta(SYSTEM_PROGRAM_ID, isSigner = false, isWritable = false)
+            AccountMeta(payer, isSigner = true, isWritable = true),
+            AccountMeta(credential, isSigner = false, isWritable = true),
+            AccountMeta(authority, isSigner = true, isWritable = false),
+            AccountMeta(systemProgram, isSigner = false, isWritable = false)
         )
         return TransactionInstruction(
             programId = PROGRAM_ID,
             keys = accounts,
-            data = discRevoke
+            data = data
         )
+    }
+
+    /**
+     * Builds a createAttestation instruction matching the Rust program.
+     *
+     * Accounts:
+     *   0. payer        (writable, signer)
+     *   1. authority    (signer)
+     *   2. credential   (readonly)
+     *   3. schema       (readonly)
+     *   4. attestation  (writable)
+     *   5. systemProgram (readonly)
+     *
+     * Data:
+     *   [1 byte: discriminator=6] + [Pubkey: nonce] + [Vec<u8>: data] + [i64: expiry]
+     */
+    fun createAttestation(
+        payer: PublicKey,
+        authority: PublicKey,
+        credential: PublicKey,
+        schema: PublicKey,
+        attestation: PublicKey,
+        systemProgram: PublicKey = SYSTEM_PROGRAM_ID,
+        nonce: PublicKey,
+        data: ByteArray,
+        expiry: Long
+    ): TransactionInstruction {
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(6)) // discriminator for CreateAttestation
+        out.write(nonce.toByteArray())
+        out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(data.size).array())
+        out.write(data)
+        out.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(expiry).array())
+        val accounts = listOf(
+            AccountMeta(payer, isSigner = true, isWritable = true),
+            AccountMeta(authority, isSigner = true, isWritable = false),
+            AccountMeta(credential, isSigner = false, isWritable = false),
+            AccountMeta(schema, isSigner = false, isWritable = false),
+            AccountMeta(attestation, isSigner = false, isWritable = true),
+            AccountMeta(systemProgram, isSigner = false, isWritable = false)
+        )
+        return TransactionInstruction(
+            programId = PROGRAM_ID,
+            keys = accounts,
+            data = out.toByteArray()
+        )
+    }
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    private fun writeString(out: ByteArrayOutputStream, value: String) {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        writeU32(out, bytes.size)
+        out.write(bytes)
+    }
+
+    private fun writeU32(out: ByteArrayOutputStream, value: Int) {
+        val b = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array()
+        out.write(b)
+    }
+
+    private fun writeBytes(out: ByteArrayOutputStream, value: ByteArray) {
+        writeU32(out, value.size)
+        out.write(value)
+    }
+
+    /**
+     * Creates a `createAttestation` instruction with automatic attestation PDA derivation.
+     * Delegates to the non-suspend [createAttestation] which matches the IDL.
+     *
+     * Accounts (per IDL, discriminant=6):
+     *   0. payer        (writable, signer)
+     *   1. authority    (signer)        — Authorized signer of the Schema's Credential
+     *   2. credential   (readonly)      — Credential the Schema is associated with
+     *   3. schema       (readonly)      — Schema the Attestation is associated with
+     *   4. attestation  (writable)      — Derived PDA
+     *   5. systemProgram (readonly)
+     *
+     * Data:
+     *   [1 byte: discriminant=6] + [Pubkey: nonce] + [Vec<u8>: data] + [i64: expiry]
+     *
+     * @return Pair of (TransactionInstruction, attestation PDA PublicKey)
+     */
+    suspend fun buildCreateAttestationIx(
+        payer: PublicKey,
+        authority: PublicKey,
+        credential: PublicKey,
+        schemaPda: PublicKey,
+        nonce: PublicKey,
+        attestationData: ByteArray,
+        expireAt: Long = 0L
+    ): Pair<TransactionInstruction, PublicKey> {
+        val attestationPda = deriveAttestationAddress(credential, schemaPda, nonce)
+
+        Log.d(TAG, "Creating attestation instruction (IDL-conformant):")
+        Log.d(TAG, "  payer: ${payer.toBase58()}")
+        Log.d(TAG, "  authority: ${authority.toBase58()}")
+        Log.d(TAG, "  credential: ${credential.toBase58()}")
+        Log.d(TAG, "  schemaPda: ${schemaPda.toBase58()}")
+        Log.d(TAG, "  attestationPda: ${attestationPda.toBase58()}")
+        Log.d(TAG, "  nonce: ${nonce.toBase58()}")
+        Log.d(TAG, "  attestationData length: ${attestationData.size}")
+        Log.d(TAG, "  expireAt: $expireAt")
+
+        val ix = createAttestation(
+            payer = payer,
+            authority = authority,
+            credential = credential,
+            schema = schemaPda,
+            attestation = attestationPda,
+            nonce = nonce,
+            data = attestationData,
+            expiry = expireAt
+        )
+        return Pair(ix, attestationPda)
     }
 
     // ── Encoding helpers ──────────────────────────────────────────────────────
@@ -420,6 +708,71 @@ object AttestationProgram {
             payloadJson = payloadJson,
             expireAt = expireAt,
             createdAt = createdAt
+        )
+    }
+
+    data class CredentialAccountData(
+        val authority: PublicKey,
+        val name: String,
+        val authorizedSigners: List<PublicKey>
+    )
+
+    /**
+     * Parses SAS Credential account data.
+     *
+     * Observed layout on devnet:
+     *   u8   kind/tag (0)
+     *   [32] authority pubkey
+     *   u32  name length (LE)
+     *   [N]  name UTF-8 bytes
+     *   u32  authorizedSigners length (LE)
+     *   [32]*signers
+     */
+    fun parseCredentialData(base64AccountData: String): CredentialAccountData {
+        val bytes = android.util.Base64.decode(base64AccountData, android.util.Base64.DEFAULT)
+        if (bytes.size < 1 + 32 + 4 + 4) {
+            throw IllegalArgumentException("Credential account data too small: ${bytes.size} bytes")
+        }
+
+        var offset = 0
+        /* val kind = */ offset += 1
+
+        val authorityBytes = bytes.sliceArray(offset until offset + 32)
+        val authority = PublicKey(authorityBytes)
+        offset += 32
+
+        val nameLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        offset += 4
+        if (nameLen < 0 || offset + nameLen > bytes.size) {
+            throw IllegalArgumentException("Invalid credential nameLen=$nameLen for dataLen=${bytes.size}")
+        }
+        val name = String(bytes, offset, nameLen, StandardCharsets.UTF_8)
+        offset += nameLen
+
+        if (offset + 4 > bytes.size) {
+            throw IllegalArgumentException("Credential data truncated before signers length")
+        }
+        val signersLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        offset += 4
+        if (signersLen < 0) {
+            throw IllegalArgumentException("Invalid credential signersLen=$signersLen")
+        }
+        if (offset + (signersLen * 32) > bytes.size) {
+            throw IllegalArgumentException("Credential data truncated: signersLen=$signersLen requires ${signersLen * 32} bytes, remaining=${bytes.size - offset}")
+        }
+
+        val signers = buildList(signersLen) {
+            repeat(signersLen) {
+                val pkBytes = bytes.sliceArray(offset until offset + 32)
+                add(PublicKey(pkBytes))
+                offset += 32
+            }
+        }
+
+        return CredentialAccountData(
+            authority = authority,
+            name = name,
+            authorizedSigners = signers
         )
     }
 }

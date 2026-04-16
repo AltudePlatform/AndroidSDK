@@ -34,6 +34,13 @@ interface ProvenanceService {
     fun attest(
         @Body body: AttestRequest
     ): Call<JsonElement>
+
+    /**
+     * Broadcasts the signed `createCredential` transaction.
+     * Called when creating a credential account on-chain.
+     */
+    @POST("api/provenance/createCredential")
+    fun createCredential(
+        @Body body: com.altude.provenance.data.CreateCredentialRequest
+    ): Call<JsonElement>
 }
-
-

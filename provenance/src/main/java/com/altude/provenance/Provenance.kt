@@ -1,6 +1,10 @@
 package com.altude.provenance
 
 import com.altude.core.config.SdkConfig
+import com.altude.core.Programs.AttestationProgram
+import com.altude.core.Programs.Utility
+import com.altude.core.data.SolanaKeypair
+import com.altude.core.model.HotSigner
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.AttestRequest
 import com.altude.provenance.data.AttestationResult
@@ -123,7 +127,7 @@ object Provenance {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             ProvenanceManager.setSchemaPda(schemaPdaBase58, account)
-        }.mapCatching { Unit }
+        }
     }
 
     /**
@@ -199,12 +203,23 @@ object Provenance {
      */
     suspend fun createSchema(
         account: String = "",
-        commitment: String = "confirmed"
+        commitment: String = "confirmed",
+        credentialPda: String? = null,
+        schemaName: String = ProvenanceManager.SCHEMA_NAME
     ): Result<ProvenanceResponse> = withContext(Dispatchers.IO) {
         runCatching {
             // 1. Check if schema needs to be created
-            val schemaTxResult = ProvenanceManager.ensureSchema(account, commitment)
-            
+            val schemaTxResult = if (credentialPda.isNullOrBlank()) {
+                ProvenanceManager.ensureSchema(account, commitment)
+            } else {
+                ProvenanceManager.ensureSchemaForCredentialPdaInternal(
+                    account = account,
+                    commitment = commitment,
+                    credentialPdaBase58 = credentialPda,
+                    schemaName = schemaName
+                )
+            }
+
             if (schemaTxResult.isFailure) {
                 throw schemaTxResult.exceptionOrNull()!!
             }
@@ -219,29 +234,64 @@ object Provenance {
                 )
             }
             
-            // 3. Submit the schema transaction
-            val schemaRes = runCatching {
-                service().createSchema(CreateSchemaRequest(schemaTx)).await()
-            }.getOrElse { e ->
-                throw Exception("Failed to submit schema transaction: ${e.message}", e)
-            }
-            
+            // 3. Submit the schema transaction directly
+            val schemaRes = service().createSchema(CreateSchemaRequest(schemaTx)).await()
             val schemaResponse = runCatching {
                 decodeJson<ProvenanceResponse>(schemaRes)
             }.getOrElse { e ->
                 throw Exception("Failed to parse createSchema response: ${e.message}", e)
             }
-            
-            // 4. Check if the response indicates success
+
             if (schemaResponse.Status != "success") {
                 throw Exception("Schema creation failed: ${schemaResponse.Message}")
             }
-            
-            // 5. Mark schema as created in local preferences
+
+            // 4. Mark schema as created in preferences
             val walletKey = ProvenanceManager.getKeyPair(account).publicKey.toBase58()
             ProvenancePrefs.markSchemaCreated(walletKey)
-            
-            return@runCatching schemaResponse
+
+            schemaResponse
+        }.mapFailure()
+    }
+
+    /**
+     * Creates a credential on-chain for the given account and schema.
+     *
+     * @param name The credential name (string, e.g. "test-credential").
+     * @param account Optional wallet account (uses default if empty)
+     * @param commitment Transaction commitment level (default: "confirmed")
+     * @return Result containing the credential creation response, or an error if the operation failed
+     *
+     * Example:
+     * ```kotlin
+     * val result = Provenance.createCredential(name = "test-credential")
+     * if (result.isSuccess) {
+     *     val response = result.getOrThrow()
+     *     println("Credential created: ${response.Status}")
+     * } else {
+     *     println("Failed to create credential: ${result.exceptionOrNull()?.message}")
+     * }
+     * ```
+     */
+    suspend fun createCredential(
+        name: String,
+        account: String = "",
+        commitment: String = "confirmed"
+    ): Result<ProvenanceResponse> = withContext(Dispatchers.IO) {
+        runCatching {
+            // Build and sign the credential transaction using ProvenanceManager
+            val signedTx = ProvenanceManager.buildCredentialTx(name, account, commitment)
+            // Submit transaction to backend using the correct endpoint
+            val res = service().createCredential(
+                com.altude.provenance.data.CreateCredentialRequest(signedTx)
+            ).await()
+            val response = runCatching {
+                decodeJson<ProvenanceResponse>(res)
+            }.getOrElse { e ->
+                throw Exception("Failed to parse createCredential response: ${e.message}", e)
+            }
+
+            response
         }.mapFailure()
     }
 

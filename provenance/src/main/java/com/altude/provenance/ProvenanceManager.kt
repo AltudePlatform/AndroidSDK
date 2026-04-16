@@ -1,7 +1,9 @@
 package com.altude.provenance
+import com.altude.core.Programs.Utility
 
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import com.altude.core.Programs.AttestationProgram
 import com.altude.core.config.SdkConfig
 import com.altude.core.helper.Mnemonic
@@ -13,7 +15,7 @@ import com.altude.core.service.StorageService
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
-import foundation.metaplex.rpc.Commitment
+import foundation.metaplex.rpc.RPC
 import org.json.JSONObject
 import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solanaeddsa.Keypair
@@ -35,8 +37,51 @@ import kotlinx.coroutines.withContext
  * - [attest]           — convenience wrapper for single-image attestation
  */
 internal object ProvenanceManager {
+    /**
+     * Builds and signs a createCredential transaction for the given account and schema.
+     * Returns the base64-encoded signed transaction.
+     */
+    @JvmStatic
+    suspend fun buildCredentialTx(
+        name: String,
+        account: String = "",
+        commitment: String = "confirmed"
+    ): String = withContext(Dispatchers.IO) {
+        val keypair = ProvenanceManager.getKeyPair(account)
+        val payer = feePayerPubKey
+        val authority = keypair.publicKey
+        // Derive credential PDA from authority + credential name (credential name == instruction arg 'name')
+        val credential = AttestationProgram.deriveCredentialAddress(
+            authority = authority,
+            name = name
+        )
+        println("credential created: " + credential.toBase58())
+        val systemProgram = Utility.SYSTEM_PROGRAM_ID
+        val signers = listOf(feePayerPubKey, authority)
+        val ix = AttestationProgram.createCredential(
+            payer = feePayerPubKey,
+            credential = credential,
+            authority = authority,
+            systemProgram = systemProgram,
+            name = name,
+            signers = signers
+        )
+        val authorizedSignature = HotSigner(
+            com.altude.core.data.SolanaKeypair(keypair.publicKey, keypair.secretKey)
+        )//"http://10.0.2.2:8899"
+        val blockhash = RPC(SdkConfig.apiConfig.RpcUrl).getLatestBlockhash(null).blockhash //rpc.getLatestBlockhash(commitment = commitment).blockhash
+        val txBuilder = AltudeTransactionBuilder(TransactionVersion.Legacy)
+            .addInstruction(ix)
+            .setRecentBlockHash(blockhash)
+            .setFeePayer(payer)
+            .setSigners(listOf(authorizedSignature))
+        val tx = txBuilder.build()
+        Base64.encodeToString(tx.serialize(SerializeConfig(requireAllSignatures = false)), Base64.NO_WRAP)
+    }
 
     const val SCHEMA_NAME = "image_hash"
+    // Credential name used by this app for the credential PDA seed. Keep consistent across creation and lookups.
+    const val CREDENTIAL_NAME = "image_hash_credential"
 
     private val schemaPdaCache = mutableMapOf<String, PublicKey>()
     private val rpc            get() = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
@@ -85,10 +130,11 @@ internal object ProvenanceManager {
                 return@getOrPut PublicKey(predefinedPda)
             }
             // 2. Otherwise derive it normally
-            AttestationProgram.deriveSchemaAddress(
-                authority = keypair.publicKey,
-                name      = SCHEMA_NAME
-            )
+            // Derive credential PDA first (authority + credential name), then derive schema from that credential
+            run {
+                val credentialPda = AttestationProgram.deriveCredentialAddress(authority = keypair.publicKey, name = CREDENTIAL_NAME)
+                AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = SCHEMA_NAME, version = 0)
+            }
         }
     }
 
@@ -116,6 +162,131 @@ internal object ProvenanceManager {
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
+
+    /**
+     * Ensures schema exists for a provided credential PDA.
+     *
+     * This is used when the backend (or external system) dictates the credential PDA,
+     * and the client needs to create the associated schema account deterministically.
+     *
+     * @return base64 signed createSchema transaction, or null if schema already exists on-chain.
+     */
+    internal suspend fun ensureSchemaForCredentialPdaInternal(
+        account: String,
+        commitment: String,
+        credentialPdaBase58: String,
+        schemaName: String = SCHEMA_NAME
+    ): Result<String?> = withContext(Dispatchers.IO) {
+        try {
+            val keypair = getKeyPair(account)
+            val walletKey = keypair.publicKey.toBase58()
+
+            val credentialPda = try {
+                PublicKey(credentialPdaBase58)
+            } catch (e: Exception) {
+                throw IllegalArgumentException("Invalid credentialPda base58: $credentialPdaBase58", e)
+            }
+
+            // ── Validate credential account on-chain BEFORE attempting schema creation ──
+            val credentialAccountInfo = runCatching {
+                rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+                    credentialPda.toBase58(),
+                    isBase64 = true
+                )
+            }.getOrNull()
+
+            val credentialValue = credentialAccountInfo?.value
+                ?: throw IllegalStateException(
+                    "Credential account does not exist on-chain: ${credentialPda.toBase58()}"
+                )
+
+            val owner = credentialValue.owner
+            val expectedOwner = AttestationProgram.PROGRAM_ID.toBase58()
+            if (owner != expectedOwner) {
+                throw IllegalStateException(
+                    "Credential account owner mismatch. expected=$expectedOwner actual=$owner credential=${credentialPda.toBase58()}"
+                )
+            }
+
+            val base64Data = credentialValue.data?.firstOrNull()
+                ?: throw IllegalStateException("Credential account missing data")
+
+            val parsedCredential = AttestationProgram.parseCredentialData(base64Data)
+            Log.d("CreateSchema", "Parsed credential: authority=${parsedCredential.authority.toBase58()} name='${parsedCredential.name}' signers=${parsedCredential.authorizedSigners.size}")
+
+            // The schema authority must match the credential authority.
+            if (parsedCredential.authority != keypair.publicKey) {
+                throw IllegalStateException(
+                    "Credential authority mismatch. credentialAuthority=${parsedCredential.authority.toBase58()} walletAuthority=${keypair.publicKey.toBase58()}"
+                )
+            }
+
+            // Payer must be an authorized signer for the Credential (common SAS constraint).
+            if (parsedCredential.authorizedSigners.none { it == feePayerPubKey }) {
+                throw IllegalStateException(
+                    "Fee payer is not an authorized signer of this credential. feePayer=${feePayerPubKey.toBase58()} credentialSigners=${parsedCredential.authorizedSigners.joinToString { it.toBase58() }}"
+                )
+            }
+
+            // Make sure the credential PDA provided actually matches the PDA derived from (authority, name).
+            val expectedCredentialPda = AttestationProgram.deriveCredentialAddress(
+                authority = parsedCredential.authority,
+                name = parsedCredential.name
+            )
+            if (expectedCredentialPda != credentialPda) {
+                throw IllegalStateException(
+                    "Credential PDA mismatch (seed derivation). expected=${expectedCredentialPda.toBase58()} provided=${credentialPda.toBase58()} authority=${parsedCredential.authority.toBase58()} name='${parsedCredential.name}'"
+                )
+            }
+
+            // Derive schema PDA from the provided credential.
+            val schemaPda = AttestationProgram.deriveSchemaAddress(
+                credential = credentialPda,
+                name = schemaName,
+                version = 0
+            )
+            Log.d("CreateSchema", "Schema PDA: ${schemaPda.toBase58()}")
+
+            // On-chain check: if schema account exists, restore flag + return null
+            val onChainAccount = runCatching {
+                rpc.getAccountInfo<AltudeRpc.SolanaAccountResult>(
+                    schemaPda.toBase58(),
+                    isBase64 = true
+                )
+            }.getOrNull()
+
+            if (onChainAccount?.value != null) {
+                ProvenancePrefs.markSchemaCreated(walletKey)
+                return@withContext Result.success(null)
+            }
+
+            // Build createSchema instruction.
+            val instruction = AttestationProgram.createSchema(
+                payer = feePayerPubKey,
+                authority = keypair.publicKey,
+                credential = credentialPda,
+                schema = schemaPda,
+                name = schemaName,
+                description = "Stores SHA-256 hash of images",
+                fieldNames = listOf("type", "hash", "mime", "name", "timestamp")
+            )
+
+            val blockhash = RPC(SdkConfig.apiConfig.RpcUrl).getLatestBlockhash(null).blockhash
+            val tx = AltudeTransactionBuilder(TransactionVersion.Legacy)
+                .setFeePayer(feePayerPubKey)
+                .setRecentBlockHash(blockhash)
+                .addInstruction(instruction)
+                // NOTE: device wallet signs here; in production your backend should sign with fee payer key.
+                .setSigners(listOf(HotSigner(keypair)))
+                .build()
+
+            val bytes = tx.serialize(SerializeConfig(requireAllSignatures = false))
+            val txB64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            Result.success(txB64)
+        } catch (e: Throwable) {
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+        }
+    }
 
     suspend fun ensureSchema(account: String, commitment: String): Result<String?> =
         withContext(Dispatchers.IO) {
@@ -151,28 +322,47 @@ internal object ProvenanceManager {
                 println("[DEBUG] Building createSchema instruction...")
                 println("[DEBUG] Authority: ${keypair.publicKey.toBase58()}")
                 println("[DEBUG] FeePayer: ${feePayerPubKey.toBase58()}")
+                println("[DEBUG] Schema PDA: ${schemaPda.toBase58()}")
                 println("[DEBUG] Program ID: ${AttestationProgram.PROGRAM_ID.toBase58()}")
                 println("[DEBUG] Is DevNet: ${AttestationProgram.isDevnet}")
-                
+
+                // 3a. Calibrate discriminators from on-chain IDL (do this once per session)
+                val rpcUrl = SdkConfig.apiConfig.RpcUrl
+                // Dump full IDL for inspection
+                AttestationProgram.logOnChainIDL(rpcUrl)
+                val idlFetched = runCatching {
+                    AttestationProgram.fetchDiscriminatorsFromChain(rpcUrl)
+                }.getOrElse { false }
+                println("[DEBUG] On-chain IDL discriminator fetch: ${if (idlFetched) "✅ SUCCESS" else "⚠️ FAILED (using computed)"}")
+                println("[DEBUG] createSchema discriminator (hex): ${AttestationProgram.discCreateSchema.joinToString("") { "%02x".format(it) }}")
+                println("[DEBUG] createSchema discriminator (dec): ${AttestationProgram.discCreateSchema.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+
+                // Derive credential PDA (example: using payer, authority, schema)
+                // Credential PDA derived from authority + credential name
+                val credentialPda = AttestationProgram.deriveCredentialAddress(
+                    authority = keypair.publicKey,
+                    name = CREDENTIAL_NAME
+                )
                 val instruction = AttestationProgram.createSchema(
+                    payer       = feePayerPubKey,
                     authority   = keypair.publicKey,
-                    feePayer    = feePayerPubKey,
+                    credential  = credentialPda,
+                    schema      = schemaPda,
                     name        = SCHEMA_NAME,
                     description = "Stores SHA-256 hash of images",
-                    fieldNames  = listOf("type", "hash", "mime", "name", "timestamp"),
-                    isRevocable = true
+                    fieldNames  = listOf("type", "hash", "mime", "name", "timestamp")
                 )
-                
+
                 println("[DEBUG] Instruction accounts:")
                 instruction.keys.forEachIndexed { index, meta ->
                     println("[DEBUG]   [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
                 }
                 println("[DEBUG] Instruction data length: ${instruction.data.size} bytes")
                 println("[DEBUG] Instruction data (hex): ${instruction.data.joinToString("") { "%02x".format(it) }}")
-                
+
                 val blockhash = rpc.getLatestBlockhash(commitment = commitment).blockhash
                 println("[DEBUG] Blockhash: $blockhash")
-                
+
                 val tx = AltudeTransactionBuilder(TransactionVersion.Legacy)
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhash)
@@ -180,16 +370,16 @@ internal object ProvenanceManager {
                     .setSigners(listOf(HotSigner(keypair)))
                     .build()
                 val bytearraytx = tx.serialize(SerializeConfig(requireAllSignatures = false))
-                
+
                 println("[DEBUG] Serialized transaction length: ${bytearraytx.size} bytes")
-                
+
                 val txString = Base64.encodeToString(
                     bytearraytx,
                     Base64.NO_WRAP
                 )
-                
+
                 println("[DEBUG] Base64 transaction: $txString")
-                
+
                 Result.success(
                     txString
                 )
@@ -198,6 +388,7 @@ internal object ProvenanceManager {
             }
         }
 
+
     suspend fun resetSchema(account: String = "") {
         runCatching {
             val walletKey = getWalletKey(account)  // Normalizes account (empty → default)
@@ -205,6 +396,43 @@ internal object ProvenanceManager {
             schemaPdaCache.remove(walletKey)
         }
     }
+
+    /**
+     * Builds (but does NOT check or submit) a createSchema transaction.
+     * Used by retry loops / debugging to inspect the exact bytes produced by the SDK.
+     */
+    internal suspend fun buildSchemaTx(account: String, commitment: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val keypair = getKeyPair(account)
+                val schemaPda = deriveSchemaAddress(keypair.publicKey.toBase58())
+
+                val credentialPda = AttestationProgram.deriveCredentialAddress(
+                    authority = keypair.publicKey,
+                    name = CREDENTIAL_NAME
+                )
+                val instruction = AttestationProgram.createSchema(
+                    payer       = feePayerPubKey,
+                    authority   = keypair.publicKey,
+                    credential  = credentialPda,
+                    schema      = schemaPda,
+                    name        = SCHEMA_NAME,
+                    description = "Stores SHA-256 hash of images",
+                    fieldNames  = listOf("type", "hash", "mime", "name", "timestamp")
+                )
+
+                val blockhash = rpc.getLatestBlockhash(commitment = commitment).blockhash
+                val tx = AltudeTransactionBuilder(TransactionVersion.Legacy)
+                    .setFeePayer(feePayerPubKey)
+                    .setRecentBlockHash(blockhash)
+                    .addInstruction(instruction)
+                    .setSigners(listOf(HotSigner(keypair)))
+                    .build()
+
+                val bytes = tx.serialize(SerializeConfig(requireAllSignatures = false))
+                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            }
+        }
 
     // ── On-chain fetch ────────────────────────────────────────────────────────
 
@@ -354,14 +582,17 @@ internal object ProvenanceManager {
         blockhash: String
     ): Pair<String, String> {
         val attester  = keypair.publicKey
-        val recipient = if (payload.recipient.isBlank()) attester
-                        else PublicKey(payload.recipient)
 
-        // Derive attestation PDA locally — seeds match createAttestation (nonce = "")
-        val attestationPda = AttestationProgram.deriveAttestationAddress(
-            schema    = schemaPda,
-            attester  = attester,
-            recipient = recipient
+        // Generate a random nonce (PublicKey) for this attestation
+        val nonceSeed = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val nonceKeypair = SolanaEddsa.createKeypairFromSecretKey(nonceSeed)
+        val nonce = nonceKeypair.publicKey
+
+        // Derive credential PDA (authority + credential name)
+        // IMPORTANT: must be derived from the *credential authority* (the wallet), not the fee payer.
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            authority = attester,
+            name = CREDENTIAL_NAME
         )
 
         val payloadJson = JSONObject().apply {
@@ -372,11 +603,13 @@ internal object ProvenanceManager {
             put("timestamp", payload.timestamp)
         }.toString()
 
-        val instruction = AttestationProgram.createAttestation(
-            attester        = attester,
-            feePayer        = feePayerPubKey,
+        // Use IDL-conformant instruction builder (discriminant=6, correct account order)
+        val (instruction, attestationPda) = AttestationProgram.buildCreateAttestationIx(
+            payer           = feePayerPubKey,
+            authority       = attester,
+            credential      = credentialPda,
             schemaPda       = schemaPda,
-            recipient       = recipient,
+            nonce           = nonce,
             attestationData = payloadJson.toByteArray(),
             expireAt        = payload.expireAt
         )

@@ -17,7 +17,6 @@ import foundation.metaplex.solana.transactions.SerializeConfig
 import foundation.metaplex.solana.transactions.SerializedTransaction
 import foundation.metaplex.solana.transactions.SerializedTransactionMessage
 import foundation.metaplex.solana.transactions.SignaturePubkeyPair
-import foundation.metaplex.solana.transactions.SolanaMessage
 import foundation.metaplex.solana.transactions.Transaction
 import foundation.metaplex.solana.transactions.TransactionInstruction
 import foundation.metaplex.solana.transactions.TransactionSignature
@@ -406,6 +405,143 @@ class VersionedMessage(
                 addressTableLookups = addressTableLookups
             )
         }
+    }
+}
+
+/**
+ * Legacy Message implementation with custom serialization
+ * This ensures consistent instruction data handling for Legacy transactions
+ */
+class LegacyMessage(
+    override val header: MessageHeader,
+    override val accountKeys: List<PublicKey>,
+    override val recentBlockhash: String,
+    override val instructions: List<CompiledInstruction>
+) : Message {
+
+    override fun isAccountSigner(index: Int): Boolean {
+        return index < header.numRequiredSignatures
+    }
+
+    override fun isAccountWritable(index: Int): Boolean {
+        val numSigners = header.numRequiredSignatures.toInt()
+        val numReadonlySigned = header.numReadonlySignedAccounts.toInt()
+        val numReadonlyUnsigned = header.numReadonlyUnsignedAccounts.toInt()
+        
+        if (index < numSigners) {
+            // Signed account - writable if not in readonly signed range
+            return index < (numSigners - numReadonlySigned)
+        } else {
+            // Unsigned account - writable if not in readonly unsigned range
+            val unsignedIndex = index - numSigners
+            val numUnsigned = accountKeys.size - numSigners
+            return unsignedIndex < (numUnsigned - numReadonlyUnsigned)
+        }
+    }
+
+    override fun isProgramId(index: Int): Boolean {
+        return instructions.any { it.programIdIndex == index }
+    }
+
+    override fun nonProgramIds(): List<PublicKey> {
+        val programIdIndices = instructions.map { it.programIdIndex }.toSet()
+        return accountKeys.filterIndexed { index, _ -> index !in programIdIndices }
+    }
+
+    override fun programIds(): List<PublicKey> {
+        val programIdIndices = instructions.map { it.programIdIndex }.toSet()
+        return programIdIndices.map { accountKeys[it] }
+    }
+
+    override fun setFeePayer(publicKey: PublicKey) {
+        throw UnsupportedOperationException("LegacyMessage is immutable, fee payer must be set during construction")
+    }
+
+    override fun serialize(): ByteArray {
+        val accountAddressesLength = Shortvec.encodeLength(accountKeys.size)
+        val instructionsLength = Shortvec.encodeLength(instructions.size)
+
+        // Calculate instruction data sizes
+        val instructionBytes = instructions.map { serializeInstruction(it) }
+        val instructionsTotalSize = instructionBytes.sumOf { it.size }
+
+        // Total size: header (3) + accounts + blockhash (32) + instructions
+        val totalSize = 3 + accountAddressesLength.size + (accountKeys.size * 32) + 32 +
+                instructionsLength.size + instructionsTotalSize
+
+        android.util.Log.d("LegacyMessage", "=== LEGACY MESSAGE SERIALIZATION ===")
+        android.util.Log.d("LegacyMessage", "Header: numReqSigs=${header.numRequiredSignatures}, readonlySigned=${header.numReadonlySignedAccounts}, readonlyUnsigned=${header.numReadonlyUnsignedAccounts}")
+        android.util.Log.d("LegacyMessage", "Account count: ${accountKeys.size}")
+        android.util.Log.d("LegacyMessage", "Instructions count: ${instructions.size}")
+        android.util.Log.d("LegacyMessage", "Total size: $totalSize bytes")
+
+        val buffer = PlatformBuffer.allocate(totalSize)
+
+        // 1. Header: numRequiredSignatures, numReadonlySignedAccounts, numReadonlyUnsignedAccounts
+        buffer.writeByte(header.numRequiredSignatures)
+        buffer.writeByte(header.numReadonlySignedAccounts)
+        buffer.writeByte(header.numReadonlyUnsignedAccounts)
+
+        // 2. Account addresses length + addresses
+        buffer.writeBytes(accountAddressesLength)
+        accountKeys.forEach { account ->
+            buffer.writeBytes(account.toByteArray())
+        }
+
+        // 3. Recent blockhash (32 bytes)
+        buffer.writeBytes(SolanaPublicKey.from(recentBlockhash).bytes)
+
+        // 4. Instructions length + instructions
+        buffer.writeBytes(instructionsLength)
+        instructionBytes.forEach { buffer.writeBytes(it) }
+
+        buffer.resetForRead()
+        val result = buffer.readByteArray(totalSize)
+        
+        // Log the final message bytes for debugging
+        android.util.Log.d("LegacyMessage", "=== FINAL MESSAGE ===")
+        android.util.Log.d("LegacyMessage", "Total bytes: ${result.size}")
+        android.util.Log.d("LegacyMessage", "First 64 bytes hex: ${result.take(64).joinToString("") { "%02x".format(it) }}")
+        
+        return result
+    }
+
+    private fun serializeInstruction(instruction: CompiledInstruction): ByteArray {
+        val accounts = instruction.accounts
+        val dataBytes = Base58Util.decode(instruction.data) // Decode Base58 data back to bytes
+        val accountIndicesLength = Shortvec.encodeLength(accounts.size)
+        val dataLength = Shortvec.encodeLength(dataBytes.size)
+
+        val size = 1 + accountIndicesLength.size + accounts.size +
+                dataLength.size + dataBytes.size
+
+        android.util.Log.d("LegacyMessage", "=== INSTRUCTION SERIALIZATION ===")
+        android.util.Log.d("LegacyMessage", "  ProgramIdIndex: ${instruction.programIdIndex}")
+        android.util.Log.d("LegacyMessage", "  Account indices (${accounts.size}): $accounts")
+        android.util.Log.d("LegacyMessage", "  Data size: ${dataBytes.size} bytes")
+        android.util.Log.d("LegacyMessage", "  Data hex: ${dataBytes.take(32).joinToString("") { "%02x".format(it) }}${if (dataBytes.size > 32) "..." else ""}")
+        android.util.Log.d("LegacyMessage", "  Total instruction size: $size bytes")
+
+        val buffer = PlatformBuffer.allocate(size)
+
+        // Program ID index
+        buffer.writeByte(instruction.programIdIndex.toByte())
+
+        // Account indices
+        buffer.writeBytes(accountIndicesLength)
+        accounts.forEach { buffer.writeByte(it.toByte()) }
+
+        // Data
+        buffer.writeBytes(dataLength)
+        buffer.writeBytes(dataBytes)
+
+        buffer.resetForRead()
+        val result = buffer.readByteArray(size)
+        
+        // Log the raw instruction bytes
+        android.util.Log.d("LegacyMessage", "  Serialized instruction hex: ${result.joinToString("") { "%02x".format(it) }}")
+        
+        return result
     }
 }
 
@@ -801,8 +937,9 @@ class VersionedSolanaTransaction (
 
         signers.forEach { signer ->
             val sig = signer.signMessage(payload)
+            val signerBase58 = signer.publicKey.toBase58()
             val match = versioned.signatures.firstOrNull {
-                it.publicKey == signer.publicKey
+                it.publicKey.toBase58() == signerBase58
             } ?: throw Error("Unknown signer ${signer.publicKey}")
 
             match.signature = sig
@@ -913,8 +1050,9 @@ class VersionedSolanaTransaction (
     private fun _addSignature(pubkey: PublicKey, signature: TransactionSignature) {
         require(signature.count() == 64)
 
+        val pubkeyBase58 = pubkey.toBase58()
         val index = versioned.signatures.indexOfFirst { sigpair ->
-            pubkey.equals(sigpair.publicKey)
+            sigpair.publicKey.toBase58() == pubkeyBase58
         }
         if (index < 0) {
             throw Error("unknown signer: $pubkey")
@@ -940,31 +1078,35 @@ class VersionedSolanaTransaction (
 
         val feePayer = feePayer ?: signatures.firstOrNull()?.publicKey
         requireNotNull(feePayer) { "Transaction fee payer required" }
+        
+        android.util.Log.d("AltudeTxBuilder", "=== compileVersionedMessage START ===")
+        android.util.Log.d("AltudeTxBuilder", "Set fee payer: ${feePayer.toBase58()}")
+        android.util.Log.d("AltudeTxBuilder", "this.feePayer: ${this.feePayer?.toBase58() ?: "NULL"}")
+        android.util.Log.d("AltudeTxBuilder", "Transaction version: $transacionVersion")
 
-        val programIds = mutableSetOf<PublicKey>()
+        val programIds = mutableSetOf<String>() // Store as Base58 for reliable comparison
         val accountMetas = mutableListOf<AccountMeta>()
         for (instruction in instructions) {
             for (accountMeta in instruction.keys) {
                 accountMetas.add(accountMeta)
             }
-            programIds.add(instruction.programId)
+            programIds.add(instruction.programId.toBase58())
         }
+        
+        android.util.Log.d("AltudeTxBuilder", "Collected ${accountMetas.size} account metas from instructions")
+        android.util.Log.d("AltudeTxBuilder", "Program IDs: $programIds")
 
-        // Append programID account metas
-        for (programId in programIds) {
-            accountMetas.add(
-                AccountMeta(
-                    publicKey = programId,
-                    isSigner = false,
-                    isWritable = false
-                )
-            )
-        }
-
-        // Cull duplicate account metas
+        // Cull duplicate account metas, EXCLUDING program IDs
+        // Program IDs will be added at the very end
         val uniqueMetas = mutableListOf<AccountMeta>()
         for (accountMeta in accountMetas) {
             val pubkeyString = accountMeta.publicKey.toBase58()
+            
+            // Skip if this is a program ID - we'll add it at the end
+            if (programIds.contains(pubkeyString)) {
+                continue
+            }
+            
             val uniqueIndex = uniqueMetas.indexOfFirst { it.publicKey.toBase58() == pubkeyString }
             if (uniqueIndex > -1) {
                 // When merging duplicates, preserve the highest privilege level
@@ -977,28 +1119,47 @@ class VersionedSolanaTransaction (
             }
         }
 
+        android.util.Log.d("AltudeTxBuilder", "=== BEFORE SORTING ===")
+        android.util.Log.d("AltudeTxBuilder", "uniqueMetas (${uniqueMetas.size}):")
+        uniqueMetas.forEachIndexed { index, meta ->
+            android.util.Log.d("AltudeTxBuilder", "  [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
+        }
+        
         // Sort. Prioritizing first by signer, then by writable
+        // Note: We use stable sort to preserve insertion order for accounts with same flags
         uniqueMetas.sortWith { x, y ->
             if (x.isSigner != y.isSigner) {
                 // Signers always come before non-signers
-                return@sortWith if (x.isSigner) -1 else  1
+                return@sortWith if (x.isSigner) -1 else 1
             }
             if (x.isWritable != y.isWritable) {
                 // Writable accounts always come before read-only accounts
                 return@sortWith if (x.isWritable) -1 else 1
             }
-            // Otherwise, sort by pubkey, stringwise.
-            return@sortWith x.publicKey.toBase58().compareTo(y.publicKey.toBase58())
+            // For accounts with same flags, preserve original order (return 0)
+            return@sortWith 0
+        }
+        
+        android.util.Log.d("AltudeTxBuilder", "=== AFTER SORTING ===")
+        android.util.Log.d("AltudeTxBuilder", "uniqueMetas (${uniqueMetas.size}):")
+        uniqueMetas.forEachIndexed { index, meta ->
+            android.util.Log.d("AltudeTxBuilder", "  [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
         }
 
         // Move fee payer to the front
-        val feePayerIndex = uniqueMetas.indexOfFirst { it.publicKey.equals(feePayer) }
+        val feePayerBase58 = feePayer.toBase58()
+        android.util.Log.d("AltudeTxBuilder", "Looking for fee payer: $feePayerBase58")
+        val feePayerIndex = uniqueMetas.indexOfFirst { it.publicKey.toBase58() == feePayerBase58 }
+        android.util.Log.d("AltudeTxBuilder", "Fee payer index in uniqueMetas: $feePayerIndex")
+        
         if (feePayerIndex > -1) {
             val payerMeta = uniqueMetas.removeAt(feePayerIndex)
+            android.util.Log.d("AltudeTxBuilder", "Moving fee payer ${payerMeta.publicKey.toBase58()} to index 0")
             payerMeta.isSigner = true
             payerMeta.isWritable = true
             uniqueMetas.add(0, payerMeta)
         } else {
+            android.util.Log.d("AltudeTxBuilder", "Fee payer NOT found in uniqueMetas, adding to index 0")
             uniqueMetas.add(
                 index = 0,
                 element = AccountMeta(
@@ -1008,10 +1169,30 @@ class VersionedSolanaTransaction (
                 )
             )
         }
+        
+        android.util.Log.d("AltudeTxBuilder", "=== AFTER FEE PAYER MOVE ===")
+        android.util.Log.d("AltudeTxBuilder", "uniqueMetas (${uniqueMetas.size}):")
+        uniqueMetas.forEachIndexed { index, meta ->
+            android.util.Log.d("AltudeTxBuilder", "  [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
+        }
+
+        // Now add program IDs that aren't already in the list (at the end, as readonly non-signers)
+        for (programIdBase58 in programIds) {
+            if (uniqueMetas.none { it.publicKey.toBase58() == programIdBase58 }) {
+                uniqueMetas.add(
+                    AccountMeta(
+                        publicKey = PublicKey(programIdBase58),
+                        isSigner = false,
+                        isWritable = false
+                    )
+                )
+            }
+        }
 
         // Disallow unknown signers
         for (signature in signatures) {
-            val uniqueIndex = uniqueMetas.indexOfFirst { it.publicKey.equals(signature.publicKey) }
+            val sigPubkeyBase58 = signature.publicKey.toBase58()
+            val uniqueIndex = uniqueMetas.indexOfFirst { it.publicKey.toBase58() == sigPubkeyBase58 }
             if (uniqueIndex > -1) {
                 if (!uniqueMetas[uniqueIndex].isSigner) {
                     uniqueMetas[uniqueIndex].isSigner = true
@@ -1049,28 +1230,58 @@ class VersionedSolanaTransaction (
         }
 
         val accountKeys = signedKeys.plus(unsignedKeys)
+        
+        // Debug: Log the final account order
+        android.util.Log.d("AltudeTxBuilder", "=== COMPILED MESSAGE DEBUG ===")
+        android.util.Log.d("AltudeTxBuilder", "Header: numReqSigs=$numRequiredSignatures, readonlySigned=$numReadonlySignedAccounts, readonlyUnsigned=$numReadonlyUnsignedAccounts")
+        android.util.Log.d("AltudeTxBuilder", "Account Keys (${accountKeys.size}):")
+        accountKeys.forEachIndexed { index, pk ->
+            android.util.Log.d("AltudeTxBuilder", "  [$index] ${pk.toBase58()}")
+        }
+        
         val compiledInstructions: List<CompiledInstruction> = instructions.map { instruction ->
             val (programId, _, data) = instruction
             
+            val programIdIndex = accountKeys.indexOfFirst { it.toBase58() == programId.toBase58() }
+            val accountIndices = instruction.keys.map { meta ->
+                accountKeys.indexOfFirst { it.toBase58() == meta.publicKey.toBase58() }
+            }
+            
+            // Debug: Log instruction compilation
+            android.util.Log.d("AltudeTxBuilder", "Instruction compilation:")
+            android.util.Log.d("AltudeTxBuilder", "  ProgramId: ${programId.toBase58()} -> idx $programIdIndex")
+            android.util.Log.d("AltudeTxBuilder", "  Instruction accounts (${instruction.keys.size}):")
+            instruction.keys.forEachIndexed { i, meta ->
+                val mappedIndex = accountIndices[i]
+                android.util.Log.d("AltudeTxBuilder", "    [$i] ${meta.publicKey.toBase58()} -> idx $mappedIndex")
+            }
+            android.util.Log.d("AltudeTxBuilder", "  Account indices: $accountIndices")
+            
             // Debug: Log the raw instruction data before Base58 encoding
-            android.util.Log.d("AltudeTransactionBuilder", "Raw instruction data (${data.size} bytes):")
-            android.util.Log.d("AltudeTransactionBuilder", "  First 8 bytes: ${data.take(8).joinToString(",") { (it.toInt() and 0xFF).toString() }}")
-            android.util.Log.d("AltudeTransactionBuilder", "  Hex: ${data.take(16).joinToString("") { "%02x".format(it) }}")
+            android.util.Log.d("AltudeTxBuilder", "Raw instr data (${data.size} bytes):")
+            android.util.Log.d("AltudeTxBuilder", "  First 8: ${data.take(8).joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+            android.util.Log.d("AltudeTxBuilder", "  Hex: ${data.take(16).joinToString("") { "%02x".format(it) }}")
             
             val encoded = Base58Util.encode(data)
-            android.util.Log.d("AltudeTransactionBuilder", "  Base58 encoded: $encoded")
+            android.util.Log.d("AltudeTxBuilder", "  Base58: $encoded")
             
             // Debug: Verify decode matches original
             val decoded = Base58Util.decode(encoded)
-            android.util.Log.d("AltudeTransactionBuilder", "  Decoded back (${decoded.size} bytes):")
-            android.util.Log.d("AltudeTransactionBuilder", "  First 8 bytes: ${decoded.take(8).joinToString(",") { (it.toInt() and 0xFF).toString() }}")
-            android.util.Log.d("AltudeTransactionBuilder", "  Match: ${data.contentEquals(decoded)}")
+            android.util.Log.d("AltudeTxBuilder", "  Decoded (${decoded.size} bytes):")
+            android.util.Log.d("AltudeTxBuilder", "  First 8: ${decoded.take(8).joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+            android.util.Log.d("AltudeTxBuilder", "  Match: ${data.contentEquals(decoded)}")
+            
+            // Verify all indices are valid
+            require(programIdIndex >= 0) { "Program ID not found in account keys" }
+            require(programIdIndex < accountKeys.size) { "Program ID index out of bounds: $programIdIndex >= ${accountKeys.size}" }
+            accountIndices.forEachIndexed { i, idx ->
+                require(idx >= 0) { "Account[$i] not found in account keys" }
+                require(idx < accountKeys.size) { "Account[$i] index out of bounds: $idx >= ${accountKeys.size}" }
+            }
             
             CompiledInstruction(
-                programIdIndex = accountKeys.indexOfFirst { it.toBase58() == programId.toBase58() },
-                accounts = instruction.keys.map { meta ->
-                    accountKeys.indexOfFirst { it.toBase58() == meta.publicKey.toBase58() }
-                },
+                programIdIndex = programIdIndex,
+                accounts = accountIndices,
                 data = encoded
             )
         }
@@ -1079,6 +1290,32 @@ class VersionedSolanaTransaction (
             require(instruction.programIdIndex >= 0)
             instruction.accounts.forEach { keyIndex -> require(keyIndex >= 0) }
         }
+        
+        // Summary log
+        android.util.Log.d("AltudeTxBuilder", "=== FINAL MESSAGE SUMMARY ===")
+        android.util.Log.d("AltudeTxBuilder", "Version: $transacionVersion")
+        android.util.Log.d("AltudeTxBuilder", "numRequiredSignatures: $numRequiredSignatures")
+        android.util.Log.d("AltudeTxBuilder", "numReadonlySignedAccounts: $numReadonlySignedAccounts")
+        android.util.Log.d("AltudeTxBuilder", "numReadonlyUnsignedAccounts: $numReadonlyUnsignedAccounts")
+        android.util.Log.d("AltudeTxBuilder", "Blockhash: $recentBlockhash")
+        android.util.Log.d("AltudeTxBuilder", "Account keys (${accountKeys.size}):")
+        accountKeys.forEachIndexed { index, pk ->
+            val isSigner = index < numRequiredSignatures
+            val isWritable = if (isSigner) {
+                index < (numRequiredSignatures - numReadonlySignedAccounts)
+            } else {
+                val unsignedIndex = index - numRequiredSignatures
+                val numUnsigned = accountKeys.size - numRequiredSignatures
+                unsignedIndex < (numUnsigned - numReadonlyUnsignedAccounts)
+            }
+            android.util.Log.d("AltudeTxBuilder", "  [$index] ${pk.toBase58()} (signer=$isSigner, writable=$isWritable)")
+        }
+        android.util.Log.d("AltudeTxBuilder", "Compiled instructions (${compiledInstructions.size}):")
+        compiledInstructions.forEachIndexed { index, instr ->
+            android.util.Log.d("AltudeTxBuilder", "  [instr $index] programIdIndex=${instr.programIdIndex}, accounts=${instr.accounts}")
+        }
+        android.util.Log.d("AltudeTxBuilder", "=== END SUMMARY ===")
+        
         // 4. Return Message
         return (when (transacionVersion) {
             TransactionVersion.V0 ->
@@ -1094,7 +1331,8 @@ class VersionedSolanaTransaction (
             )
 
             TransactionVersion.Legacy ->
-                SolanaMessage(
+                // Use custom LegacyMessage for consistent serialization
+                LegacyMessage(
                     header = MessageHeader().apply {
                         this.numRequiredSignatures = numRequiredSignatures.toByte()
                         this.numReadonlySignedAccounts = numReadonlySignedAccounts.toByte()
