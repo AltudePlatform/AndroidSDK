@@ -37,6 +37,13 @@ import kotlinx.coroutines.withContext
  * - [attest]           — convenience wrapper for single-image attestation
  */
 internal object ProvenanceManager {
+    private const val SCHEMA_DEBUG_ENABLED = false
+
+    private inline fun schemaDebug(block: () -> Unit) {
+        if (SCHEMA_DEBUG_ENABLED) {
+            block()
+        }
+    }
     /**
      * Builds and signs a createCredential transaction for the given account and schema.
      * Returns the base64-encoded signed transaction.
@@ -319,23 +326,26 @@ internal object ProvenanceManager {
                 }
 
                 // 3. Schema does not exist on-chain — build the createSchema instruction
-                println("[DEBUG] Building createSchema instruction...")
-                println("[DEBUG] Authority: ${keypair.publicKey.toBase58()}")
-                println("[DEBUG] FeePayer: ${feePayerPubKey.toBase58()}")
-                println("[DEBUG] Schema PDA: ${schemaPda.toBase58()}")
-                println("[DEBUG] Program ID: ${AttestationProgram.PROGRAM_ID.toBase58()}")
-                println("[DEBUG] Is DevNet: ${AttestationProgram.isDevnet}")
+                schemaDebug {
+                    println("[DEBUG] Building createSchema instruction...")
+                    println("[DEBUG] Authority: ${keypair.publicKey.toBase58()}")
+                    println("[DEBUG] FeePayer: ${feePayerPubKey.toBase58()}")
+                    println("[DEBUG] Schema PDA: ${schemaPda.toBase58()}")
+                    println("[DEBUG] Program ID: ${AttestationProgram.PROGRAM_ID.toBase58()}")
+                    println("[DEBUG] Is DevNet: ${AttestationProgram.isDevnet}")
+                }
 
-                // 3a. Calibrate discriminators from on-chain IDL (do this once per session)
-                val rpcUrl = SdkConfig.apiConfig.RpcUrl
-                // Dump full IDL for inspection
-                AttestationProgram.logOnChainIDL(rpcUrl)
-                val idlFetched = runCatching {
-                    AttestationProgram.fetchDiscriminatorsFromChain(rpcUrl)
-                }.getOrElse { false }
-                println("[DEBUG] On-chain IDL discriminator fetch: ${if (idlFetched) "✅ SUCCESS" else "⚠️ FAILED (using computed)"}")
-                println("[DEBUG] createSchema discriminator (hex): ${AttestationProgram.discCreateSchema.joinToString("") { "%02x".format(it) }}")
-                println("[DEBUG] createSchema discriminator (dec): ${AttestationProgram.discCreateSchema.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+                // 3a. Calibrate discriminators from on-chain IDL only when explicit schema debugging is enabled
+                schemaDebug {
+                    val rpcUrl = SdkConfig.apiConfig.RpcUrl
+                    AttestationProgram.logOnChainIDL(rpcUrl)
+                    val idlFetched = runCatching {
+                        AttestationProgram.fetchDiscriminatorsFromChain(rpcUrl)
+                    }.getOrElse { false }
+                    println("[DEBUG] On-chain IDL discriminator fetch: ${if (idlFetched) "✅ SUCCESS" else "⚠️ FAILED (using computed)"}")
+                    println("[DEBUG] createSchema discriminator (hex): ${AttestationProgram.discCreateSchema.joinToString("") { "%02x".format(it) }}")
+                    println("[DEBUG] createSchema discriminator (dec): ${AttestationProgram.discCreateSchema.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+                }
 
                 // Derive credential PDA (example: using payer, authority, schema)
                 // Credential PDA derived from authority + credential name
