@@ -632,15 +632,13 @@ class VersionedTransaction(
         // Check if this is a versioned message (V0) or legacy message
         return when (message) {
             is VersionedMessage -> {
-                // V0 transaction - use version prefix
-                val prefix = (VERSION_BIT or VERSION_V0).toByte()
+                // V0 transaction - the serialized message already includes the version prefix
                 val sigCountEnc = Shortvec.encodeLength(signatures.size)
 
-                // Order on the wire: prefix, sigCount, signatures, messageBytes
-                val total = 1 + sigCountEnc.size + signatures.size * SIGNATURE_LENGTH + messageBytes.size
+                // Order on the wire: sigCount, signatures, messageBytes
+                val total = sigCountEnc.size + signatures.size * SIGNATURE_LENGTH + messageBytes.size
 
                 val buf = PlatformBuffer.allocate(total)
-                buf.writeByte(prefix)
                 buf.writeBytes(sigCountEnc)
 
                 // signatures: write 64 bytes per signature (zeroes if null/partial)
@@ -654,7 +652,7 @@ class VersionedTransaction(
                     }
                 }
 
-                // finally the message bytes
+                // finally the message bytes (already prefixed for versioned messages)
                 buf.writeBytes(messageBytes)
 
                 buf.readByteArray(total)
