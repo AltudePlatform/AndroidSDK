@@ -911,7 +911,7 @@ object Provenance {
             }
             is ManifestOption.EmbedInImage -> {
                 val embedded = runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath))
+                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
                 }.getOrNull()
                 if (embedded != null) {
                     // Successfully embedded into image; no sidecar created.
