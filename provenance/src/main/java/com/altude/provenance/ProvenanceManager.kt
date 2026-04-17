@@ -368,7 +368,9 @@ internal object ProvenanceManager {
                     println("[DEBUG]   [$index] ${meta.publicKey.toBase58()} signer=${meta.isSigner} writable=${meta.isWritable}")
                 }
                 println("[DEBUG] Instruction data length: ${instruction.data.size} bytes")
-                println("[DEBUG] Instruction data (hex): ${instruction.data.joinToString("") { "%02x".format(it) }}")
+                val instructionDataHex = instruction.data.joinToString("") { "%02x".format(it) }
+                val instructionDataHexSuffix = if (instructionDataHex.length <= 4) instructionDataHex else instructionDataHex.takeLast(4)
+                println("[DEBUG] Instruction data summary: hexLength=${instructionDataHex.length} suffix=$instructionDataHexSuffix")
 
                 val blockhash = rpc.getLatestBlockhash(commitment = commitment).blockhash
                 println("[DEBUG] Blockhash: $blockhash")
@@ -387,8 +389,9 @@ internal object ProvenanceManager {
                     bytearraytx,
                     Base64.NO_WRAP
                 )
+                val txStringSuffix = if (txString.length <= 4) txString else txString.takeLast(4)
 
-                println("[DEBUG] Base64 transaction: $txString")
+                println("[DEBUG] Base64 transaction summary: length=${txString.length} suffix=$txStringSuffix")
 
                 Result.success(
                     txString
