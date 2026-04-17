@@ -918,7 +918,7 @@ object Provenance {
                     Pair(null, embedded)
                 } else {
                     // Embedding failed (e.g., unsupported format). Fall back to sidecar as documented.
-                    val sidecar = runCatching { manifest.saveTo(manifestsDir) }.getOrNull()
+                    val sidecar = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
                     Pair(sidecar, null)
                 }
             }
