@@ -974,14 +974,12 @@ class VersionedSolanaTransaction (
         // Check transaction version and serialize accordingly
         return when (transacionVersion) {
             TransactionVersion.V0 -> {
-                // V0 transaction format - includes version prefix
-                val versionPrefix = (VERSION_BIT or VERSION_V0).toByte()
+                // V0 transaction format - the version prefix is part of signData (message), not the transaction wrapper
                 val signatureCount = Shortvec.encodeLength(signatures.count())
-                val transactionLength = 1 + signatureCount.count() + signatures.count() * 64 + signData.count()
+                val transactionLength = signatureCount.count() + signatures.count() * 64 + signData.count()
                 val wireTransaction = PlatformBuffer.allocate(transactionLength)
                 
                 require(signatures.count() < 256)
-                wireTransaction.writeByte(versionPrefix) // Add version prefix for V0
                 wireTransaction.writeBytes(signatureCount)
                 signatures.forEach { (signature, _) ->
                     when {
