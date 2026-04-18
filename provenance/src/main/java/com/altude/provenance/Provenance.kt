@@ -373,16 +373,18 @@ object Provenance {
             }
 
             // 5. Apply chosen manifest option — inject attestationId for verifyOnChain
-            val manifestWithId    = payload.c2paManifest.copy(attestationId = attested.attestationId)
-            val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
+            // Do not mutate the signed certificate after build/signing; `attestationId`
+            // is returned separately and may be added to the manifest, but the certificate
+            // must remain byte-for-byte consistent with the claim JSON that was signed.
+            val manifestWithId = payload.c2paManifest.copy(attestationId = attested.attestationId)
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(manifestWithId, manifestOption, certificateWithId)
+                applyManifestOption(manifestWithId, manifestOption, attested.certificate)
 
             Result.success(ProvenanceResult(
                 response          = response,
                 manifest          = manifestWithId,
                 attestationId     = attested.attestationId,
-                certificate       = certificateWithId,
+                certificate       = attested.certificate,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
             ))
