@@ -61,6 +61,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun getAltudeApiKey(): String? {
+    return try {
+        val field = BuildConfig::class.java.getField("ALTUDE_API_KEY")
+        (field.get(null) as? String)?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 @Composable
 fun CreateSchemaTransactionSection() {
     val context = LocalContext.current
@@ -88,8 +97,8 @@ fun CreateSchemaTransactionSection() {
                             SdkConfig.setNetwork(isDevnet = true)
                             
                             status = "Initializing API configuration..."
-                            val apiKey = BuildConfig.ALTUDE_API_KEY
-                            if (apiKey.isBlank()) {
+                            val apiKey = getAltudeApiKey()
+                            if (apiKey.isNullOrBlank()) {
                                 status = "SDK initialization failed: missing ALTUDE_API_KEY local configuration"
                                 return@launch
                             }
