@@ -88,7 +88,12 @@ fun CreateSchemaTransactionSection() {
                             SdkConfig.setNetwork(isDevnet = true)
                             
                             status = "Initializing API configuration..."
-                            SdkConfig.setApiKey(context, "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk")
+                            val apiKey = BuildConfig.ALTUDE_API_KEY
+                            if (apiKey.isBlank()) {
+                                status = "SDK initialization failed: missing ALTUDE_API_KEY local configuration"
+                                return@launch
+                            }
+                            SdkConfig.setApiKey(context, apiKey)
                             
                             // Verify the configuration is correct for DevNet
                             status = "Verifying DevNet configuration..."
