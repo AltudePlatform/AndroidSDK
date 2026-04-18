@@ -621,20 +621,13 @@ object Provenance {
             // 2. Build + sign certificate — pure crypto, no network
             val certificate = ProvenanceManager.buildCertificate(payload, keypair)
 
-            // 3. Derive attestationId — pure PDA derivation, no network needed
-            val schemaPda     = ProvenanceManager.deriveSchemaAddress(payload.account)
-            val attester      = keypair.publicKey
-            val recipient     = if (payload.recipient.isBlank()) attester
-                                else com.altude.core.Programs.AttestationProgram.let {
-                                    foundation.metaplex.solanapublickeys.PublicKey(payload.recipient)
-                                }
-            val attestationId = com.altude.core.Programs.AttestationProgram
-                .deriveAttestationAddress(schemaPda, attester, recipient)
-                .toBase58()
-
-            // 4. Inject attestationId so sidecar/embedded image supports verifyOnChain
-            val manifestWithId    = payload.c2paManifest.copy(attestationId = attestationId)
-            val certificateWithId = certificate.copy(attestationId = attestationId)
+            // 3. Do not derive attestationId offline using attester/recipient seeds.
+            //    SAS attestation PDAs are created from the same inputs used by the
+            //    on-chain transaction builder (credential, schema, nonce). Deriving a
+            //    placeholder here with different seeds would persist an ID that can
+            //    never match the real on-chain attestation created later.
+            val manifestWithId    = payload.c2paManifest
+            val certificateWithId = certificate
             val (manifestFile, embeddedImageFile) =
                 applyManifestOption(manifestWithId, manifestOption, certificateWithId)
 
