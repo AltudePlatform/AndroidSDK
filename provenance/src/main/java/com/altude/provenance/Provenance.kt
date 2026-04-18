@@ -404,10 +404,14 @@ object Provenance {
     ): Result<ProvenanceResult> {
         val offline = attestOffline(payload, manifestOption)
             .getOrElse { return Result.failure(it) }
+        val queuedManifest = payload.c2paManifest?.copy(
+            attestationId = offline.attestationId
+        )
         return Result.success(
             ProvenanceResult(
                 response          = null,
-                manifest          = payload.c2paManifest,
+                attestationId     = offline.attestationId,
+                manifest          = queuedManifest,
                 certificate       = offline.certificate,
                 manifestFile      = offline.manifestFile,
                 embeddedImageFile = offline.embeddedImageFile,
