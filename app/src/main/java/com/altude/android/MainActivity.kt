@@ -176,7 +176,7 @@ fun CreateSchemaTransactionSection() {
                             status = "Configuring SDK for DevNet transactions..."
                             
                             // CRITICAL: Set network to DevNet BEFORE initializing API
-                            SdkConfig.setNetwork(isDevnet = false)
+                            SdkConfig.setNetwork(isDevnet = true)
                             SdkConfig.setApiKey(context, localTestApiKey)
                             
                             status = "Verifying DevNet configuration..."
