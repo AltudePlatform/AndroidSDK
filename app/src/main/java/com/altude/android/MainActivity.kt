@@ -160,11 +160,24 @@ fun CreateSchemaTransactionSection() {
                     // Initialize SDK if not already done
                     if (!isInitialized) {
                         try {
+                            if (!BuildConfig.DEBUG) {
+                                status = "Real schema transaction flow is disabled in release builds."
+                                return@launch
+                            }
+
+                            val localTestApiKey = ""
+                            val localTestMnemonic = ""
+
+                            if (localTestApiKey.isBlank() || localTestMnemonic.isBlank()) {
+                                status = "Real schema transaction is not configured.\n\nProvide non-empty local test values for the API key and mnemonic before running this debug-only flow."
+                                return@launch
+                            }
+
                             status = "Configuring SDK for DevNet transactions..."
                             
                             // CRITICAL: Set network to DevNet BEFORE initializing API
                             SdkConfig.setNetwork(isDevnet = false)
-                            SdkConfig.setApiKey(context, "")
+                            SdkConfig.setApiKey(context, localTestApiKey)
                             
                             status = "Verifying DevNet configuration..."
                             
@@ -200,7 +213,7 @@ fun CreateSchemaTransactionSection() {
                             
                             // Try to store mnemonic with comprehensive error handling
                             try {
-                                StorageService.storeMnemonic("")
+                                StorageService.storeMnemonic(localTestMnemonic)
                                 status = "Mnemonic stored successfully!"
                                 isInitialized = true
                                 status = "SDK initialized with storage. Creating real schema transaction..."
