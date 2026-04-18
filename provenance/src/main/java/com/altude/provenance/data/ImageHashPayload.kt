@@ -316,7 +316,7 @@ data class ProvenanceResult(
     val manifest: C2paManifest,
     /**
      * Solana Attestation PDA (Base58) — derived deterministically client-side
-     * from (schemaPda, attester, recipient) before the tx is sent.
+     * from seeds ["attestation", credential, schema, nonce] before the tx is sent.
      * Use this with [com.altude.provenance.Provenance.verifyOnChain].
      * Also stored inside the sidecar `.c2pa.json` and embedded image metadata.
      */
