@@ -26,6 +26,14 @@ import foundation.metaplex.solanapublickeys.PublicKey
 import java.lang.Error
 import kotlin.collections.count
 
+private const val ENABLE_SERIALIZATION_DEBUG_LOGS = false
+
+private fun debugLog(tag: String, message: String) {
+    if (ENABLE_SERIALIZATION_DEBUG_LOGS) {
+        android.util.Log.d(tag, message)
+    }
+}
+
 /**
  * Base58 encoder/decoder utility
  * Correct implementation that handles all byte values including high bytes (> 127)
@@ -469,11 +477,11 @@ class LegacyMessage(
         val totalSize = 3 + accountAddressesLength.size + (accountKeys.size * 32) + 32 +
                 instructionsLength.size + instructionsTotalSize
 
-        android.util.Log.d("LegacyMessage", "=== LEGACY MESSAGE SERIALIZATION ===")
-        android.util.Log.d("LegacyMessage", "Header: numReqSigs=${header.numRequiredSignatures}, readonlySigned=${header.numReadonlySignedAccounts}, readonlyUnsigned=${header.numReadonlyUnsignedAccounts}")
-        android.util.Log.d("LegacyMessage", "Account count: ${accountKeys.size}")
-        android.util.Log.d("LegacyMessage", "Instructions count: ${instructions.size}")
-        android.util.Log.d("LegacyMessage", "Total size: $totalSize bytes")
+        debugLog("LegacyMessage", "=== LEGACY MESSAGE SERIALIZATION ===")
+        debugLog("LegacyMessage", "Header: numReqSigs=${header.numRequiredSignatures}, readonlySigned=${header.numReadonlySignedAccounts}, readonlyUnsigned=${header.numReadonlyUnsignedAccounts}")
+        debugLog("LegacyMessage", "Account count: ${accountKeys.size}")
+        debugLog("LegacyMessage", "Instructions count: ${instructions.size}")
+        debugLog("LegacyMessage", "Total size: $totalSize bytes")
 
         val buffer = PlatformBuffer.allocate(totalSize)
 
@@ -499,9 +507,9 @@ class LegacyMessage(
         val result = buffer.readByteArray(totalSize)
         
         // Log the final message bytes for debugging
-        android.util.Log.d("LegacyMessage", "=== FINAL MESSAGE ===")
-        android.util.Log.d("LegacyMessage", "Total bytes: ${result.size}")
-        android.util.Log.d("LegacyMessage", "First 64 bytes hex: ${result.take(64).joinToString("") { "%02x".format(it) }}")
+        debugLog("LegacyMessage", "=== FINAL MESSAGE ===")
+        debugLog("LegacyMessage", "Total bytes: ${result.size}")
+        debugLog("LegacyMessage", "First 64 bytes hex: ${result.take(64).joinToString("") { "%02x".format(it) }}")
         
         return result
     }
