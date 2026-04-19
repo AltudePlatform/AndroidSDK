@@ -1,7 +1,10 @@
 package com.altude.core.api
 
+import com.altude.core.data.AttestRequest
 import com.altude.core.data.BatchTransactionRequest
+import com.altude.core.data.CreateSchemaRequest
 import com.altude.core.data.MintData
+import com.altude.core.data.RevokeAttestationRequest
 import com.altude.core.data.SendTransactionRequest
 import com.altude.core.data.SwapTransactionRequest
 import kotlinx.serialization.Contextual
@@ -109,6 +112,23 @@ interface TransactionService {
     @POST("api/nft/createNFTCollection")
     fun postCreateCollectionNft(
         @Body body: ISendTransactionRequest
+    ): Call<JsonElement>
+
+    // ── Solana Attestation Service (SAS) ─────────────────────────────────────
+
+    @POST("api/attestation/createSchema")
+    fun createSchema(
+        @Body body: CreateSchemaRequest
+    ): Call<JsonElement>
+
+    @POST("api/attestation/attest")
+    fun attest(
+        @Body body: AttestRequest
+    ): Call<JsonElement>
+
+    @POST("api/attestation/revoke")
+    fun revokeAttestation(
+        @Body body: RevokeAttestationRequest
     ): Call<JsonElement>
 
     @GET("api/transaction/config")

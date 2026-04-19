@@ -48,6 +48,13 @@ object StorageService {
     fun init(context : Context) {
         appContext  = context.applicationContext // prevents memory leaks
     }
+
+    /**
+     * Exposes the application [Context] to other SDK modules (e.g. provenance).
+     * Safe to call after [init] has been invoked.
+     */
+    fun getContext(): Context = appContext
+
     private val ANDROID_KEYSTORE = "AndroidKeyStore"
 
     private fun getKeyAlias(): String = "altude_store"

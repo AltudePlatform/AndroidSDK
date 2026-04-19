@@ -5,22 +5,19 @@
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="MainActivity">
+      <SelectionState runConfigName="testCreateSchemaTransactionString()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testTransferToken()">
+      <SelectionState runConfigName="testCreateSchemaWithDefaults()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testLatencySample()">
+      <SelectionState runConfigName="testCreateSchemaWithDifferentCommitments()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testCreateAccount()">
+      <SelectionState runConfigName="testCreateCredentialAndPrintPda()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="testGetBalance()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="testSwap()">
+      <SelectionState runConfigName="testPrintSchemaPdaFromKnownCredentialPda()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

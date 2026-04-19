@@ -244,6 +244,7 @@ object Altude {
         }
     }
 
+
     suspend fun generateKeyPair(): SolanaKeypair {
         val keypair = KeyPair.generate()
         return SolanaKeypair(keypair.publicKey,keypair.secretKey)
