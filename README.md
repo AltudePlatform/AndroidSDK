@@ -91,17 +91,6 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
       Unaudited
     </td>
   </tr>
-   <tr>
-    <td align="left"> 
-      Smart-Account
-    </td>
-    <td align="center">
-      In Construction
-    </td>
-    <td align="center">
-      Unaudited
-    </td>
-  </tr>
 </table>
 </div>
 <hr/>
@@ -146,14 +135,6 @@ Secure client-side key management with invisible biometric authentication:
 **Quick Start:** See [Vault Documentation](./docs/VAULT_DOCUMENTATION_INDEX.md)  
 **Examples:** [VaultExampleActivity](./app/src/main/java/com/altude/android/VaultExampleActivity.kt) • [ErrorHandlingExampleActivity](./app/src/main/java/com/altude/android/ErrorHandlingExampleActivity.kt)
 
-### [`smart-account`](./smart-account)
-**Smart account abstractions** *(Coming Soon)*
-
-Advanced account features:
-- Multi-signature support
-- Session keys
-- Account recovery
-- Custom authorization logic
 
 ### [`nft`](./nft)
 **Gasless tools for NFTs on Solana**
