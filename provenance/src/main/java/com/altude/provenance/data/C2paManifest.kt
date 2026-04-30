@@ -3,6 +3,11 @@ package com.altude.provenance.data
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonElement
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -265,36 +270,43 @@ data class C2paManifest(
         val signatureAlg = (payloadMap["signature_alg"] as? String) ?: "ed25519"
         val signer = (payloadMap["signer"] as? String) ?: creator
 
-        val sidecarMap: MutableMap<String, Any?> = linkedMapOf(
-            "version" to "1.0",
-            "claim_generator" to "sas-c2pa-sdk",
-            "asset" to mapOf(
-                "image_hash" to "$hashAlgorithm:$assetHash",
-                "hash_algorithm" to hashAlgorithm,
-                "mime_type" to mimeType,
-                "width" to width,
-                "height" to height,
-                "file_size" to fileSize
-            ),
-            "relationships" to if (!parentHash.isNullOrBlank()) mapOf("parent_hash" to parentHash) else emptyMap<String, Any?>(),
-            "provenance" to mapOf(
-                "creator" to creator,
-                "timestamp" to timestamp,
-                "network" to network,
-                "program_id" to programId,
-                "attestation_pda" to attestationPda
-            )
-        )
+        val sidecarJsonObj = buildJsonObject {
+            put("version", JsonPrimitive("1.0"))
+            put("claim_generator", JsonPrimitive("sas-c2pa-sdk"))
 
-        if (signatureValue != null) {
-            sidecarMap["signature"] = mapOf(
-                "alg" to signatureAlg,
-                "signer" to signer,
-                "signature" to signatureValue
-            )
+            put("asset", buildJsonObject {
+                put("image_hash", JsonPrimitive("$hashAlgorithm:$assetHash"))
+                put("hash_algorithm", JsonPrimitive(hashAlgorithm))
+                put("mime_type", JsonPrimitive(mimeType))
+                put("width", JsonPrimitive(width))
+                put("height", JsonPrimitive(height))
+                put("file_size", JsonPrimitive(fileSize))
+            })
+
+            if (!parentHash.isNullOrBlank()) {
+                put("relationships", buildJsonObject { put("parent_hash", JsonPrimitive(parentHash)) })
+            } else {
+                put("relationships", buildJsonObject {})
+            }
+
+            put("provenance", buildJsonObject {
+                put("creator", JsonPrimitive(creator))
+                put("timestamp", JsonPrimitive(timestamp))
+                put("network", JsonPrimitive(network))
+                put("program_id", JsonPrimitive(programId))
+                put("attestation_pda", JsonPrimitive(attestationPda))
+            })
+
+            if (signatureValue != null) {
+                put("signature", buildJsonObject {
+                    put("alg", JsonPrimitive(signatureAlg))
+                    put("signer", JsonPrimitive(signer))
+                    put("signature", JsonPrimitive(signatureValue))
+                })
+            }
         }
 
-        return canonicalJson.encodeToString(sidecarMap)
+        return canonicalJson.encodeToString(JsonElement.serializer(), sidecarJsonObj)
     }
 
     /**
