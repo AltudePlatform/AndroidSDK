@@ -24,221 +24,165 @@ import kotlinx.serialization.Serializable
  */
 @ConsistentCopyVisibility
 data class ImageHashPayload internal constructor(
-    /** Always `"image_hash"`. */
-    val type: String,
-    /**
-     * [C2paManifest.manifestHash] — SHA-256 of the canonical C2PA claim JSON.
-     * Auto-computed by [create]; never set manually.
-     */
-    val hash: String,
-    /** MIME type of the image (e.g. `"image/png"`). */
-    val mime: String,
-    /** Original filename derived from the file path. */
-    val name: String,
-    /** Full C2PA claim JSON — forwarded to backend for off-chain verification. */
-    val manifest: String,
-    /** Original [C2paManifest] object — returned to SDK user via [ProvenanceResult]. */
-    internal val c2paManifest: C2paManifest,
-    /** Unix epoch (seconds) when the manifest was created. */
-    val timestamp: Long,
+    // Fixed schema fields (SAS devschema03)
+    /** image_hash — raw bytes (vec<u8>) of the image SHA-256 digest. */
+    val imageHash: ByteArray,
+    /** parent_hash — optional raw bytes (vec<u8>) of parent asset. */
+    val parentHash: ByteArray? = null,
+    /** hash_algorithm — e.g. "sha256" */
+    val hashAlgorithm: String = "sha256",
+    /** mime_type — e.g. "image/png" */
+    val mimeType: String = "image/png",
+    /** width — u32 pixels */
+    val width: Int = 0,
+    /** height — u32 pixels */
+    val height: Int = 0,
+    /** file_size — u64 bytes */
+    val fileSize: Long = 0L,
+    /** filename — display filename */
+    val filename: String = "",
+    /** owner — owner address or identifier */
+    val owner: String = "",
+    /** timestamp — u64 epoch seconds */
+    val timestamp: Long = System.currentTimeMillis() / 1000,
+
+    // Legacy / SDK metadata (kept for internal flows)
+    /** The canonical manifest hash (SHA-256 hex) stored on-chain. */
+    val manifestHash: String = "",
+    /** Original C2PA manifest object (optional, used when creating sidecars). */
+    internal val c2paManifest: C2paManifest? = null,
     /** Attester wallet address (Base58). Blank = stored default wallet. */
-    val account: String,
+    val account: String = "",
     /** Recipient wallet (Base58). Defaults to attester if blank. */
-    val recipient: String,
+    val recipient: String = "",
     /** Unix timestamp (seconds) when attestation expires. 0 = no expiry. */
-    val expireAt: Long,
+    val expireAt: Long = 0L,
     /** Finality commitment to wait for. */
-    val commitment: Commitment,
-    /** Optional GPS latitude in decimal degrees. */
-    val latitude: Double? = null,
-    /** Optional GPS longitude in decimal degrees. */
-    val longitude: Double? = null,
+    val commitment: Commitment = Commitment.finalized,
     /** Pre-built certificate (set internally after offline signing). */
-    internal val certificate: ProvenanceCertificate? = null
+    internal val certificate: ProvenanceCertificate? = null,
+    /** Optional SHA-256 hex of the certificate JSON — stored on-chain as `certificate_hash`. */
+    val certificateHash: String = ""
 ) {
     companion object {
-
-        /**
-         * Creates an [ImageHashPayload] from a file path.
-         *
-         * **Where does `filePath` come from?**
-         *
-         * 1. **Camera capture** — save output to a File you control, pass its path:
-         * ```kotlin
-         * val file = File(context.filesDir, "photo.jpg")
-         * val uri  = FileProvider.getUriForFile(context, "${packageName}.provider", file)
-         * // pass uri to camera intent via MediaStore.EXTRA_OUTPUT, then after capture:
-         * val payload = ImageHashPayload.create(filePath = file.absolutePath, account = wallet)
-         * ```
-         *
-         * 2. **Gallery / document picker** — use the [Uri] overload instead:
-         * ```kotlin
-         * val payload = ImageHashPayload.create(uri = pickedUri, contentResolver = contentResolver, account = wallet)
-         * ```
-         *
-         * 3. **File already on disk** (downloads, app storage):
-         * ```kotlin
-         * val payload = ImageHashPayload.create(filePath = File(filesDir, "image.png").absolutePath, account = wallet)
-         * ```
-         *
-         * Internally builds a [C2paManifest]:
-         * 1. Reads bytes from [filePath]
-         * 2. SHA-256(bytes)     → [C2paManifest.assetHash]
-         * 3. Builds canonical C2PA claim JSON
-         * 4. SHA-256(claimJson) → [C2paManifest.manifestHash] ← stored on-chain
-         *
-         * @param filePath  Absolute path to the image file on device.
-         * @param mime      MIME type e.g. `"image/png"`, `"image/jpeg"`.
-         * @param producer  Wallet address or app name embedded in the C2PA claim.
-         * @param account   Attester wallet (Base58). Blank = stored default wallet.
-         */
+        /** Build from file path (computes manifest and image hash). */
         fun create(
-            filePath:   String,
-            mime:       String     = "image/png",
-            producer:   String     = "",
-            account:    String     = "",
-            recipient:  String     = "",
-            expireAt:   Long       = 0L,
-            commitment: Commitment = Commitment.finalized,
-            latitude:   Double?    = null,
-            longitude:  Double?    = null
+            filePath: String,
+            mime: String = "image/png",
+            producer: String = "",
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
             val manifest = C2paManifest.build(
-                filePath  = filePath,
-                mimeType  = mime,
-                producer  = producer
+                filePath = filePath,
+                mimeType = mime,
+                producer = producer
             )
+            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
+            val fileSize = java.io.File(filePath).length()
             return ImageHashPayload(
-                type         = "image_hash",
-                hash         = manifest.manifestHash,
-                mime         = manifest.mimeType,
-                name         = manifest.filename,
-                manifest     = manifest.toJson(),
+                imageHash = imageHashBytes,
+                parentHash = null,
+                hashAlgorithm = "sha256",
+                mimeType = manifest.mimeType,
+                width = 0,
+                height = 0,
+                fileSize = fileSize,
+                filename = manifest.filename,
+                owner = producer,
+                timestamp = manifest.timestamp,
+                manifestHash = manifest.manifestHash,
                 c2paManifest = manifest,
-                timestamp    = manifest.timestamp,
-                account      = account,
-                recipient    = recipient,
-                expireAt     = expireAt,
-                commitment   = commitment,
-                latitude     = latitude,
-                longitude    = longitude
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
             )
         }
 
-        /**
-         * Creates an [ImageHashPayload] from a **gallery / document picker URI** (`content://`).
-         *
-         * Use this when the user picks an image from the gallery or files app —
-         * Android returns a `content://` URI that cannot be used as a file path directly.
-         * This overload reads the bytes via [ContentResolver] and builds the C2PA manifest.
-         *
-         * ```kotlin
-         * // In ActivityResultCallback from photo picker / ACTION_GET_CONTENT:
-         * val payload = ImageHashPayload.create(
-         *     uri             = pickedUri,
-         *     contentResolver = contentResolver,
-         *     mime            = contentResolver.getType(pickedUri) ?: "image/jpeg",
-         *     account         = walletAddress
-         * )
-         * val result = Provenance.attestImageHash(payload)
-         * ```
-         *
-         * @param uri             Content URI returned by gallery / document picker.
-         * @param contentResolver From `Activity.contentResolver` or `Context.contentResolver`.
-         * @param mime            MIME type — use `contentResolver.getType(uri)` if unsure.
-         * @param producer        Wallet address or app name embedded in the C2PA claim.
-         * @param account         Attester wallet (Base58). Blank = stored default wallet.
-         */
-        fun create(
-            uri:             Uri,
-            contentResolver: ContentResolver,
-            mime:            String     = "image/jpeg",
-            producer:        String     = "",
-            account:         String     = "",
-            recipient:       String     = "",
-            expireAt:        Long       = 0L,
-            commitment:      Commitment = Commitment.finalized,
-            latitude:        Double?    = null,
-            longitude:       Double?    = null
+        /** Build from raw bytes (camera buffer or content URI read bytes). */
+        fun createFromBytes(
+            imageBytes: ByteArray,
+            mime: String = "image/png",
+            filename: String = "",
+            producer: String = "",
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
-            val imageBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw IllegalArgumentException("C2PA: cannot open URI $uri")
-
-            // Derive a best-effort filename from the URI's last path segment
-            val filename = uri.lastPathSegment?.substringAfterLast('/') ?: "image"
-
             val manifest = C2paManifest.buildFromBytes(
                 imageBytes = imageBytes,
-                mimeType   = mime,
-                filename   = filename,
-                producer   = producer
+                mimeType = mime,
+                filename = filename,
+                producer = producer
             )
+            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
             return ImageHashPayload(
-                type         = "image_hash",
-                hash         = manifest.manifestHash,
-                mime         = manifest.mimeType,
-                name         = manifest.filename,
-                manifest     = manifest.toJson(),
+                imageHash = imageHashBytes,
+                parentHash = null,
+                hashAlgorithm = "sha256",
+                mimeType = manifest.mimeType,
+                width = 0,
+                height = 0,
+                fileSize = imageBytes.size.toLong(),
+                filename = manifest.filename,
+                owner = producer,
+                timestamp = manifest.timestamp,
+                manifestHash = manifest.manifestHash,
                 c2paManifest = manifest,
-                timestamp    = manifest.timestamp,
-                account      = account,
-                recipient    = recipient,
-                expireAt     = expireAt,
-                commitment   = commitment,
-                latitude     = latitude,
-                longitude    = longitude
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
             )
         }
 
-        /**
-         * Creates a payload from an already-built [C2paManifest].
-         * Use this when you want to inspect manifest fields before attesting.
-         *
-         * ```kotlin
-         * val manifest = C2paManifest.build(filePath = file.absolutePath, producer = wallet)
-         * println("assetHash:    ${manifest.assetHash}")
-         * println("manifestHash: ${manifest.manifestHash}")
-         * val payload = ImageHashPayload.fromManifest(manifest, account = wallet)
-         * ```
-         */
+        /** Build from an existing C2PA manifest. */
         fun fromManifest(
-            manifest:   C2paManifest,
-            account:    String     = "",
-            recipient:  String     = "",
-            expireAt:   Long       = 0L,
-            commitment: Commitment = Commitment.finalized,
-            latitude:   Double?    = null,
-            longitude:  Double?    = null
-        ): ImageHashPayload = ImageHashPayload(
-            type         = "image_hash",
-            hash         = manifest.manifestHash,
-            mime         = manifest.mimeType,
-            name         = manifest.filename,
-            manifest     = manifest.toJson(),
-            c2paManifest = manifest,
-            timestamp    = manifest.timestamp,
-            account      = account,
-            recipient    = recipient,
-            expireAt     = expireAt,
-            commitment   = commitment,
-            latitude     = latitude,
-            longitude    = longitude
-        )
+            manifest: C2paManifest,
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
+        ): ImageHashPayload {
+            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
+            return ImageHashPayload(
+                imageHash = imageHashBytes,
+                parentHash = null,
+                hashAlgorithm = "sha256",
+                mimeType = manifest.mimeType,
+                width = 0,
+                height = 0,
+                fileSize = 0L,
+                filename = manifest.filename,
+                owner = manifest.producer,
+                timestamp = manifest.timestamp,
+                manifestHash = manifest.manifestHash,
+                c2paManifest = manifest,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            )
+        }
+
+        private fun hexToByteArray(hex: String): ByteArray {
+            val s = hex.removePrefix("0x").replace(" ", "")
+            require(s.length % 2 == 0) { "Invalid hex string length" }
+            return ByteArray(s.length / 2) { i ->
+                val idx = i * 2
+                ((s[idx].digitToInt(16) shl 4) + s[idx + 1].digitToInt(16)).toByte()
+            }
+        }
     }
 }
 
 // ── Wire types ────────────────────────────────────────────────────────────────
 
-/**
- * JSON body sent to `POST api/provenance/createSchema`.
- * Only called once per wallet — when the schema account does not yet exist on-chain.
- */
-@Serializable
-data class CreateSchemaRequest(
-    /** Base64-encoded signed `createSchema` Solana transaction. */
-    val signedTransaction: String,
-    val solanaClusterId: Int = 3
-)
+// CreateSchemaRequest removed — schema creation is handled out-of-band
 
 /**
  * JSON body sent to `POST api/provenance/attest`.

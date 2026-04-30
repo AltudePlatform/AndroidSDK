@@ -154,6 +154,49 @@ data class C2paManifest(
             return draft.copy(manifestHash = manifestHash)
         }
 
+        /**
+         * Builds a [C2paManifest] from a generic map of payload values.
+         *
+         * Expected keys (strings):
+         * - "assetHash" (required) : SHA-256 hex of the asset bytes
+         * - "mimeType"             : MIME type (defaults to "image/png")
+         * - "filename"             : optional filename
+         * - "producer"             : optional producer identifier
+         * - "softwareAgent"        : optional software agent string
+         * - "timestamp"            : optional numeric epoch seconds
+         *
+         * The function computes the canonical manifest JSON (omitting defaulted fields)
+         * and returns a manifest with the computed `manifestHash` suitable for on-chain
+         * attestation or sidecar storage.
+         */
+        fun buildFromMap(payload: Map<String, Any?>): C2paManifest {
+            val assetHash = (payload["assetHash"] as? String)
+                ?: throw IllegalArgumentException("C2PA: assetHash is required in payload map")
+
+            val mimeType = (payload["mimeType"] as? String) ?: "image/png"
+            val filename = (payload["filename"] as? String) ?: ""
+            val producer = (payload["producer"] as? String) ?: ""
+            val softwareAgent = (payload["softwareAgent"] as? String) ?: "altude-provenance-sdk"
+            val timestamp = when (val t = payload["timestamp"]) {
+                is Number -> t.toLong()
+                is String -> t.toLongOrNull() ?: System.currentTimeMillis() / 1000
+                else -> System.currentTimeMillis() / 1000
+            }
+
+            val draft = C2paManifest(
+                assetHash     = assetHash,
+                mimeType      = mimeType,
+                filename      = filename,
+                producer      = producer,
+                softwareAgent = softwareAgent,
+                timestamp     = timestamp
+            )
+
+            val claimJson    = hashingJson.encodeToString(draft)
+            val manifestHash = sha256Hex(claimJson.toByteArray(Charsets.UTF_8))
+            return draft.copy(manifestHash = manifestHash)
+        }
+
         private fun sha256Hex(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256")
                 .digest(bytes)
@@ -162,6 +205,97 @@ data class C2paManifest(
 
     /** Returns the canonical JSON of this manifest for backend storage / verification. */
     fun toJson(): String = canonicalJson.encodeToString(this)
+
+    /**
+     * Produces a consumer-facing C2PA-style sidecar JSON matching the structure
+     * requested by clients. The function uses values available in this manifest
+     * and supplements them from the provided payload map when available.
+     *
+     * Expected keys in payloadMap (optional):
+     * - "hash_algorithm" (or "hashAlgorithm") : e.g. "sha256"
+     * - "width" , "height" (numbers)
+     * - "file_size" (number)
+     * - "network" (string) e.g. "solana-devnet"
+     * - "schemaName" (string) override (defaults to "image_attestation_v1")
+     * - "schemaVersion" (number) override (defaults to 1)
+     * - "schemaHash" (string) optional
+     * - "creator" (string) e.g. wallet address (if omitted producer is used)
+     * - "source_uri" or "uri" (string)
+     */
+    fun toSidecarJson(
+        payloadMap: Map<String, Any?> = emptyMap(),
+    ): String {
+        val hashAlgorithm = (payloadMap["hash_algorithm"] as? String)
+            ?: (payloadMap["hashAlgorithm"] as? String)
+            ?: "sha256"
+
+        val width = when (val w = payloadMap["width"]) {
+            is Number -> w.toInt()
+            is String -> w.toIntOrNull() ?: 0
+            else -> 0
+        }
+        val height = when (val h = payloadMap["height"]) {
+            is Number -> h.toInt()
+            is String -> h.toIntOrNull() ?: 0
+            else -> 0
+        }
+        val fileSize = when (val f = payloadMap["file_size"] ?: payloadMap["fileSize"]) {
+            is Number -> f.toLong()
+            is String -> f.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+
+        val creator = (payloadMap["creator"] as? String)
+            ?: if (producer.isNotBlank()) "wallet:$producer" else ""
+
+        val network = (payloadMap["network"] as? String)
+            ?: if (com.altude.core.Programs.AttestationProgram.isDevnet) "solana-devnet" else "solana-mainnet"
+
+        val programId = (payloadMap["program_id"] as? String)
+            ?: com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()
+
+        val attestationPda = (payloadMap["attestation_pda"] as? String) ?: attestationId
+
+        val parentHash = (payloadMap["parent_hash"] as? String) ?: (payloadMap["parentHash"] as? String)
+
+        // Optional signature object (accepts base64 in several common keys)
+        val signatureValue = (payloadMap["signature"] as? String)
+            ?: (payloadMap["signature_base64"] as? String)
+            ?: (payloadMap["signatureB64"] as? String)
+        val signatureAlg = (payloadMap["signature_alg"] as? String) ?: "ed25519"
+        val signer = (payloadMap["signer"] as? String) ?: creator
+
+        val sidecarMap: MutableMap<String, Any?> = linkedMapOf(
+            "version" to "1.0",
+            "claim_generator" to "sas-c2pa-sdk",
+            "asset" to mapOf(
+                "image_hash" to "$hashAlgorithm:$assetHash",
+                "hash_algorithm" to hashAlgorithm,
+                "mime_type" to mimeType,
+                "width" to width,
+                "height" to height,
+                "file_size" to fileSize
+            ),
+            "relationships" to if (!parentHash.isNullOrBlank()) mapOf("parent_hash" to parentHash) else emptyMap<String, Any?>(),
+            "provenance" to mapOf(
+                "creator" to creator,
+                "timestamp" to timestamp,
+                "network" to network,
+                "program_id" to programId,
+                "attestation_pda" to attestationPda
+            )
+        )
+
+        if (signatureValue != null) {
+            sidecarMap["signature"] = mapOf(
+                "alg" to signatureAlg,
+                "signer" to signer,
+                "signature" to signatureValue
+            )
+        }
+
+        return canonicalJson.encodeToString(sidecarMap)
+    }
 
     /**
      * Saves a `.c2pa.json` sidecar file named `{filename}.c2pa.json`.

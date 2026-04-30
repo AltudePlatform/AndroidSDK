@@ -90,8 +90,20 @@ object AttestationProgram {
 
     fun ensureDiscriminators() {
         if (instructionPrefixMode != InstructionPrefixMode.ANCHOR_DISCRIMINATOR) return
-        // Discriminators are already computed or fetched from chain
-        Log.d(TAG, "Discriminators loaded from chain or defaults")
+        // Ensure discriminators are computed when running in Anchor mode. If fetchDiscriminatorsFromChain
+        // already populated values, skip recomputing. Otherwise compute default discriminators from names.
+        try {
+            if (discCreateSchema.all { it == 0.toByte() }) {
+                discCreateSchema = computeDiscriminator("create_schema")
+                Log.d(TAG, "Computed create_schema discriminator: ${discCreateSchema.toHexString()}")
+            }
+            if (discAttest.all { it == 0.toByte() }) {
+                discAttest = computeDiscriminator("create_attestation")
+                Log.d(TAG, "Computed create_attestation discriminator: ${discAttest.toHexString()}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureDiscriminators failed: ${e.message}")
+        }
     }
 
     /**
@@ -460,7 +472,12 @@ object AttestationProgram {
         systemProgram: PublicKey = SYSTEM_PROGRAM_ID
     ): TransactionInstruction {
         ensureDiscriminators()
-        val data = encodeCreateSchema(name, description, layout, fieldNames)
+        var data = encodeCreateSchema(name, description, layout, fieldNames)
+        // If the runtime is configured to use Anchor discriminators, prefix the 8-byte discriminator.
+        if (instructionPrefixMode == InstructionPrefixMode.ANCHOR_DISCRIMINATOR) {
+            data = discCreateSchema + data
+            Log.d(TAG, "createSchema: prefixed with Anchor discriminator: ${discCreateSchema.toHexString()}")
+        }
         Log.d(TAG, "Encoded schema (hex): ${data.toHexString()}")
 
         val accountsList = listOf(
@@ -576,7 +593,7 @@ object AttestationProgram {
         expiry: Long
     ): TransactionInstruction {
         val out = ByteArrayOutputStream()
-        out.write(byteArrayOf(6)) // discriminator for CreateAttestation
+        out.write(byteArrayOf(6)) //createAttest
         out.write(nonce.toByteArray())
         out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(data.size).array())
         out.write(data)
@@ -730,49 +747,81 @@ object AttestationProgram {
      */
     fun parseCredentialData(base64AccountData: String): CredentialAccountData {
         val bytes = android.util.Base64.decode(base64AccountData, android.util.Base64.DEFAULT)
-        if (bytes.size < 1 + 32 + 4 + 4) {
-            throw IllegalArgumentException("Credential account data too small: ${bytes.size} bytes")
+
+        fun attemptParse(startOffset: Int): CredentialAccountData {
+            if (bytes.size < startOffset + 1 + 32 + 4 + 4) {
+                throw IllegalArgumentException("Credential account data too small: ${bytes.size} bytes (startOffset=$startOffset)")
+            }
+
+            var offset = startOffset
+            /* val kind = */ offset += 1
+
+            val authorityBytes = bytes.sliceArray(offset until offset + 32)
+            val authority = PublicKey(authorityBytes)
+            offset += 32
+
+            val nameLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            offset += 4
+            if (nameLen < 0 || offset + nameLen > bytes.size) {
+                throw IllegalArgumentException("Invalid credential nameLen=$nameLen for dataLen=${bytes.size} (startOffset=$startOffset)")
+            }
+            val name = String(bytes, offset, nameLen, StandardCharsets.UTF_8)
+            offset += nameLen
+
+            if (offset + 4 > bytes.size) {
+                throw IllegalArgumentException("Credential data truncated before signers length (startOffset=$startOffset)")
+            }
+            val signersLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            offset += 4
+            if (signersLen < 0) {
+                throw IllegalArgumentException("Invalid credential signersLen=$signersLen (startOffset=$startOffset)")
+            }
+            if (offset + (signersLen * 32) > bytes.size) {
+                throw IllegalArgumentException("Credential data truncated: signersLen=$signersLen requires ${signersLen * 32} bytes, remaining=${bytes.size - offset} (startOffset=$startOffset)")
+            }
+
+            val signers = buildList(signersLen) {
+                repeat(signersLen) {
+                    val pkBytes = bytes.sliceArray(offset until offset + 32)
+                    add(PublicKey(pkBytes))
+                    offset += 32
+                }
+            }
+
+            return CredentialAccountData(
+                authority = authority,
+                name = name,
+                authorizedSigners = signers
+            )
         }
 
-        var offset = 0
-        /* val kind = */ offset += 1
-
-        val authorityBytes = bytes.sliceArray(offset until offset + 32)
-        val authority = PublicKey(authorityBytes)
-        offset += 32
-
-        val nameLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
-        offset += 4
-        if (nameLen < 0 || offset + nameLen > bytes.size) {
-            throw IllegalArgumentException("Invalid credential nameLen=$nameLen for dataLen=${bytes.size}")
-        }
-        val name = String(bytes, offset, nameLen, StandardCharsets.UTF_8)
-        offset += nameLen
-
-        if (offset + 4 > bytes.size) {
-            throw IllegalArgumentException("Credential data truncated before signers length")
-        }
-        val signersLen = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
-        offset += 4
-        if (signersLen < 0) {
-            throw IllegalArgumentException("Invalid credential signersLen=$signersLen")
-        }
-        if (offset + (signersLen * 32) > bytes.size) {
-            throw IllegalArgumentException("Credential data truncated: signersLen=$signersLen requires ${signersLen * 32} bytes, remaining=${bytes.size - offset}")
-        }
-
-        val signers = buildList(signersLen) {
-            repeat(signersLen) {
-                val pkBytes = bytes.sliceArray(offset until offset + 32)
-                add(PublicKey(pkBytes))
-                offset += 32
+        // Try native (no anchor discriminator) first, then try anchor-offset heuristic.
+        return try {
+            attemptParse(0)
+        } catch (e: Exception) {
+            // Log diagnostic info using the CreateSchemaLog tag as requested.
+            try {
+                Log.d("CreateSchemaLog", "parseCredentialData native parse failed: ${e.message}")
+                val preview = bytes.take(32).joinToString("") { "%02x".format(it) }
+                Log.d("CreateSchemaLog", "first 32 bytes hex: $preview")
+                // Heuristic: maybe the account has an 8-byte Anchor discriminator prefix
+                val anchorOffset = 8
+                val parsedAnchor = runCatching { attemptParse(anchorOffset) }.getOrNull()
+                if (parsedAnchor != null) {
+                    Log.d("CreateSchemaLog", "Detected Anchor-style credential account (8-byte discriminator). Parsed name='${parsedAnchor.name}', signers=${parsedAnchor.authorizedSigners.size}")
+                    // If Anchor-style layout detected, record the preference globally so future encodes/decodes align.
+                    instructionPrefixMode = InstructionPrefixMode.ANCHOR_DISCRIMINATOR
+                    // Also populate lazy discriminators now that we're in Anchor mode
+                    discCreateSchema = computeDiscriminator("create_schema")
+                    discAttest = computeDiscriminator("create_attestation")
+                    return parsedAnchor
+                } else {
+                    Log.d("CreateSchemaLog", "Anchor-style parse also failed — falling back to throwing original error")
+                    throw e
+                }
+            } catch (inner: Exception) {
+                throw IllegalArgumentException(inner.message ?: inner.javaClass.simpleName, inner)
             }
         }
-
-        return CredentialAccountData(
-            authority = authority,
-            name = name,
-            authorizedSigners = signers
-        )
     }
 }
