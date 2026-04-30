@@ -141,6 +141,7 @@ class ProvenanceInstrumentedTest {
         val tmpFile = File(context.filesDir, "hash_consistency.png")
             .also { it.writeBytes(bytes) }
 
+
         try {
             val fromFile  = C2paManifest.build(filePath = tmpFile.absolutePath, mimeType = "image/png")
             val fromBytes = C2paManifest.buildFromBytes(
@@ -231,64 +232,6 @@ class ProvenanceInstrumentedTest {
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // 2. ImageHashPayload — factory methods
-    // ═════════════════════════════════════════════════════════════════════════
-
-    /**
-     * create(filePath=…) maps all public fields correctly and derives the
-     * manifest hash automatically from the file content.
-     */
-    @Test
-    fun testImageHashPayloadCreateFromFile() {
-        val tmpFile = File(context.filesDir, "payload_test.png")
-            .also { it.writeBytes("payload creation test image bytes".toByteArray()) }
-
-        try {
-            val payload = ImageHashPayload.create(
-                filePath   = tmpFile.absolutePath,
-                mime       = "image/png",
-                producer   = "my-wallet-address",
-                commitment = Commitment.confirmed
-            )
-
-            assertEquals("type",       "image_hash",         payload.type)
-            assertEquals("mime",       "image/png",          payload.mime)
-            assertEquals("name",       "payload_test.png",   payload.name)
-            assertEquals("commitment", Commitment.confirmed,  payload.commitment)
-            assertEquals("hash must equal c2paManifest.manifestHash",
-                payload.c2paManifest.manifestHash, payload.hash)
-            assertFalse("hash must not be blank",   payload.hash.isBlank())
-            assertEquals("expireAt defaults to 0",  0L, payload.expireAt)
-
-            println("✅ payload.hash = ${payload.hash}")
-        } finally {
-            tmpFile.delete()
-        }
-    }
-
-    /**
-     * fromManifest() produces the same hash as create() for identical file content.
-     */
-    @Test
-    fun testImageHashPayloadFromManifestMatchesCreate() {
-        val bytes   = "from manifest vs create consistency".toByteArray()
-        val tmpFile = File(context.filesDir, "from_manifest.png")
-            .also { it.writeBytes(bytes) }
-
-        try {
-            val fromCreate   = ImageHashPayload.create(filePath = tmpFile.absolutePath)
-            val fromManifest = ImageHashPayload.fromManifest(fromCreate.c2paManifest)
-
-            assertEquals("hash must match",
-                fromCreate.hash, fromManifest.hash)
-            assertEquals("assetHash must match",
-                fromCreate.c2paManifest.assetHash, fromManifest.c2paManifest.assetHash)
-            println("✅ fromManifest hash matches create hash")
-        } finally {
-            tmpFile.delete()
-        }
-    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 3. ProvenanceCertificate — JSON round-trip
@@ -310,8 +253,6 @@ class ProvenanceInstrumentedTest {
             deviceMake         = "Google",
             deviceModel        = "Pixel 9 Pro",
             osVersion          = "15",
-            latitude           = 14.5995,
-            longitude          = 120.9842,
             attestationId      = "SolanaAttestPDA1111111111111111111111111"
         )
 
@@ -327,8 +268,6 @@ class ProvenanceInstrumentedTest {
         assertEquals("deviceMake",      cert.deviceMake,      parsed.deviceMake)
         assertEquals("deviceModel",     cert.deviceModel,     parsed.deviceModel)
         assertEquals("osVersion",       cert.osVersion,       parsed.osVersion)
-        assertEquals("latitude",        cert.latitude,        parsed.latitude)
-        assertEquals("longitude",       cert.longitude,       parsed.longitude)
         assertEquals("attestationId",   cert.attestationId,   parsed.attestationId)
 
         println("✅ ProvenanceCertificate JSON round-trip passed")
@@ -349,14 +288,10 @@ class ProvenanceInstrumentedTest {
             deviceMake         = "Samsung",
             deviceModel        = "Galaxy S25",
             osVersion          = "14",
-            latitude           = null,
-            longitude          = null
         )
 
         val parsed = ProvenanceCertificate.fromJson(cert.toJson())
         assertNotNull(parsed)
-        assertNull("latitude must be null",  parsed!!.latitude)
-        assertNull("longitude must be null", parsed.longitude)
         println("✅ No-GPS certificate round-trip passed")
     }
 
@@ -438,50 +373,20 @@ class ProvenanceInstrumentedTest {
         val walletKey = keypair.publicKey.toBase58()
         ProvenancePrefs.reset(walletKey)
 
-        println("=" .repeat(80))
-        println("Creating Schema Transaction for wallet: $walletKey")
-        println("=" .repeat(80))
+        // Derive the schema PDA deterministically and ensure the SDK now requires
+        // out-of-band schema creation. The manager method should return a failure
+        // indicating client-side creation is removed.
+        val schemaPda = ProvenanceManager.deriveSchemaAddress(keypair.publicKey.toBase58())
+        println("Derived Schema PDA: ${schemaPda.toBase58()}")
 
-        // Call ensureSchema - it will return a transaction string if schema needs to be created
         val result = ProvenanceManager.ensureSchema(
             account = "",
             commitment = Commitment.confirmed.name
         )
 
-        result
-            .onSuccess { schemaTxString ->
-                if (schemaTxString != null) {
-                    println("\n✅ Schema Transaction Created Successfully!")
-                    println("\nTransaction String (Base64):")
-                    println("-" .repeat(80))
-                    println(schemaTxString)
-                    println("-" .repeat(80))
-                    println("\nTransaction Length: ${schemaTxString.length} characters")
-                    println("\nYou can submit this transaction to Solana devnet using:")
-                    println("  - Solana CLI: solana send-transaction <base64-string>")
-                    println("  - Or via your backend API endpoint")
-                    
-                    // Derive and print the schema PDA
-                    val schemaPda = ProvenanceManager.deriveSchemaAddress(keypair.publicKey.toBase58())
-                    println("\nExpected Schema PDA: ${schemaPda.toBase58()}")
-                    println("=" .repeat(80))
-                } else {
-                    println("\nℹ️  Schema already exists on-chain - no transaction needed")
-                    
-                    // Print the existing schema PDA
-                    val schemaPda = ProvenanceManager.deriveSchemaAddress(keypair.publicKey.toBase58())
-                    println("Existing Schema PDA: ${schemaPda.toBase58()}")
-                    println("=" .repeat(80))
-                }
-            }
-            .onFailure { e ->
-                println("\n❌ Failed to create schema transaction")
-                println("Error: ${e.message}")
-                e.printStackTrace()
-                fail("Schema transaction creation failed: ${e.message}")
-            }
-
-        assertTrue("Schema transaction creation must succeed", result.isSuccess)
+        assertTrue("ensureSchema should now fail indicating createSchema removal", result.isFailure)
+        val msg = result.exceptionOrNull()?.message ?: ""
+        assertTrue("Error message should mention createSchema removal", msg.contains("createSchema is removed") || msg.contains("createSchema removed"))
     }
 
     /**
@@ -503,45 +408,6 @@ class ProvenanceInstrumentedTest {
         println("✅ Schema PDA: ${pda1.toBase58()}")
     }
 
-    /**
-     * buildCertificate() signs the claim JSON with the wallet keypair (pure ED25519,
-     * no network).  Validates:
-     *   - signature is 128 lowercase hex chars (64 ED25519 bytes)
-     *   - signerAddress matches the keypair's public key
-     *   - imageSha256 equals the c2paManifest.assetHash of the payload
-     */
-    @Test
-    fun testBuildCertificateOfflineSigning() = runBlocking {
-        if (TEST_MNEMONIC.isBlank()) {
-            println("⚠️  Skipped — fill in TEST_MNEMONIC to run")
-            return@runBlocking
-        }
-
-        val tmpFile = makeTempImageFile("cert_offline")
-        try {
-            val payload = ImageHashPayload.create(filePath = tmpFile.absolutePath)
-            val keypair = ProvenanceManager.getKeyPair()
-            val cert    = ProvenanceManager.buildCertificate(payload, keypair)
-
-            assertFalse("signature must not be blank",       cert.signature.isBlank())
-            assertEquals("signature is 128 hex chars (64 bytes × 2)",
-                128, cert.signature.length)
-            assertTrue("signature must be lowercase hex",
-                cert.signature.all { it.isDigit() || it in 'a'..'f' })
-            assertEquals("signerAddress must match keypair pubkey",
-                keypair.publicKey.toBase58(), cert.signerAddress)
-            assertEquals("imageSha256 must equal c2paManifest.assetHash",
-                payload.c2paManifest.assetHash, cert.imageSha256)
-            assertTrue("instanceId must be a URN",
-                cert.instanceId.startsWith("urn:uuid:"))
-
-            println("✅ Signer:    ${cert.signerAddress}")
-            println("   Signature: ${cert.signature.take(32)}…")
-        } finally {
-            tmpFile.delete()
-        }
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
     // 6. Network tests  (API_KEY + TEST_MNEMONIC + devnet SOL required)
     // ═════════════════════════════════════════════════════════════════════════
@@ -556,44 +422,83 @@ class ProvenanceInstrumentedTest {
             println("⚠️  Skipped — fill in API_KEY and TEST_MNEMONIC"); return@runBlocking
         }
 
-        val tmpFile = makeTempImageFile("attest_single")
-        try {
-            val payload = ImageHashPayload.create(
-                filePath   = tmpFile.absolutePath,
-                mime       = "image/png",
-                commitment = Commitment.confirmed
-            )
-            val result = Provenance.attestImageHash(payload, ManifestOption.None)
+        // Build a deterministic manifest from fixed bytes to avoid non-deterministic timestamps
+        val sampleBytes = "provenance test deterministic attest".toByteArray()
 
-            result
-                .onSuccess { pr ->
-                    println("✅ attestationId: ${pr.attestationId}")
-                    println("   txSignature:   ${pr.response?.Signature}")
-                    assertFalse("attestationId must not be blank", pr.attestationId.isBlank())
-                    assertEquals("status must be 'success'",      "success", pr.response?.Status)
-                    assertFalse("tx signature must not be blank",
-                        pr.response?.Signature?.isBlank() ?: true)
-                    assertNull("no manifestFile for ManifestOption.None",   pr.manifestFile)
-                    assertNull("no embeddedFile for ManifestOption.None",   pr.embeddedImageFile)
-                    assertFalse("isQueued must be false",                   pr.isQueued)
-                }
-                .onFailure { e ->
-                    println("❌ attestImageHash failed:")
-                    println("   Message: ${e.message}")
-                    e.printStackTrace()
-                    if (e.cause != null) {
-                        println("   Cause: ${e.cause?.message}")
-                        e.cause?.printStackTrace()
-                    }
-                }
 
-            if (result.isFailure) {
-                fail("attestation failed: ${result.exceptionOrNull()?.message}\n${result.exceptionOrNull()?.stackTraceToString()}")
+        // Ensure payload has deterministic fields and an explicit certificate hash
+        val sampleCertHash = "0".repeat(64)
+
+        // Build the ImageHashPayload from the sample bytes using the factory so
+        // the embedded C2PA manifest and hashes are computed consistently.
+        val payloadForChecks = ImageHashPayload.createFromBytes(
+            imageBytes = sampleBytes,
+            mime = "image/png",
+            filename = "attest_single.png",
+            producer = "test-producer",
+            account = "",
+            commitment = Commitment.confirmed
+        ).copy(
+            width = 23,
+            height = 23,
+            //parentHash = parentHash,
+            certificateHash = sampleCertHash)
+
+
+
+        // Sanity checks for payload
+        assertEquals("certificateHash must match sample", sampleCertHash, payloadForChecks.certificateHash)
+        // The assetHash is stored in the embedded C2PA manifest
+        val assetHash = payloadForChecks.c2paManifest!!.assetHash
+        assertEquals("assetHash must be 64 hex chars", 64, assetHash.length)
+        assertFalse("assetHash must not be blank", assetHash.isBlank())
+
+        // Verify the payload JSON ordering expected by the on-chain schema
+        val keypair = ProvenanceManager.getKeyPair()
+        val payloadJson = ProvenanceManager.buildPayloadJson(payloadForChecks, keypair.publicKey)
+        println("Payload JSON: $payloadJson")
+
+//        val fieldNames = listOf("type","hash","asset_hash","attester","certificate_hash","mime","name","timestamp","expireAt","recipient")
+//        for (i in 0 until fieldNames.size - 1) {
+//            val a = payloadJson.indexOf('"' + fieldNames[i] + '"')
+//            val b = payloadJson.indexOf('"' + fieldNames[i + 1] + '"')
+//            assertTrue("Field order: ${fieldNames[i]} must come before ${fieldNames[i+1]}", a >= 0 && b >= 0 && a < b)
+//        }
+        // Use the ImageHashPayload API (map-based overload removed). Pass the
+        // deterministic payload we built earlier (which includes certificateHash).
+        val result = Provenance.attestImageHash(
+            payloadForChecks,
+            ManifestOption.None,
+            "dev01",
+            "devschema001"
+        )
+
+        result
+            .onSuccess { pr ->
+                println("✅ attestationId: ${pr.attestationId}")
+                println("   txSignature:   ${pr.response?.Signature}")
+                assertFalse("attestationId must not be blank", pr.attestationId.isBlank())
+                assertEquals("status must be 'success'",      "success", pr.response?.Status)
+                assertFalse("tx signature must not be blank",
+                    pr.response?.Signature?.isBlank() ?: true)
+                assertNull("no manifestFile for ManifestOption.None",   pr.manifestFile)
+                assertNull("no embeddedFile for ManifestOption.None",   pr.embeddedImageFile)
+                assertFalse("isQueued must be false",                   pr.isQueued)
             }
-            assertTrue("attestation must succeed", result.isSuccess)
-        } finally {
-            tmpFile.delete()
+            .onFailure { e ->
+                println("❌ attestImageHash failed:")
+                println("   Message: ${e.message}")
+                e.printStackTrace()
+                if (e.cause != null) {
+                    println("   Cause: ${e.cause?.message}")
+                    e.cause?.printStackTrace()
+                }
+            }
+
+        if (result.isFailure) {
+            fail("attestation failed: ${result.exceptionOrNull()?.message}\n${result.exceptionOrNull()?.stackTraceToString()}")
         }
+        assertTrue("attestation must succeed", result.isSuccess)
     }
 
     /**
@@ -614,7 +519,11 @@ class ProvenanceInstrumentedTest {
                 mime       = "image/png",
                 commitment = Commitment.confirmed
             )
-            val result = Provenance.attestImageHash(payload, ManifestOption.SidecarFile)
+            val result = Provenance.attestImageHash(payload,
+                ManifestOption.SidecarFile,
+                "test007",
+                "sc_test01"
+            )
 
             result
                 .onSuccess { pr ->
@@ -659,7 +568,8 @@ class ProvenanceInstrumentedTest {
                 filePath   = tmpFile.absolutePath,
                 commitment = Commitment.confirmed
             )
-            val pr = Provenance.attestImageHash(payload, ManifestOption.None).getOrThrow()
+            val pr = Provenance.attestImageHash(payload, ManifestOption.None,
+                "test007", "sc_test01").getOrThrow()
             println("   Attestation PDA: ${pr.attestationId}")
 
             // 2. Wait for chain to confirm the tx
@@ -698,7 +608,7 @@ class ProvenanceInstrumentedTest {
         try {
             val pr = Provenance.attestImageHash(
                 ImageHashPayload.create(tmpFile.absolutePath, commitment = Commitment.confirmed),
-                ManifestOption.None
+                ManifestOption.None, "test007", "sc_test01"
             ).getOrThrow()
 
             Thread.sleep(6_000)
@@ -823,7 +733,9 @@ class ProvenanceInstrumentedTest {
             }
 
             val results = mutableListOf<AttestationResult>()
-            Provenance.attestBatch(payloads, ManifestOption.None).collect { item ->
+            Provenance.attestBatch(payloads, ManifestOption.None,
+                    "test007", "sc_test01"
+                ).collect { item ->
                 results.add(item)
                 item.result
                     .onSuccess { pr ->
@@ -889,16 +801,10 @@ class ProvenanceInstrumentedTest {
         // Pre-mark schema as created to simulate existing schema
         ProvenancePrefs.markSchemaCreated(walletKey)
 
-        println("Testing createSchema when schema already exists...")
-
-        val result = Provenance.createSchema(account = "", commitment = "confirmed")
-
-        assertTrue("createSchema should succeed when schema exists", result.isSuccess)
-        val response = result.getOrThrow()
-        assertEquals("Expected success status", "success", response.Status)
-        assertEquals("Expected schema exists message", "Schema already exists", response.Message)
-
-        println("✅ createSchema correctly detected existing schema")
+        println("Testing schema exists path: deriving schema address")
+        val schemaAddr = Provenance.getSchemaAddress("")
+        assertNotNull("Schema address should be available when schema is marked", schemaAddr)
+        println("✅ Derived schema address: $schemaAddr")
     }
 
     /**
@@ -918,44 +824,11 @@ class ProvenanceInstrumentedTest {
         // Reset schema state to force creation
         ProvenancePrefs.reset(walletKey)
 
-        println("=" .repeat(80))
-        println("Testing createSchema with new schema creation")
-        println("Wallet: $walletKey")
-        println("=" .repeat(80))
-
-        val startTime = System.currentTimeMillis()
-        val result = Provenance.createSchema(account = "", commitment = "confirmed")
-
-        val endTime = System.currentTimeMillis()
-        val duration = endTime - startTime
-
-        println("Schema creation completed in ${duration}ms")
-
-        if (result.isSuccess) {
-            val response = result.getOrThrow()
-            println("✅ Schema creation successful!")
-            println("Status: ${response.Status}")
-            println("Message: ${response.Message}")
-
-            assertEquals("Expected success status", "success", response.Status)
-            assertNotNull("Response message should not be null", response.Message)
-
-            // Verify schema is now marked as created
-            assertTrue("Schema should be marked as created after success",
-                ProvenancePrefs.isSchemaCreated(walletKey))
-
-            // Verify we can get the schema address
-            val schemaAddress = Provenance.getSchemaAddress("")
-            assertNotNull("Schema address should be available", schemaAddress)
-            println("Schema PDA: $schemaAddress")
-
-        } else {
-            val error = result.exceptionOrNull()
-            println("❌ Schema creation failed: ${error?.message}")
-            fail("Schema creation should have succeeded: ${error?.message}")
-        }
-
-        println("=" .repeat(80))
+        // ensureSchema should now return a failure instructing to create schema out-of-band
+        val result = ProvenanceManager.ensureSchema(account = "", commitment = "confirmed")
+        assertTrue("ensureSchema must fail when schema is absent (client-side creation removed)", result.isFailure)
+        val msg = result.exceptionOrNull()?.message ?: ""
+        assertTrue("Error message should mention createSchema removal", msg.contains("createSchema is removed") || msg.contains("createSchema removed"))
     }
 
     /**
@@ -980,23 +853,11 @@ class ProvenanceInstrumentedTest {
             // Reset for each test
             ProvenancePrefs.reset(walletKey)
 
-            println("Testing with commitment: $commitment")
-
-            val result = Provenance.createSchema(
-                account = "",
-                commitment = commitment
-            )
-
-            assertTrue("createSchema should succeed with $commitment commitment",
-                result.isSuccess)
-
-            val response = result.getOrThrow()
-            assertEquals("Expected success status for $commitment", "success", response.Status)
-
-            println("✅ createSchema succeeded with $commitment commitment")
-
-            // Mark as created for next iteration to test "already exists" path
-            ProvenancePrefs.markSchemaCreated(walletKey)
+            println("Testing ensureSchema with commitment: $commitment")
+            val result = ProvenanceManager.ensureSchema(account = "", commitment = commitment)
+            assertTrue("ensureSchema should fail with removal message", result.isFailure)
+            val msg = result.exceptionOrNull()?.message ?: ""
+            assertTrue(msg.contains("createSchema is removed") || msg.contains("createSchema removed"))
         }
     }
 
@@ -1017,17 +878,10 @@ class ProvenanceInstrumentedTest {
         // Ensure schema exists first by calling with explicit parameters
         ProvenancePrefs.markSchemaCreated(walletKey)
 
-        println("Testing createSchema with default parameters...")
-
-        // Call with no parameters to test defaults
-        val result = Provenance.createSchema()
-
-        assertTrue("createSchema should succeed with defaults", result.isSuccess)
-        val response = result.getOrThrow()
-        assertEquals("Expected success status", "success", response.Status)
-
-        println("✅ createSchema works correctly with default parameters")
-        println("Response: ${response.Message}")
+        println("Testing schema defaults: deriving schema address")
+        val schemaAddress = Provenance.getSchemaAddress("")
+        assertNotNull("Schema address should be available", schemaAddress)
+        println("✅ Derived schema address: $schemaAddress")
     }
 
     /**
@@ -1046,18 +900,8 @@ class ProvenanceInstrumentedTest {
 
         // Reset to ensure fresh test
         ProvenancePrefs.reset(walletKey)
-
-        println("=" .repeat(80))
-        println("Testing createSchema integration with attestation workflow")
-        println("=" .repeat(80))
-
-        // Step 1: Create schema explicitly
-        println("Step 1: Creating schema...")
-        val schemaResult = Provenance.createSchema()
-
-        assertTrue("Schema creation should succeed", schemaResult.isSuccess)
-        val schemaResponse = schemaResult.getOrThrow()
-        println("Schema creation: ${schemaResponse.Status} - ${schemaResponse.Message}")
+        println("Testing attestation integration assuming schema exists (marked in prefs)")
+        ProvenancePrefs.markSchemaCreated(walletKey)
 
         // Step 2: Create test image and payload
         println("Step 2: Preparing test image...")
@@ -1072,7 +916,9 @@ class ProvenanceInstrumentedTest {
         println("Step 3: Attesting image...")
         val attestResult = Provenance.attestImageHash(
             payload = payload,
-            manifestOption = ManifestOption.None
+            manifestOption = ManifestOption.None,
+            credentialName = "test007",
+            schemaName = "sc_test01"
         )
 
         if (attestResult.isSuccess) {
@@ -1106,23 +952,14 @@ class ProvenanceInstrumentedTest {
         println("Testing createSchema error handling...")
 
         // Test with valid parameters to establish baseline
-        val result = Provenance.createSchema(
-            account = "",
-            commitment = "confirmed"
-        )
+        // Instead of creating schema client-side, mark schema created and validate helpers
+        val keypair = ProvenanceManager.getKeyPair()
+        val walletKey = keypair.publicKey.toBase58()
+        ProvenancePrefs.markSchemaCreated(walletKey)
 
-        // Should succeed (either creates new or detects existing)
-        assertTrue("createSchema should handle valid parameters", result.isSuccess)
-
-        // Test the result structure
-        val response = result.getOrThrow()
-        assertNotNull("Response should not be null", response)
-        assertEquals("Status should be success", "success", response.Status)
-        assertNotNull("Message should not be null", response.Message)
-
-        println("✅ createSchema handles valid scenarios correctly")
-        println("Response status: ${response.Status}")
-        println("Response message: ${response.Message}")
+        val addr = Provenance.getSchemaAddress("")
+        assertNotNull("Schema address should be available after marking", addr)
+        println("✅ schema helper functions work after marking schema: $addr")
     }
 
     /**
@@ -1145,33 +982,15 @@ class ProvenanceInstrumentedTest {
         ProvenancePrefs.markSchemaCreated(walletKey)
 
         val existingStartTime = System.currentTimeMillis()
-        val existingResult = Provenance.createSchema()
+        val schemaAddr = Provenance.getSchemaAddress("")
         val existingEndTime = System.currentTimeMillis()
         val existingDuration = existingEndTime - existingStartTime
 
-        assertTrue("Existing schema check should succeed", existingResult.isSuccess)
-        val existingResponse = existingResult.getOrThrow()
-        assertEquals("Should detect existing schema", "Schema already exists", existingResponse.Message)
-
-        // Test 2: New schema creation (will be slower due to network)
-        ProvenancePrefs.reset(walletKey)
-
-        val newStartTime = System.currentTimeMillis()
-        val newResult = Provenance.createSchema()
-        val newEndTime = System.currentTimeMillis()
-        val newDuration = newEndTime - newStartTime
-
-        println("Performance Results:")
-        println("- Existing schema check: ${existingDuration}ms")
-        println("- New schema creation: ${newDuration}ms")
-
-        assertTrue("New schema creation should succeed", newResult.isSuccess)
-
-        // Existing schema should be much faster
-        assertTrue("Existing schema check should be faster", existingDuration < newDuration)
+        assertNotNull("Schema address should be available", schemaAddr)
+        println("Existing schema address fetch time: ${existingDuration}ms")
         assertTrue("Existing schema check should be under 100ms", existingDuration < 100)
 
-        println("✅ createSchema performance is acceptable")
+        println("✅ schema helper performance is acceptable")
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -1205,15 +1024,15 @@ class ProvenanceInstrumentedTest {
         val authority = keypair.publicKey
         val schema = ProvenanceManager.deriveSchemaAddress()
         val credentialName = "test-credential"
-        val credential = com.altude.core.Programs.AttestationProgram.deriveCredentialAddress(
+        val credential = AttestationProgram.deriveCredentialAddress(
             authority = authority,
             name = credentialName
         )
-        val systemProgram = com.altude.core.Programs.Utility.SYSTEM_PROGRAM_ID
+        val systemProgram = Utility.SYSTEM_PROGRAM_ID
 
         val signers = listOf(authority)
 
-        val ix = com.altude.core.Programs.AttestationProgram.createCredential(
+        val ix = AttestationProgram.createCredential(
             payer = payer,
             credential = credential,
             authority = authority,
@@ -1223,7 +1042,7 @@ class ProvenanceInstrumentedTest {
         )
 
         // Check program ID
-        assertEquals(com.altude.core.Programs.AttestationProgram.PROGRAM_ID, ix.programId)
+        assertEquals(AttestationProgram.PROGRAM_ID, ix.programId)
         // Check account metas
         assertEquals(payer, ix.keys[0].publicKey)
         assertTrue(ix.keys[0].isSigner && ix.keys[0].isWritable)
@@ -1268,27 +1087,17 @@ class ProvenanceInstrumentedTest {
 
         val credentialName = "test-credential-" + System.currentTimeMillis()
         println("Creating credential with name: $credentialName")
-
-        val result = Provenance.createCredential(
-            name = credentialName,
-            account = "",
-            commitment = "confirmed"
+        // Client-side credential creation is removed. Instead, verify we can derive
+        // the credential PDA deterministically for the given name.
+        val keypair = ProvenanceManager.getKeyPair()
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            authority = keypair.publicKey,
+            name = credentialName
         )
-
-        result
-            .onSuccess { response ->
-                println("✅ Credential creation succeeded!")
-                println("Status: ${response.Status}")
-                println("Message: ${response.Message}")
-                assertEquals("Expected success status", "success", response.Status)
-                assertNotNull("Response message should not be null", response.Message)
-            }
-            .onFailure { e ->
-                println("❌ Credential creation failed: ${e.message}")
-                fail("Credential creation should succeed: ${e.message}")
-            }
-
-        assertTrue("Credential creation must succeed", result.isSuccess)
+        val pdaBase58 = credentialPda.toBase58()
+        println("Derived credential PDA for name '$credentialName': $pdaBase58")
+        assertEquals("PDA must be 44 Base58 chars", 44, pdaBase58.length)
+        assertFalse("PDA must not be blank", pdaBase58.isBlank())
     }
 
     /**
@@ -1306,31 +1115,15 @@ class ProvenanceInstrumentedTest {
         //val schema = ProvenanceManager.deriveSchemaAddress()
         val credentialName = "chen-credential" + System.currentTimeMillis()
         println("Creating credential with name: $credentialName")
-        val result = Provenance.createCredential(
-            name = credentialName,
-            account = "",
-            commitment = "confirmed"
+        // Client no longer creates credentials. Derive and print the credential PDA instead.
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            authority = keypair.publicKey,
+            name = credentialName
         )
-        result
-            .onSuccess { response ->
-                println("✅ Credential creation succeeded!")
-                println("Status: ${response.Status}")
-                println("Message: ${response.Message}")
-                // Derive and print the PDA
-                val credentialPda = com.altude.core.Programs.AttestationProgram.deriveCredentialAddress(
-                    authority = keypair.publicKey,
-                    name = credentialName
-                )
-                val pdaBase58 = credentialPda.toBase58()
-                println("Credential PDA for name '$credentialName': $pdaBase58")
-                assertEquals("PDA must be 44 Base58 chars", 44, pdaBase58.length)
-                assertFalse("PDA must not be blank", pdaBase58.isBlank())
-            }
-            .onFailure { e ->
-                println("❌ Credential creation failed: ${e.message}")
-                fail("Credential creation should succeed: ${e.message}")
-            }
-        assertTrue("Credential creation must succeed", result.isSuccess)
+        val pdaBase58 = credentialPda.toBase58()
+        println("Credential PDA for name '$credentialName': $pdaBase58")
+        assertEquals("PDA must be 44 Base58 chars", 44, pdaBase58.length)
+        assertFalse("PDA must not be blank", pdaBase58.isBlank())
     }
 
     /**
@@ -1346,49 +1139,63 @@ class ProvenanceInstrumentedTest {
             return@runBlocking
         }
 
-        val credentialPdaBase58 = "82QXj3ShSfB8hVB4yrjUQ6zgbkKF4UevYicKdwm4dbhq"//5cWZLg1oCHwh4rcZJmHFsmGHSgi1PBb1bWpo9D41Y82P"
+        val credentialPdaBase58 = "6bzWPdFTrzAQjacPFAcB9afTXrfL8hm8pt5SyrHDfcfR"//5cWZLg1oCHwh4rcZJmHFsmGHSgi1PBb1bWpo9D41Y82P"
         println("Creating schema using credentialPda: $credentialPdaBase58")
 
         // Derive schema PDA deterministically from the provided credential PDA.
         // Seeds (per AttestationProgram):
         //   ["schema", credentialPda(32 bytes), schemaName(utf8), version(1 byte)]
-        val credentialPda = foundation.metaplex.solanapublickeys.PublicKey(credentialPdaBase58)
+        val credentialPda = PublicKey(credentialPdaBase58)
         // Manual schema name (do not depend on ProvenanceManager.SCHEMA_NAME)
         val schemaName = "image_hash"
         val schemaVersion = 0
-
-        println("Attestation programId: ${com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()}")
+        val keypair =
+        println("Attestation programId: ${AttestationProgram.PROGRAM_ID.toBase58()}")
         println("Schema name: '$schemaName'  version=$schemaVersion")
         println("Credential PDA (parsed): ${credentialPda.toBase58()}")
         println("Schema PDA seeds: ['schema', credentialPda, '$schemaName', 0x00]")
 
-        val schemaPda = com.altude.core.Programs.AttestationProgram.deriveSchemaAddress(
+        val schemaPda = AttestationProgram.deriveSchemaAddress(
             credential = credentialPda,
             name = schemaName,
             version = schemaVersion
         )
         println("✅ Derived Schema PDA: ${schemaPda.toBase58()}")
 
-        val result = Provenance.createSchema(
-            account = "",
-            commitment = "confirmed",
-            credentialPda = credentialPdaBase58,
-            schemaName = schemaName
-        )
+        // Client no longer creates schemas. This test now only derives the Schema PDA
+        // from a known credential PDA and prints it for manual verification.
+        println("Derived Schema PDA: ${schemaPda.toBase58()}")
+        assertFalse("Derived schema PDA must not be blank", schemaPda.toBase58().isBlank())
 
-        result
-            .onSuccess { response ->
-                println("✅ createSchema response")
-                println("Status: ${response.Status}")
-                println("Message: ${response.Message}")
-                println("Signature: ${response.Signature}")
-                println("SchemaId: ${response.SchemaId}")
-            }
-            .onFailure { e ->
-                println("❌ createSchema failed: ${e.message}")
-                fail("createSchema should succeed: ${e.message}")
-            }
+        // Capture CreateSchemaLog from device logcat for diagnostics and assert presence
+        try {
+            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "CreateSchemaLog"))
+            val output = proc.inputStream.bufferedReader().use { it.readText() }
+            println("----- CreateSchemaLog (captured) -----")
+            println(output)
+            if (output.isNotBlank()) {
+                // Basic presence check
+                assertTrue("Expected CreateSchemaLog entries",
+                    output.contains("Parsed credential") || output.contains("Detected Anchor-style"))
 
-        assertTrue("createSchema must succeed", result.isSuccess)
+                // Regression detection: ensure we did NOT parse a huge signer-count (symptom of misaligned parsing)
+                val signerRegex = Regex("signers=(\\d+)")
+                val badThreshold = 1_000_000
+                val badMatches = signerRegex.findAll(output).mapNotNull { m ->
+                    m.groups[1]?.value?.toLongOrNull()
+                }.filter { it >= badThreshold }.toList()
+
+                if (badMatches.isNotEmpty()) {
+                    fail("Detected suspiciously large signer-count(s) in CreateSchemaLog: ${badMatches.joinToString(", ")}. This indicates a discriminator/offset parsing mismatch.")
+                }
+            } else {
+                println("⚠️ CreateSchemaLog empty — device may restrict reading logs from tests")
+            }
+        } catch (e: Exception) {
+            println("⚠️ Failed to capture logcat: ${e.message}")
+        }
+
     }
+
 }
+

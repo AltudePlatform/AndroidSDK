@@ -1,23 +1,23 @@
 package com.altude.provenance
 
+import android.util.Log
 import com.altude.core.config.SdkConfig
 import com.altude.core.Programs.AttestationProgram
-import com.altude.core.Programs.Utility
-import com.altude.core.data.SolanaKeypair
-import com.altude.core.model.HotSigner
+import foundation.metaplex.solanapublickeys.PublicKey
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.AttestRequest
 import com.altude.provenance.data.AttestationResult
 import com.altude.provenance.data.C2paManifest
+import java.io.File
 import com.altude.provenance.data.Commitment
-import com.altude.provenance.data.CreateSchemaRequest
+// ...existing imports...
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ProvenanceResponse
 import com.altude.provenance.data.ManifestOption
 import com.altude.provenance.data.OfflineAttestResult
 import com.altude.provenance.data.PendingAttestation
 import com.altude.provenance.data.ProvenanceCertificate
-import com.altude.provenance.data.ProvenancePrefs
+// ...existing imports...
 import com.altude.provenance.data.ProvenanceResult
 import com.altude.provenance.data.SubmitResult
 import com.altude.provenance.data.VerifyResult
@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import retrofit2.await
@@ -179,6 +180,182 @@ object Provenance {
     }
 
     /**
+     * Builds and saves a C2PA sidecar file from a generic payload map.
+     *
+     * The payload map must contain at minimum `assetHash` (SHA-256 hex). Optional
+     * keys: `mimeType`, `filename`, `producer`, `softwareAgent`, `timestamp`.
+     *
+     * Returns the written sidecar [File] on success.
+     */
+    suspend fun createC2PA(payloadMap: Map<String, Any?>): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            val manifest = C2paManifest.buildFromMap(payloadMap)
+            val manifestsDir = File(StorageService.getContext().filesDir, "provenance_manifests")
+            // Produce a consumer-facing sidecar JSON matching the requested schema
+            val sidecarJson = manifest.toSidecarJson(payloadMap)
+            manifest.saveTo(manifestsDir, sidecarJson)
+        }.mapFailure()
+    }
+
+    // Converts a generic Map payload into an ImageHashPayload.
+    // Supported forms:
+    // - contains "imageHashPayload" -> returns as-is
+    // - contains "filePath" -> calls ImageHashPayload.create(filePath, ...)
+    // - contains "manifest" (JSON string) -> decodes C2paManifest and calls fromManifest
+    // - contains "assetHash" (plus optional fields) -> calls C2paManifest.buildFromMap then fromManifest
+    private fun mapToImageHashPayload(map: Map<String, Any?>): ImageHashPayload {
+        // Already an ImageHashPayload
+        val maybePayload = map["imageHashPayload"]
+        if (maybePayload is ImageHashPayload) return maybePayload
+
+        var result: ImageHashPayload? = null
+
+        // filePath-based creation (camera / disk)
+        val filePath = map["filePath"] as? String
+        if (!filePath.isNullOrBlank()) {
+            val mime = map["mime"] as? String ?: "image/png"
+            val producer = map["producer"] as? String ?: ""
+            val account = map["account"] as? String ?: ""
+            val recipient = map["recipient"] as? String ?: ""
+            val expireAt = when (val e = map["expireAt"]) {
+                is Number -> e.toLong()
+                is String -> e.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            val commitment = when (val c = map["commitment"]) {
+                is Commitment -> c
+                is String -> try { Commitment.valueOf(c) } catch (_: Exception) { Commitment.finalized }
+                else -> Commitment.finalized
+            }
+            result = ImageHashPayload.create(
+                filePath = filePath,
+                mime = mime,
+                producer = producer,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            )
+        }
+
+        // manifest JSON provided
+        if (result == null) {
+            val manifestJson = map["manifest"] as? String
+            if (!manifestJson.isNullOrBlank()) {
+                val account = map["account"] as? String ?: ""
+                val recipient = map["recipient"] as? String ?: ""
+                val expireAt = when (val e = map["expireAt"]) {
+                    is Number -> e.toLong()
+                    is String -> e.toLongOrNull() ?: 0L
+                    else -> 0L
+                }
+                val commitment = when (val c = map["commitment"]) {
+                    is Commitment -> c
+                    is String -> try { Commitment.valueOf(c) } catch (_: Exception) { Commitment.finalized }
+                    else -> Commitment.finalized
+                }
+                val manifest = json.decodeFromString<C2paManifest>(manifestJson)
+                result = ImageHashPayload.fromManifest(
+                    manifest = manifest,
+                    account = account,
+                    recipient = recipient,
+                    expireAt = expireAt,
+                    commitment = commitment
+                )
+            }
+        }
+
+        // assetHash-based creation (build manifest from map)
+        if (result == null && map.containsKey("assetHash")) {
+            val manifest = C2paManifest.buildFromMap(map)
+            val account = map["account"] as? String ?: ""
+            val recipient = map["recipient"] as? String ?: ""
+            val expireAt = when (val e = map["expireAt"]) {
+                is Number -> e.toLong()
+                is String -> e.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            val commitment = when (val c = map["commitment"]) {
+                is Commitment -> c
+                is String -> try { Commitment.valueOf(c) } catch (_: Exception) { Commitment.finalized }
+                else -> Commitment.finalized
+            }
+            result = ImageHashPayload.fromManifest(
+                manifest = manifest,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            )
+        }
+
+        if (result == null) throw IllegalArgumentException("Cannot build ImageHashPayload from provided map — missing filePath, manifest, or assetHash")
+
+        // Apply optional certificateHash if provided in the map
+        val certHash = map["certificateHash"] as? String
+
+        // Apply optional schema-aligned fields from the provided map: parent_hash, hash_algorithm, width, height, file_size
+        fun parseHexOrBase64ToBytes(v: Any?): ByteArray? {
+            when (v) {
+                is ByteArray -> return v
+                is String -> {
+                    var s = v.trim()
+                    // strip common prefix like "sha256:"
+                    val idx = s.indexOf(':')
+                    if (idx > 0 && s.substring(0, idx).all { it.isLetterOrDigit() }) {
+                        val rest = s.substring(idx + 1)
+                        if (rest.matches(Regex("^[0-9a-fA-F]+$"))) s = rest
+                    }
+                    // hex
+                    if (s.matches(Regex("^[0-9a-fA-F]{2,}") )) {
+                        val clean = s.replace(" ", "")
+                        if (clean.length % 2 == 0) {
+                            return ByteArray(clean.length / 2) { i ->
+                                val idx2 = i * 2
+                                ((clean[idx2].digitToInt(16) shl 4) + clean[idx2 + 1].digitToInt(16)).toByte()
+                            }
+                        }
+                    }
+                    // try base64
+                    try {
+                        return android.util.Base64.decode(s, android.util.Base64.DEFAULT)
+                    } catch (_: Exception) {}
+                }
+            }
+            return null
+        }
+
+        val parentBytes = parseHexOrBase64ToBytes(map["parent_hash"] ?: map["parentHash"])
+        val hashAlg = (map["hash_algorithm"] as? String) ?: (map["hashAlgorithm"] as? String) ?: "sha256"
+        val width = when (val w = map["width"]) {
+            is Number -> w.toInt()
+            is String -> w.toIntOrNull() ?: 0
+            else -> 0
+        }
+        val height = when (val h = map["height"]) {
+            is Number -> h.toInt()
+            is String -> h.toIntOrNull() ?: 0
+            else -> 0
+        }
+        val fileSize = when (val f = map["file_size"] ?: map["fileSize"]) {
+            is Number -> f.toLong()
+            is String -> f.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+
+        var final = result
+        if (certHash != null) final = final.copy(certificateHash = certHash)
+        final = final.copy(
+            parentHash = parentBytes ?: final.parentHash,
+            hashAlgorithm = hashAlg,
+            width = width,
+            height = height,
+            fileSize = fileSize
+        )
+        return final
+    }
+
+    /**
      * Creates a schema on-chain for the given account.
      * 
      * This method will:
@@ -201,59 +378,6 @@ object Provenance {
      * }
      * ```
      */
-    suspend fun createSchema(
-        account: String = "",
-        commitment: String = "confirmed",
-        credentialPda: String? = null,
-        schemaName: String = ProvenanceManager.SCHEMA_NAME
-    ): Result<ProvenanceResponse> = withContext(Dispatchers.IO) {
-        runCatching {
-            // 1. Check if schema needs to be created
-            val schemaTxResult = if (credentialPda.isNullOrBlank()) {
-                ProvenanceManager.ensureSchema(account, commitment)
-            } else {
-                ProvenanceManager.ensureSchemaForCredentialPdaInternal(
-                    account = account,
-                    commitment = commitment,
-                    credentialPdaBase58 = credentialPda,
-                    schemaName = schemaName
-                )
-            }
-
-            if (schemaTxResult.isFailure) {
-                throw schemaTxResult.exceptionOrNull()!!
-            }
-            
-            val schemaTx = schemaTxResult.getOrNull()
-            
-            // 2. If schema already exists, return success response
-            if (schemaTx == null) {
-                return@runCatching ProvenanceResponse(
-                    Status = "success",
-                    Message = "Schema already exists"
-                )
-            }
-            
-            // 3. Submit the schema transaction directly
-            val schemaRes = service().createSchema(CreateSchemaRequest(schemaTx)).await()
-            val schemaResponse = runCatching {
-                decodeJson<ProvenanceResponse>(schemaRes)
-            }.getOrElse { e ->
-                throw Exception("Failed to parse createSchema response: ${e.message}", e)
-            }
-
-            if (schemaResponse.Status != "success") {
-                throw Exception("Schema creation failed: ${schemaResponse.Message}")
-            }
-
-            // 4. Mark schema as created in preferences
-            val walletKey = ProvenanceManager.getKeyPair(account).publicKey.toBase58()
-            ProvenancePrefs.markSchemaCreated(walletKey)
-
-            schemaResponse
-        }.mapFailure()
-    }
-
     /**
      * Creates a credential on-chain for the given account and schema.
      *
@@ -273,27 +397,8 @@ object Provenance {
      * }
      * ```
      */
-    suspend fun createCredential(
-        name: String,
-        account: String = "",
-        commitment: String = "confirmed"
-    ): Result<ProvenanceResponse> = withContext(Dispatchers.IO) {
-        runCatching {
-            // Build and sign the credential transaction using ProvenanceManager
-            val signedTx = ProvenanceManager.buildCredentialTx(name, account, commitment)
-            // Submit transaction to backend using the correct endpoint
-            val res = service().createCredential(
-                com.altude.provenance.data.CreateCredentialRequest(signedTx)
-            ).await()
-            val response = runCatching {
-                decodeJson<ProvenanceResponse>(res)
-            }.getOrElse { e ->
-                throw Exception("Failed to parse createCredential response: ${e.message}", e)
-            }
-
-            response
-        }.mapFailure()
-    }
+    // createSchema and createCredential APIs removed.
+    // Schema + credential creation must be handled out-of-band or via `ProvenanceManager.setSchemaPda`.
 
     // ── Single image ──────────────────────────────────────────────────────────
 
@@ -311,50 +416,30 @@ object Provenance {
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun attestImageHash(
-        payload:        ImageHashPayload,
-        manifestOption: ManifestOption = ManifestOption.SidecarFile
+        payload:      ImageHashPayload,
+        manifestOption:  ManifestOption = ManifestOption.SidecarFile,
+        // Optional: credential and schema names when the credential/schema were created out-of-band
+        credentialName:  String,
+        schemaName:      String
     ): Result<ProvenanceResult> = withContext(Dispatchers.IO) {
         try {
-            // 1. Check whether schema needs to be created (SharedPrefs → on-chain RPC fallback)
-            val schemaTxResult = ProvenanceManager.ensureSchema(
-                account    = payload.account,
-                commitment = payload.commitment.name
-            )
-            if (schemaTxResult.isFailure) {
-                val cause = schemaTxResult.exceptionOrNull()!!
-                if (isNetworkError(cause))
-                    return@withContext queueOffline(payload, manifestOption)
-                return@withContext Result.failure(cause)
-            }
+            // Use provided ImageHashPayload directly (no map conversion needed)
+            // 1. Keypair (needed to produce deterministic payload owner field) and
+            // build the explicit attestation payload map (matches on-chain fixed schema)
+            val keypair = ProvenanceManager.getKeyPair(payload.account)
+            val payloadMap = ProvenanceManager.buildPayloadJson(payload, keypair.publicKey)
 
-            // 2. If schema tx was built (schema didn't exist), submit it first and wait
-            val schemaTx = schemaTxResult.getOrNull()
-            if (schemaTx != null) {
-                val schemaRes = runCatching {
-                    service().createSchema(CreateSchemaRequest(schemaTx)).await()
-                }.getOrElse { e ->
-                    if (isNetworkError(e)) return@withContext queueOffline(payload, manifestOption)
-                    return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-                }
-                val schemaResponse = runCatching {
-                    decodeJson<ProvenanceResponse>(schemaRes)
-                }.getOrElse { e ->
-                    return@withContext Result.failure(Exception("Failed to parse createSchema response: ${e.message}", e))
-                }
-                if (schemaResponse.Status != "success")
-                    return@withContext Result.failure(Exception("createSchema failed: ${schemaResponse.Message}"))
-                // Mark schema confirmed after backend success
-                val walletKey = ProvenanceManager.getKeyPair(payload.account).publicKey.toBase58()
-                ProvenancePrefs.markSchemaCreated(walletKey)
-            }
-
-            // 3. Derive Schema PDA + sign attestation tx offline
-            val schemaPda   = ProvenanceManager.deriveSchemaAddress(payload.account)
-            val attestResult = ProvenanceManager.attest(payload, schemaPda)
+            // 2. Use AttestBuilder to centralise PDA derivation and call into the
+            // existing attest(...) helper. Pass the explicit payload map so the
+            // on-chain bytes are deterministic.
+            val attestResult = ProvenanceManager.AttestBuilder()
+                .withPayload(payload)
+                .credentialName(credentialName)
+                .schemaName(schemaName)
+                .execute(payloadMap)
             if (attestResult.isFailure) {
                 val cause = attestResult.exceptionOrNull()!!
-                if (isNetworkError(cause))
-                    return@withContext queueOffline(payload, manifestOption)
+                // Do not queue offline from this public API; propagate the failure to caller
                 return@withContext Result.failure(cause)
             }
             val attested = attestResult.getOrThrow()
@@ -363,7 +448,7 @@ object Provenance {
             val attestRes = runCatching {
                 service().attest(AttestRequest(attested.signedTx)).await()
             }.getOrElse { e ->
-                if (isNetworkError(e)) return@withContext queueOffline(payload, manifestOption)
+                // Do not attempt offline queuing here; return failure to caller
                 return@withContext Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
             }
             val response = runCatching {
@@ -373,12 +458,40 @@ object Provenance {
             }
 
             // 5. Apply chosen manifest option — inject attestationId for verifyOnChain
-            // Do not mutate the signed certificate after build/signing; `attestationId`
-            // is returned separately and may be added to the manifest, but the certificate
-            // must remain byte-for-byte consistent with the claim JSON that was signed.
-            val manifestWithId = payload.c2paManifest.copy(attestationId = attested.attestationId)
+            val manifestWithId    = payload.c2paManifest?.copy(attestationId = attested.attestationId)
+                ?: throw IllegalStateException("Missing C2PA manifest in payload")
+            val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
+
+            // Build a display-friendly payload map for the sidecar:
+            // - keep the raw attestation payload for on-chain bytes
+            // - convert binary parent_hash to a readable "<alg>:<hex>" string for display
+            val sidecarPayloadMap: MutableMap<String, Any?> = linkedMapOf()
+            sidecarPayloadMap.putAll(payloadMap)
+            val parentRaw = payloadMap["parent_hash"]
+            if (parentRaw is ByteArray && parentRaw.isNotEmpty()) {
+                val hex = parentRaw.joinToString("") { "%02x".format(it) }
+                val hashAlg = (payloadMap["hash_algorithm"] as? String) ?: "sha256"
+                sidecarPayloadMap["parent_hash"] = "$hashAlg:$hex"
+            } else {
+                // ensure parent_hash isn't a raw empty byte array in the sidecar
+                sidecarPayloadMap.remove("parent_hash")
+            }
+            // Add a base64-encoded copy of the raw image_hash bytes so consumer sidecars
+            // expose the exact on-chain bytes in a JSON-safe form. Keep the human-readable
+            // hex form in the manifest.assetHash as before.
+            try {
+                val imgBytes = payload.imageHash
+                if (imgBytes.isNotEmpty()) {
+                    val imgB64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
+                    sidecarPayloadMap["image_hash_b64"] = imgB64
+                }
+            } catch (_: Exception) {
+                // ignore if payload.imageHash not available for some reason
+            }
+
+            // Write a consumer-facing sidecar populated from the display map
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(manifestWithId, manifestOption, attested.certificate)
+                applyManifestOption(manifestWithId, manifestOption, certificateWithId, sidecarPayloadMap)
 
             Result.success(ProvenanceResult(
                 response          = response,
@@ -389,39 +502,14 @@ object Provenance {
                 embeddedImageFile = embeddedImageFile
             ))
         } catch (e: Throwable) {
-            if (isNetworkError(e))
-                return@withContext queueOffline(payload, manifestOption)
+            // Propagate errors to caller; do not queue offline from this API
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
     }
 
-    /**
-     * Builds a local certificate, applies the manifest option, and enqueues the
-     * attestation for later submission — no network required.
-     * Returns a [ProvenanceResult] with [ProvenanceResult.isQueued] == `true`.
-     */
-    private suspend fun queueOffline(
-        payload:        ImageHashPayload,
-        manifestOption: ManifestOption
-    ): Result<ProvenanceResult> {
-        val offline = attestOffline(payload, manifestOption)
-            .getOrElse { return Result.failure(it) }
-        val queuedManifest = payload.c2paManifest?.copy(
-            attestationId = offline.attestationId
-        )
-        return Result.success(
-            ProvenanceResult(
-                response          = null,
-                attestationId     = offline.attestationId,
-                manifest          = queuedManifest,
-                certificate       = offline.certificate,
-                manifestFile      = offline.manifestFile,
-                embeddedImageFile = offline.embeddedImageFile,
-                isQueued          = true,
-                queueId           = offline.queueId
-            )
-        )
-    }
+    // Backwards-compatible Map-based overload removed. Use the ImageHashPayload variant.
+
+    // ...offline queuing removed for `attestImageHash`; offline helpers remain for explicit offline flows
 
     // ── Bulk images (performance-optimised) ───────────────────────────────────
 
@@ -447,82 +535,27 @@ object Provenance {
      */
     fun attestBatch(
         payloads:       List<ImageHashPayload>,
-        manifestOption: ManifestOption = ManifestOption.SidecarFile
+        manifestOption: ManifestOption = ManifestOption.SidecarFile,
+        // Optional: credential and schema names when created out-of-band
+        credentialName: String,
+        schemaName: String
     ): Flow<AttestationResult> = flow {
         if (payloads.isEmpty()) return@flow
 
         val first = payloads.first()
 
         // ── 1. Schema — once per wallet ───────────────────────────────────────
-        val schemaTxResult = ProvenanceManager.ensureSchema(
-            account    = first.account,
-            commitment = first.commitment.name
-        )
-        if (schemaTxResult.isFailure) {
-            val cause = schemaTxResult.exceptionOrNull()!!
-            if (isNetworkError(cause)) {
-                // Offline — queue all items locally and return immediately
-                payloads.forEachIndexed { i, p ->
-                    val offlineResult = runCatching {
-                        val offline = attestOffline(p, manifestOption).getOrThrow()
-                        ProvenanceResult(
-                            manifest          = p.c2paManifest,
-                            certificate       = offline.certificate,
-                            manifestFile      = offline.manifestFile,
-                            embeddedImageFile = offline.embeddedImageFile,
-                            isQueued          = true,
-                            queueId           = offline.queueId
-                        )
-                    }
-                    emit(AttestationResult(i, p.name, p.hash, offlineResult))
-                }
-                return@flow
-            }
-            payloads.forEachIndexed { i, p ->
-                emit(AttestationResult(i, p.name, p.hash, Result.failure(cause)))
-            }
-            return@flow
-        }
-
-        // ── 2. Submit createSchema if the schema didn't exist yet ─────────────
-        val schemaTx = schemaTxResult.getOrNull()
         val keypair  = ProvenanceManager.getKeyPair(first.account)
-        val walletKey = keypair.publicKey.toBase58()
-        if (schemaTx != null) {
-            runCatching {
-                val schemaRes = service().createSchema(CreateSchemaRequest(schemaTx)).await()
-                val schemaResponse = runCatching {
-                    decodeJson<ProvenanceResponse>(schemaRes)
-                }.getOrElse { throw Exception("Failed to parse createSchema response: ${it.message}", it) }
-                if (schemaResponse.Status != "success")
-                    error(schemaResponse.Message)
-                ProvenancePrefs.markSchemaCreated(walletKey)
-            }.onFailure { e ->
-                val cause = if (isNetworkError(e)) e else e
-                payloads.forEachIndexed { i, p ->
-                    if (isNetworkError(cause)) {
-                        val offlineResult = runCatching {
-                            val offline = attestOffline(p, manifestOption).getOrThrow()
-                            ProvenanceResult(
-                                manifest          = p.c2paManifest,
-                                certificate       = offline.certificate,
-                                manifestFile      = offline.manifestFile,
-                                embeddedImageFile = offline.embeddedImageFile,
-                                isQueued          = true,
-                                queueId           = offline.queueId
-                            )
-                        }
-                        emit(AttestationResult(i, p.name, p.hash, offlineResult))
-                    } else {
-                        emit(AttestationResult(i, p.name, p.hash, Result.failure(Exception(cause.message, cause))))
-                    }
-                }
-                return@flow
-            }
-        }
+
+        // Support two modes:
+        // - Caller provides credentialName + schemaName (created out-of-band on backend/web app)
+        // - Caller relies on previously-marked schema (ProvenancePrefs) and SDK-derived names
+        val schemaPda: PublicKey
+        val credentialPda = AttestationProgram.deriveCredentialAddress(authority = keypair.publicKey, name = credentialName)
+        schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 0)
 
         // ── 3. PDA + blockhash — once per batch ───────────────────────────────
-        val schemaPda          = ProvenanceManager.deriveSchemaAddress(first.account)
+        // schemaPda already set above
         var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment.name)
         var blockhashFetchedAt = System.currentTimeMillis()
 
@@ -540,7 +573,7 @@ object Provenance {
                             val offlineResult = runCatching {
                                 val offline = attestOffline(p, manifestOption).getOrThrow()
                                 ProvenanceResult(
-                                    manifest          = p.c2paManifest,
+                                    manifest          = p.c2paManifest ?: throw IllegalStateException("Missing manifest in payload"),
                                     certificate       = offline.certificate,
                                     manifestFile      = offline.manifestFile,
                                     embeddedImageFile = offline.embeddedImageFile,
@@ -548,7 +581,7 @@ object Provenance {
                                     queueId           = offline.queueId
                                 )
                             }
-                            emit(AttestationResult(index + i, p.name, p.hash, offlineResult))
+                            emit(AttestationResult(index + i, p.filename, p.manifestHash, offlineResult))
                         }
                         return@flow
                     }
@@ -557,7 +590,7 @@ object Provenance {
 
             val itemResult = runCatching {
                 val attested = ProvenanceManager
-                    .attestWithPrefetched(payload, schemaPda, keypair, blockhash)
+                    .attestWithPrefetched(payload, schemaPda, keypair, credentialPda)
                     .getOrThrow()
 
                 val attestRes  = service().attest(AttestRequest(attested.signedTx)).await()
@@ -566,10 +599,11 @@ object Provenance {
                 }.getOrElse { throw Exception("Failed to parse attest response: ${it.message}", it) }
 
                 // Apply chosen manifest option per image — inject attestationId for verifyOnChain
-                val manifestWithId    = payload.c2paManifest.copy(attestationId = attested.attestationId)
+                val manifestWithId    = payload.c2paManifest?.copy(attestationId = attested.attestationId)
+                    ?: throw IllegalStateException("Missing C2PA manifest in payload")
                 val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(manifestWithId, manifestOption, certificateWithId)
+                    applyManifestOption(manifestWithId, manifestOption, certificateWithId, null)
 
                 ProvenanceResult(
                     response          = response,
@@ -580,7 +614,7 @@ object Provenance {
                     embeddedImageFile = embeddedImageFile
                 )
             }.recoverNetworkToOffline(payload, manifestOption)
-            emit(AttestationResult(index, payload.name, payload.hash, itemResult))
+            emit(AttestationResult(index, payload.filename, payload.manifestHash, itemResult))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -621,15 +655,23 @@ object Provenance {
             // 2. Build + sign certificate — pure crypto, no network
             val certificate = ProvenanceManager.buildCertificate(payload, keypair)
 
-            // 3. Do not derive attestationId offline using attester/recipient seeds.
-            //    SAS attestation PDAs are created from the same inputs used by the
-            //    on-chain transaction builder (credential, schema, nonce). Deriving a
-            //    placeholder here with different seeds would persist an ID that can
-            //    never match the real on-chain attestation created later.
-            val manifestWithId    = payload.c2paManifest
-            val certificateWithId = certificate
+            // 3. Derive attestationId — pure PDA derivation, no network needed
+            val schemaPda     = ProvenanceManager.deriveSchemaAddress(payload.account)
+            val attester      = keypair.publicKey
+            val recipient     = if (payload.recipient.isBlank()) attester
+                                else com.altude.core.Programs.AttestationProgram.let {
+                                    foundation.metaplex.solanapublickeys.PublicKey(payload.recipient)
+                                }
+            val attestationId = com.altude.core.Programs.AttestationProgram
+                .deriveAttestationAddress(schemaPda, attester, recipient)
+                .toBase58()
+
+            // 4. Inject attestationId so sidecar/embedded image supports verifyOnChain
+            val manifestWithId    = payload.c2paManifest?.copy(attestationId = attestationId)
+                ?: throw IllegalStateException("Missing C2PA manifest in payload")
+            val certificateWithId = certificate.copy(attestationId = attestationId)
             val (manifestFile, embeddedImageFile) =
-                applyManifestOption(manifestWithId, manifestOption, certificateWithId)
+                applyManifestOption(manifestWithId, manifestOption, certificateWithId, null)
 
             // 5. Serialise manifest option for storage
             val (optType, optPath) = when (manifestOption) {
@@ -644,19 +686,17 @@ object Provenance {
             ProvenanceQueue.enqueue(
                 PendingAttestation(
                     id                 = queueId,
-                    type               = payload.type,
-                    hash               = payload.hash,
-                    mime               = payload.mime,
-                    name               = payload.name,
-                    manifest           = payload.manifest,
+                    type               = "image_hash",
+                    hash               = payload.manifestHash,
+                    mime               = payload.mimeType,
+                    name               = payload.filename,
+                    manifest           = manifestWithId.toJson(),
                     c2paManifest       = manifestWithId,
                     timestamp          = payload.timestamp,
                     account            = payload.account,
                     recipient          = payload.recipient,
                     expireAt           = payload.expireAt,
                     commitment         = payload.commitment.name,
-                    latitude           = payload.latitude,
-                    longitude          = payload.longitude,
                     certificateJson    = certificateWithId.toJson(),
                     manifestOptionType = optType,
                     manifestOptionPath = optPath
@@ -714,26 +754,11 @@ object Provenance {
 
         // ── Keypair + PDA — once ───────────────────────────────────────────────
         val keypair   = ProvenanceManager.getKeyPair(first.account)
-        val walletKey = keypair.publicKey.toBase58()
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
+        val feePayer  = PublicKey(SdkConfig.apiConfig.FeePayer) ?: keypair.publicKey
+        val credentialPda = AttestationProgram .deriveCredentialAddress (feePayer, "test007")
 
-        // ── Submit createSchema if the schema didn't exist yet ─────────────────
-        val schemaTx = schemaTxResult.getOrNull()
-        if (schemaTx != null) {
-            runCatching {
-                val schemaRes      = service().createSchema(CreateSchemaRequest(schemaTx)).await()
-                val schemaResponse = decodeJson<ProvenanceResponse>(schemaRes)
-                if (schemaResponse.Status != "success")
-                    error(schemaResponse.Message)
-                ProvenancePrefs.markSchemaCreated(walletKey)
-            }.onFailure { e ->
-                pending.forEach { p ->
-                    emit(SubmitResult(p.id, p.name, p.hash,
-                        Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))))
-                }
-                return@flow
-            }
-        }
+        // No client-side createSchema submission here either. Backend must create schema.
 
         // ── Blockhash — once; refreshed every 30 s ────────────────────────────
         var blockhash          = ProvenanceManager.fetchBlockhash(first.commitment)
@@ -746,25 +771,17 @@ object Provenance {
             }
 
             val itemResult = runCatching {
-                // Reconstruct a minimal ImageHashPayload from the queued entry
-                val payload = ImageHashPayload(
-                    type         = entry.type,
-                    hash         = entry.hash,
-                    mime         = entry.mime,
-                    name         = entry.name,
-                    manifest     = entry.manifest,
-                    c2paManifest = entry.c2paManifest,
-                    timestamp    = entry.timestamp,
-                    account      = entry.account,
-                    recipient    = entry.recipient,
-                    expireAt     = entry.expireAt,
-                    commitment   = Commitment.valueOf(entry.commitment),
-                    latitude     = entry.latitude,
-                    longitude    = entry.longitude
+                // Reconstruct a minimal ImageHashPayload from the queued entry via manifest
+                val payload = ImageHashPayload.fromManifest(
+                    manifest = entry.c2paManifest,
+                    account = entry.account,
+                    recipient = entry.recipient,
+                    expireAt = entry.expireAt,
+                    commitment = Commitment.valueOf(entry.commitment)
                 )
 
                 // Build Solana tx + derive attestationId locally
-                val (signedTx, attestationId) = ProvenanceManager.buildTx(payload, schemaPda, keypair, blockhash)
+                val (signedTx, attestationId) = ProvenanceManager.buildTx(payload, schemaPda, keypair, credentialPda)
                 val certificate = ProvenanceCertificate.fromJson(entry.certificateJson)
 
                 val attestRes = service().attest(AttestRequest(signedTx)).await()
@@ -782,7 +799,7 @@ object Provenance {
                 val certificateWithId = certificate?.copy(attestationId = attestationId)
                 val manifestOption = entry.toManifestOption()
                 val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(manifestWithId, manifestOption, certificateWithId)
+                    applyManifestOption(manifestWithId, manifestOption, certificateWithId, null)
 
                 ProvenanceResult(
                     response          = response,
@@ -900,31 +917,58 @@ object Provenance {
     private fun applyManifestOption(
         manifest:    C2paManifest,
         option:      ManifestOption,
-        certificate: ProvenanceCertificate? = null
+        certificate: ProvenanceCertificate? = null,
+        payloadMap:  Map<String, Any?>? = null
     ): Pair<java.io.File?, java.io.File?> {
-        val json         = certificate?.toJson() ?: manifest.toJson()
         val manifestsDir = java.io.File(StorageService.getContext().filesDir, "provenance_manifests")
+
+        // Build the sidecar JSON (consumer-facing structure). If a certificate is
+        // provided, pass its base64 signature and signer into the payload map so
+        // `C2paManifest.toSidecarJson` can include the signature object cleanly.
+        val baseMap: MutableMap<String, Any?> = linkedMapOf()
+        if (payloadMap != null) baseMap.putAll(payloadMap)
+
+        val sidecarToWrite: String = if (certificate != null) {
+            try {
+                // Convert hex signature -> base64
+                val sigHex = certificate.signature
+                val sigBytes = sigHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                val sigB64 = android.util.Base64.encodeToString(sigBytes, android.util.Base64.NO_WRAP)
+                val signer = if (certificate.signerAddress.startsWith("wallet:")) certificate.signerAddress else "wallet:${certificate.signerAddress}"
+
+                baseMap["signature_base64"] = sigB64
+                baseMap["signer"] = signer
+                baseMap["signature_alg"] = "ed25519"
+
+                manifest.toSidecarJson(baseMap)
+            } catch (e: Exception) {
+                // Fallback to certificate.toJson() if anything goes wrong constructing the sidecar
+                certificate.toJson()
+            }
+        } else {
+            manifest.toSidecarJson(baseMap)
+        }
+
         return when (option) {
             is ManifestOption.SidecarFile -> {
-                Pair(runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull(), null)
+                Pair(runCatching { manifest.saveTo(manifestsDir, sidecarToWrite) }.getOrNull(), null)
             }
             is ManifestOption.EmbedInImage -> {
                 val embedded = runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
+                    // embed the consumer-facing sidecar (with signature when present)
+                    manifest.embedInto(java.io.File(option.sourceFilePath), sidecarToWrite)
                 }.getOrNull()
                 if (embedded != null) {
-                    // Successfully embedded into image; no sidecar created.
                     Pair(null, embedded)
                 } else {
-                    // Embedding failed (e.g., unsupported format). Fall back to sidecar as documented.
-                    val sidecar = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
+                    val sidecar = runCatching { manifest.saveTo(manifestsDir, sidecarToWrite) }.getOrNull()
                     Pair(sidecar, null)
                 }
             }
             is ManifestOption.Both -> {
-                val sidecar  = runCatching { manifest.saveTo(manifestsDir, json) }.getOrNull()
+                val sidecar  = runCatching { manifest.saveTo(manifestsDir, sidecarToWrite) }.getOrNull()
                 val embedded = runCatching {
-                    manifest.embedInto(java.io.File(option.sourceFilePath), json)
+                    manifest.embedInto(java.io.File(option.sourceFilePath), sidecarToWrite)
                 }.getOrNull()
                 Pair(sidecar, embedded)
             }
@@ -1014,7 +1058,7 @@ object Provenance {
         return runCatching {
             val offline = attestOffline(payload, manifestOption).getOrThrow()
             ProvenanceResult(
-                manifest          = payload.c2paManifest,
+                manifest          = payload.c2paManifest ?: throw IllegalStateException("Missing C2PA manifest in payload"),
                 certificate       = offline.certificate,
                 manifestFile      = offline.manifestFile,
                 embeddedImageFile = offline.embeddedImageFile,

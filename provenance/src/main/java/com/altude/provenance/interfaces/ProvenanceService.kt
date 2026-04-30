@@ -1,7 +1,7 @@
 package com.altude.provenance.interfaces
 
 import com.altude.provenance.data.AttestRequest
-import com.altude.provenance.data.CreateSchemaRequest
+// CreateSchema endpoint removed; attest-only service
 import kotlinx.serialization.json.JsonElement
 import retrofit2.Call
 import retrofit2.http.Body
@@ -16,15 +16,7 @@ import retrofit2.http.POST
  */
 interface ProvenanceService {
 
-    /**
-     * Broadcasts the signed `createSchema` transaction.
-     * Called once per wallet — the SDK checks on-chain and in SharedPreferences
-     * before calling this, so it is skipped on every subsequent attestation.
-     */
-    @POST("api/provenance/createSchema")
-    fun createSchema(
-        @Body body: CreateSchemaRequest
-    ): Call<JsonElement>
+    // createSchema endpoint removed from service interface
 
     /**
      * Broadcasts the signed `createAttestation` transaction.
@@ -35,12 +27,5 @@ interface ProvenanceService {
         @Body body: AttestRequest
     ): Call<JsonElement>
 
-    /**
-     * Broadcasts the signed `createCredential` transaction.
-     * Called when creating a credential account on-chain.
-     */
-    @POST("api/provenance/createCredential")
-    fun createCredential(
-        @Body body: com.altude.provenance.data.CreateCredentialRequest
-    ): Call<JsonElement>
+    // createCredential endpoint removed from service interface
 }

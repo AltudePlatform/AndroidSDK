@@ -49,8 +49,7 @@ import org.json.JSONObject
  * @property deviceMake          Device manufacturer (`Build.MANUFACTURER`).
  * @property deviceModel         Device model name (`Build.MODEL`).
  * @property osVersion           Android release version (`Build.VERSION.RELEASE`).
- * @property latitude            GPS latitude in decimal degrees, or null.
- * @property longitude           GPS longitude in decimal degrees, or null.
+ * (GPS coordinates removed from the certificate in the new payload schema.)
  */
 data class ProvenanceCertificate(
     val instanceId: String,
@@ -62,8 +61,7 @@ data class ProvenanceCertificate(
     val deviceMake: String,
     val deviceModel: String,
     val osVersion: String,
-    val latitude: Double?,
-    val longitude: Double?,
+    // latitude/longitude removed
     /**
      * Solana Attestation PDA (Base58). Stored in the certificate so a verifier
      * reading the sidecar/embedded manifest can call [Provenance.verifyOnChain]
@@ -114,15 +112,7 @@ data class ProvenanceCertificate(
                 put("value", imageSha256)
             }
         )
-        if (latitude != null && longitude != null) {
-            assertions.put(
-                "c2pa.location.precise",
-                JSONObject().apply {
-                    put("latitude", latitude)
-                    put("longitude", longitude)
-                }
-            )
-        }
+        // GPS assertions removed in schema — nothing to add here
         assertions.put(
             "stds.exif",
             JSONObject().apply {
@@ -190,10 +180,7 @@ data class ProvenanceCertificate(
                 deviceMake         = exif?.optString("make")         ?: "",
                 deviceModel        = exif?.optString("model")        ?: "",
                 osVersion          = exif?.optString("osVersion")    ?: "",
-                latitude           = if (loc != null && loc.has("latitude"))
-                                         loc.getDouble("latitude") else null,
-                longitude          = if (loc != null && loc.has("longitude"))
-                                         loc.getDouble("longitude") else null,
+                // latitude/longitude removed from certificate
                 attestationId      = root.optString("attestationId", ""),
             )
         }.getOrNull()

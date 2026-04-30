@@ -35,8 +35,6 @@ data class PendingAttestation(
     val expireAt:           Long,
     /** [Commitment.name] stored as a plain string for serialization. */
     val commitment:         String,
-    val latitude:           Double? = null,
-    val longitude:          Double? = null,
     /** [ProvenanceCertificate.toJson()] — already ED25519-signed at queue time. */
     val certificateJson:    String,
     /** `"sidecar"` | `"embed"` | `"both"` | `"none"` */
