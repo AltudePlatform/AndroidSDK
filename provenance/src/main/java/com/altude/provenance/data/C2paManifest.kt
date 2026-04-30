@@ -385,6 +385,7 @@ data class C2paManifest(
         val stripped = ByteArrayOutputStream()
         stripped.write(original, 0, 8) // PNG signature
         var pos = 8
+        var iendOffset = -1
         while (pos + 12 <= original.size) {
             val length   = bytesToInt(original, pos)
             val typeStr  = String(original, pos + 4, 4, Charsets.US_ASCII)
@@ -402,10 +403,20 @@ data class C2paManifest(
                     continue
                 }
             }
+
+            // Record the offset in `stripped` where IEND begins, before writing it
+            if (typeStr == "IEND") {
+                iendOffset = stripped.size()
+            }
+
             stripped.write(original, pos, chunkEnd - pos)
             pos = chunkEnd
         }
         val strippedBytes = stripped.toByteArray()
+
+        if (iendOffset < 0) {
+            throw java.io.IOException("PNG is missing IEND chunk; cannot embed C2PA metadata into $imageFile")
+        }
 
         // Build a new tEXt chunk
         val keyword   = "C2PA"
@@ -423,8 +434,7 @@ data class C2paManifest(
             write(intToBytes(crc.toInt()))      // CRC   (4 bytes, big-endian)
         }.toByteArray()
 
-        // Insert new chunk before IEND (last 12 bytes of a valid PNG)
-        val iendOffset = strippedBytes.size - 12
+        // Insert new chunk before IEND using the explicitly tracked offset
         val patched = strippedBytes.copyOfRange(0, iendOffset) +
                       chunk +
                       strippedBytes.copyOfRange(iendOffset, strippedBytes.size)

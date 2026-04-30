@@ -61,6 +61,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun getAltudeApiKey(): String? {
+    return try {
+        val field = BuildConfig::class.java.getField("ALTUDE_API_KEY")
+        (field.get(null) as? String)?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 @Composable
 fun CreateSchemaTransactionSection() {
     val context = LocalContext.current
@@ -88,7 +97,12 @@ fun CreateSchemaTransactionSection() {
                             SdkConfig.setNetwork(isDevnet = true)
                             
                             status = "Initializing API configuration..."
-                            SdkConfig.setApiKey(context, "ak_xECEd2kxw8siDNxUXAhfGIJf_YJ7nUrZx-fAHXg9NJk")
+                            val apiKey = getAltudeApiKey()
+                            if (apiKey.isNullOrBlank()) {
+                                status = "SDK initialization failed: missing ALTUDE_API_KEY local configuration"
+                                return@launch
+                            }
+                            SdkConfig.setApiKey(context, apiKey)
                             
                             // Verify the configuration is correct for DevNet
                             status = "Verifying DevNet configuration..."
@@ -155,11 +169,24 @@ fun CreateSchemaTransactionSection() {
                     // Initialize SDK if not already done
                     if (!isInitialized) {
                         try {
+                            if (!BuildConfig.DEBUG) {
+                                status = "Real schema transaction flow is disabled in release builds."
+                                return@launch
+                            }
+
+                            val localTestApiKey = ""
+                            val localTestMnemonic = ""
+
+                            if (localTestApiKey.isBlank() || localTestMnemonic.isBlank()) {
+                                status = "Real schema transaction is not configured.\n\nProvide non-empty local test values for the API key and mnemonic before running this debug-only flow."
+                                return@launch
+                            }
+
                             status = "Configuring SDK for DevNet transactions..."
                             
                             // CRITICAL: Set network to DevNet BEFORE initializing API
-                            SdkConfig.setNetwork(isDevnet = false)
-                            SdkConfig.setApiKey(context, "")
+                            SdkConfig.setNetwork(isDevnet = true)
+                            SdkConfig.setApiKey(context, localTestApiKey)
                             
                             status = "Verifying DevNet configuration..."
                             
@@ -195,7 +222,7 @@ fun CreateSchemaTransactionSection() {
                             
                             // Try to store mnemonic with comprehensive error handling
                             try {
-                                StorageService.storeMnemonic("")
+                                StorageService.storeMnemonic(localTestMnemonic)
                                 status = "Mnemonic stored successfully!"
                                 isInitialized = true
                                 status = "SDK initialized with storage. Creating real schema transaction..."

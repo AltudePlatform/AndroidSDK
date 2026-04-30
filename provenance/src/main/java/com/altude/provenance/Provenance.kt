@@ -497,7 +497,7 @@ object Provenance {
                 response          = response,
                 manifest          = manifestWithId,
                 attestationId     = attested.attestationId,
-                certificate       = certificateWithId,
+                certificate       = attested.certificate,
                 manifestFile      = manifestFile,
                 embeddedImageFile = embeddedImageFile
             ))

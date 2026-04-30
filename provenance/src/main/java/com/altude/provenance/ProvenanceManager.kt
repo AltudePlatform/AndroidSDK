@@ -23,6 +23,7 @@ import foundation.metaplex.solanaeddsa.SolanaEddsa
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Internal transaction builder for image-hash provenance operations.
@@ -67,7 +68,7 @@ internal object ProvenanceManager {
     // Credential name used by this app for the credential PDA seed. Keep consistent across creation and lookups.
     const val CREDENTIAL_NAME = "image_hash_credential"
 
-    private val schemaPdaCache = mutableMapOf<String, PublicKey>()
+    private val schemaPdaCache = ConcurrentHashMap<String, PublicKey>()
     private val rpc            get() = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
     private val feePayerPubKey get() = PublicKey(SdkConfig.apiConfig.FeePayer)
 
