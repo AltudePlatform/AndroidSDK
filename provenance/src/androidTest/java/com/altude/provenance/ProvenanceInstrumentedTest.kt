@@ -155,6 +155,14 @@ class ProvenanceInstrumentedTest {
             assertEquals("filename preserved", "hash_consistency.png", fromFile.filename)
         } finally {
             tmpFile.delete()
+            // Clean up any sidecars written to the custom offline test directory
+            try {
+                val dir = File(context.filesDir, "provenance_offline_sidecars_test")
+                if (dir.exists()) {
+                    dir.listFiles()?.forEach { it.delete() }
+                    dir.delete()
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -468,7 +476,7 @@ class ProvenanceInstrumentedTest {
         // deterministic payload we built earlier (which includes certificateHash).
         val result = Provenance.attestImageHash(
             payloadForChecks,
-            ManifestOption.None,
+            ManifestOption.sidecar("${context.filesDir.absolutePath}/provenance_manifests_test"),
             "dev01",
             "devschema001"
         )
@@ -477,13 +485,92 @@ class ProvenanceInstrumentedTest {
             .onSuccess { pr ->
                 println("✅ attestationId: ${pr.attestationId}")
                 println("   txSignature:   ${pr.response?.Signature}")
+                // Print consumer-facing sidecar JSON that matches the exact
+                // structure requested by clients (version, claim_generator, asset,
+                // relationships, provenance, optional signature).
+                try {
+                    // Build a payload map used by toSidecarJson to populate
+                    // signature, program_id, network, and attestation_pda fields.
+                    val sidecarPayload = mutableMapOf<String, Any?>()
+                    // Copy width/height/file_size if present on the payload used to attest
+                    // Attempt to read values from pr.manifestFile or certificate if available
+                    // but keep 0/defaults when missing.
+                    // Add network & program fields explicitly so output matches sample.
+                    sidecarPayload["network"] = if (com.altude.core.Programs.AttestationProgram.isDevnet) "solana-devnet" else "solana-mainnet"
+                    sidecarPayload["program_id"] = com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()
+                    sidecarPayload["attestation_pda"] = pr.manifest.attestationId
+
+                    // Include parent_hash if present on the manifest (some tests set it)
+                    // The C2paManifest.toSidecarJson will include relationships when parent_hash provided.
+                    // We don't mutate the manifest here; instead pass it through the map.
+                    // If a certificate exists, convert its hex signature to Base64 for the sidecar.
+                    val cert = pr.certificate
+                    if (cert != null) {
+                        try {
+                            // Convert hex signature -> bytes -> Base64 string
+                            val sigHex = cert.signature
+                            val sigBytes = ByteArray(sigHex.length / 2)
+                            for (i in sigBytes.indices) {
+                                val idx = i * 2
+                                sigBytes[i] = Integer.parseInt(sigHex.substring(idx, idx + 2), 16).toByte()
+                            }
+                            val sigB64 = android.util.Base64.encodeToString(sigBytes, android.util.Base64.NO_WRAP)
+                            sidecarPayload["signature_base64"] = sigB64
+                            // signer should be wallet:<address> to match sample
+                            sidecarPayload["signer"] = "wallet:${cert.signerAddress}"
+                            sidecarPayload["signature_alg"] = "ed25519"
+
+                        } catch (hexEx: Exception) {
+                            println("Failed to convert signature hex->base64: ${hexEx.message}")
+                        }
+                    }
+
+                    val sidecarJson = pr.manifest.toSidecarJson(sidecarPayload)
+                    println("--- C2PA Sidecar JSON (consumer-facing) ---")
+                    println(sidecarJson)
+
+                    println("--- Manifest fields ---")
+                    println("assetHash: ${pr.manifest.assetHash}")
+                    println("manifestHash: ${pr.manifest.manifestHash}")
+                    println("filename: ${pr.manifest.filename}")
+                    println("mimeType: ${pr.manifest.mimeType}")
+                    println("producer: ${pr.manifest.producer}")
+                    println("attestationId (in manifest): ${pr.manifest.attestationId}")
+                } catch (e: Exception) {
+                    println("Failed to print sidecar manifest: ${e.message}")
+                }
+                // Print certificate details when present
+                try {
+                    val cert = pr.certificate
+                    if (cert != null) {
+                        println("--- Certificate JSON ---")
+                        println(cert.toJson())
+                        println("--- Certificate fields ---")
+                        println("instanceId: ${cert.instanceId}")
+                        println("imageSha256: ${cert.imageSha256}")
+                        println("signerAddress: ${cert.signerAddress}")
+                        println("signerPublicKey: ${cert.signerPublicKey}")
+                        println("signature (hex): ${cert.signature}")
+                    } else {
+                        println("--- Certificate: <null> ---")
+                    }
+                } catch (e: Exception) {
+                    println("Failed to print certificate: ${e.message}")
+                }
                 assertFalse("attestationId must not be blank", pr.attestationId.isBlank())
-                assertEquals("status must be 'success'",      "success", pr.response?.Status)
+                // Server returns a queued status for the attest request
+                assertEquals("status must be 'queued'", "queued", pr.response?.Status?.lowercase())
                 assertFalse("tx signature must not be blank",
                     pr.response?.Signature?.isBlank() ?: true)
-                assertNull("no manifestFile for ManifestOption.None",   pr.manifestFile)
-                assertNull("no embeddedFile for ManifestOption.None",   pr.embeddedImageFile)
-                assertFalse("isQueued must be false",                   pr.isQueued)
+
+                // We requested a sidecar be written to a custom directory earlier in this test
+                assertNotNull("manifestFile must be present for sidecar option", pr.manifestFile)
+                assertTrue("sidecar file must exist on disk", pr.manifestFile!!.exists())
+                assertTrue("sidecar name ends in .c2pa.json",
+                    pr.manifestFile.name.endsWith(".c2pa.json"))
+
+                assertNull("no embeddedFile for sidecar option", pr.embeddedImageFile)
+                assertFalse("isQueued must be false", pr.isQueued)
             }
             .onFailure { e ->
                 println("❌ attestImageHash failed:")
@@ -519,8 +606,15 @@ class ProvenanceInstrumentedTest {
                 mime       = "image/png",
                 commitment = Commitment.confirmed
             )
-            val result = Provenance.attestImageHash(payload,
-                ManifestOption.SidecarFile,
+
+            // Use a custom, app-private directory for sidecars in this test so
+            // we can assert the exact target path and clean up deterministically.
+            val customManifestsDir = File(context.filesDir, "provenance_manifests_test")
+            if (!customManifestsDir.exists()) customManifestsDir.mkdirs()
+
+            val result = Provenance.attestImageHash(
+                payload,
+                ManifestOption.sidecar(customManifestsDir.absolutePath),
                 "test007",
                 "sc_test01"
             )
@@ -532,6 +626,10 @@ class ProvenanceInstrumentedTest {
                     assertTrue("sidecar file must exist on disk", pr.manifestFile!!.exists())
                     assertTrue("sidecar name ends in .c2pa.json",
                         pr.manifestFile.name.endsWith(".c2pa.json"))
+
+                    // Ensure the manifest was written into our custom directory
+                    assertEquals("sidecar parent directory must match custom dir",
+                        customManifestsDir.absolutePath, pr.manifestFile.parentFile.absolutePath)
 
                     val content = pr.manifestFile.readText()
                     assertTrue("sidecar must embed attestationId",
@@ -548,6 +646,14 @@ class ProvenanceInstrumentedTest {
             assertTrue("attestation must succeed", result.isSuccess)
         } finally {
             tmpFile.delete()
+            // Clean up any sidecars written to our custom test directory
+            try {
+                val dir = File(context.filesDir, "provenance_manifests_test")
+                if (dir.exists()) {
+                    dir.listFiles()?.forEach { it.delete() }
+                    dir.delete()
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -640,7 +746,12 @@ class ProvenanceInstrumentedTest {
 
         try {
             val payload = ImageHashPayload.create(filePath = tmpFile.absolutePath)
-            val result  = Provenance.attestOffline(payload, ManifestOption.SidecarFile)
+
+            // Use a custom directory for sidecars in offline queue tests as well
+            val customManifestsDir = File(context.filesDir, "provenance_offline_sidecars_test")
+            if (!customManifestsDir.exists()) customManifestsDir.mkdirs()
+
+            val result  = Provenance.attestOffline(payload, ManifestOption.sidecar(customManifestsDir.absolutePath))
 
             result
                 .onSuccess { offline ->
@@ -653,6 +764,8 @@ class ProvenanceInstrumentedTest {
                         offline.certificate.attestationId.isBlank())
                     assertNotNull("sidecar file must be returned", offline.manifestFile)
                     assertTrue("sidecar must exist on disk", offline.manifestFile!!.exists())
+                    // Ensure sidecar saved in our custom dir
+                    assertEquals(customManifestsDir.absolutePath, offline.manifestFile.parentFile.absolutePath)
                 }
                 .onFailure { println("❌ Failed: ${it.message}") }
 

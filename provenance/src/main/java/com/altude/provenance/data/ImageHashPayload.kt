@@ -3,6 +3,7 @@ package com.altude.provenance.data
 import android.content.ContentResolver
 import android.net.Uri
 import kotlinx.serialization.Serializable
+import android.graphics.BitmapFactory
 
 /**
  * Structured payload for an image-hash attestation.
@@ -82,13 +83,27 @@ data class ImageHashPayload internal constructor(
             )
             val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
             val fileSize = java.io.File(filePath).length()
+            // Attempt to decode image bounds to get width/height without loading the full bitmap
+            var width = 0
+            var height = 0
+            try {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(filePath, opts)
+                if (opts.outWidth > 0 && opts.outHeight > 0) {
+                    width = opts.outWidth
+                    height = opts.outHeight
+                }
+            } catch (_: Exception) {
+                // leave width/height as 0 on failure
+            }
+
             return ImageHashPayload(
                 imageHash = imageHashBytes,
                 parentHash = null,
                 hashAlgorithm = "sha256",
                 mimeType = manifest.mimeType,
-                width = 0,
-                height = 0,
+                width = width,
+                height = height,
                 fileSize = fileSize,
                 filename = manifest.filename,
                 owner = producer,
@@ -120,13 +135,27 @@ data class ImageHashPayload internal constructor(
                 producer = producer
             )
             val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
+            // Decode bounds from bytes to determine width/height without full bitmap allocation
+            var width = 0
+            var height = 0
+            try {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, opts)
+                if (opts.outWidth > 0 && opts.outHeight > 0) {
+                    width = opts.outWidth
+                    height = opts.outHeight
+                }
+            } catch (_: Exception) {
+                // leave 0
+            }
+
             return ImageHashPayload(
                 imageHash = imageHashBytes,
                 parentHash = null,
                 hashAlgorithm = "sha256",
                 mimeType = manifest.mimeType,
-                width = 0,
-                height = 0,
+                width = width,
+                height = height,
                 fileSize = imageBytes.size.toLong(),
                 filename = manifest.filename,
                 owner = producer,

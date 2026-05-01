@@ -32,6 +32,16 @@ sealed class ManifestOption {
     object SidecarFile : ManifestOption()
 
     /**
+     * Save manifest as a `.c2pa.json` sidecar file into a caller-specified directory.
+     *
+     * Use this when you want the sidecar written somewhere other than the default
+     * `filesDir/provenance_manifests/` used by `ManifestOption.SidecarFile`.
+     *
+     * @param directoryPath Absolute path to the directory where the sidecar should be saved.
+     */
+    data class SidecarDir(val directoryPath: String) : ManifestOption()
+
+    /**
      * Embed the manifest JSON directly into the image file:
      * - **JPEG** → written to XMP metadata (`TAG_XMP`) via `ExifInterface`
      * - **PNG**  → written as a `tEXt` chunk with keyword `C2PA`
@@ -58,5 +68,18 @@ sealed class ManifestOption {
      * for in-memory use.
      */
     object None : ManifestOption()
+
+    companion object {
+        /**
+         * Convenience factory: returns the default sidecar option when [directoryPath]
+         * is null or blank, otherwise returns a SidecarDir for the provided path.
+         *
+         * Usage:
+         * - `ManifestOption.sidecar()`            // default location
+         * - `ManifestOption.sidecar("/path/to/dir")` // custom directory
+         */
+        fun sidecar(directoryPath: String? = null): ManifestOption =
+            if (directoryPath.isNullOrBlank()) SidecarFile else SidecarDir(directoryPath)
+    }
 }
 

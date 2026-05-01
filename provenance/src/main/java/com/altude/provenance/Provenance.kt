@@ -953,6 +953,10 @@ object Provenance {
             is ManifestOption.SidecarFile -> {
                 Pair(runCatching { manifest.saveTo(manifestsDir, sidecarToWrite) }.getOrNull(), null)
             }
+            is ManifestOption.SidecarDir -> {
+                val dir = java.io.File(option.directoryPath)
+                Pair(runCatching { manifest.saveTo(dir, sidecarToWrite) }.getOrNull(), null)
+            }
             is ManifestOption.EmbedInImage -> {
                 val embedded = runCatching {
                     // embed the consumer-facing sidecar (with signature when present)
