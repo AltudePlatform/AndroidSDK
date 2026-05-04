@@ -103,14 +103,15 @@ object Provenance {
                 "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
             )
         }
-        try {
-            foundation.metaplex.solanapublickeys.PublicKey(config.FeePayer)
-        } catch (e: Exception) {
+        val base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        val badChar = config.FeePayer.firstOrNull { it !in base58Alphabet }
+        if (badChar != null) {
             throw IllegalStateException(
-                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') is not a valid " +
-                "Base58 public key. Check the value returned by your API. " +
-                "Original error: ${e.message}"
-            , e)
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') contains an invalid " +
+                "Base58 character '$badChar' (position ${config.FeePayer.indexOf(badChar)}). " +
+                "Valid Base58 excludes '0' (zero), 'O' (capital o), 'I' (capital i) and 'l' (lowercase L). " +
+                "Check the FeePayer value returned by your API."
+            )
         }
         return config
     }

@@ -92,17 +92,19 @@ internal object ProvenanceManager {
                 "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
             )
         }
-        // Validate FeePayer is parseable as a Base58 public key right here so that
-        // callers get IllegalStateException("Bad FeePayer …") instead of a cryptic
-        // NumberFormatException("Illegal character O at position N") deep in the stack.
-        try {
-            PublicKey(config.FeePayer)
-        } catch (e: Exception) {
+        // Validate FeePayer is valid Base58 by checking each character directly.
+        // PublicKey(string) does NOT validate on construction — it only fails later
+        // when the key is decoded to bytes during tx serialization (giving a cryptic
+        // NumberFormatException). We catch it here with a clear message instead.
+        val base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        val badChar = config.FeePayer.firstOrNull { it !in base58Alphabet }
+        if (badChar != null) {
             throw IllegalStateException(
-                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') is not a valid " +
-                "Base58 public key. Check the value returned by your API. " +
-                "Original error: ${e.message}"
-            , e)
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') contains an invalid " +
+                "Base58 character '$badChar' (position ${config.FeePayer.indexOf(badChar)}). " +
+                "Valid Base58 excludes '0' (zero), 'O' (capital o), 'I' (capital i) and 'l' (lowercase L). " +
+                "Check the FeePayer value returned by your API."
+            )
         }
         return config
     }
