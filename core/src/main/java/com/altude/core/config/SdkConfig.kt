@@ -35,10 +35,37 @@ object SdkConfig {
     //lateinit var ownerKeyPair: Keypair
     var isDevnet: Boolean = false
 
+    // @Volatile ensures the reference is immediately visible to all threads after
+    // setApiKey() completes — without this, IO-thread coroutines can read the
+    // stale default ConfigResponse() even after the main thread has written the
+    // real one (JVM memory-visibility bug).
+    @Volatile
     @OptIn(ExperimentalTime::class)
     var apiConfig = ConfigResponse()
     private lateinit var retrofit: Retrofit
     private lateinit var okHttpClient: OkHttpClient
+
+    /**
+     * Returns `true` if [apiConfig] has been populated (i.e. [setApiKey] was called and
+     * the remote configuration was fetched successfully).
+     */
+    val isConfigured: Boolean
+        get() = apiConfig.RpcUrl.isNotBlank() && apiConfig.FeePayer.isNotBlank()
+
+    /**
+     * Throws [IllegalStateException] when [apiConfig] has not been set yet.
+     * Call this at the start of any operation that depends on the API configuration.
+     *
+     * @throws IllegalStateException if [setApiKey] has not been called or the remote
+     *   config fetch has not completed successfully.
+     */
+    fun requireConfigured() {
+        check(isConfigured) {
+            "SdkConfig.apiConfig is not initialised. " +
+            "Call SdkConfig.setApiKey(context, apiKey) and await its completion before " +
+            "using network or on-chain features."
+        }
+    }
 
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun initialize() {
@@ -120,6 +147,7 @@ object SdkConfig {
      * Helps prevent Address Lookup Table errors by detecting cluster mismatches.
      */
     fun validateNetworkConfiguration(): String? {
+        if (!isConfigured) return "SdkConfig is not yet initialised — call setApiKey() first."
         val rpcUrl = apiConfig.RpcUrl.lowercase()
         val environment = apiConfig.RpcEnvironment.lowercase()
         
@@ -152,6 +180,7 @@ object SdkConfig {
      * Gets the actual cluster from API configuration
      */
     fun getActualCluster(): String {
+        if (!isConfigured) return "uninitialised"
         val rpcUrl = apiConfig.RpcUrl.lowercase()
         val environment = apiConfig.RpcEnvironment.lowercase()
         
@@ -167,8 +196,9 @@ object SdkConfig {
 
     fun <T> createService(service: Class<T>): T {
         if (!::retrofit.isInitialized) {
-            throw IllegalStateException("SdkConfig must be initialized before creating services")
+            throw IllegalStateException("SdkConfig must be initialized before creating services. Call setApiKey() first.")
         }
+        requireConfigured()
         return retrofit.create(service)
     }
 }

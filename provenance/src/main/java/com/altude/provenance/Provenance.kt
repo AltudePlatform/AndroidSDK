@@ -82,6 +82,39 @@ import retrofit2.await
  */
 object Provenance {
 
+    /**
+     * Returns the current [com.altude.core.api.ConfigResponse] or throws a clear
+     * [IllegalStateException] if [SdkConfig.setApiKey] has not completed yet.
+     * Using this inside every `runCatching` / `withContext` block ensures callers
+     * receive a readable `Result.failure(IllegalStateException(...))` rather than
+     * a raw NPE or uninitialised-field crash.
+     *
+     * Also validates that [com.altude.core.api.ConfigResponse.FeePayer] is a valid
+     * Base58 public key so any backend data issue (e.g. 'O' in address) surfaces here
+     * as a clear [IllegalStateException] instead of a cryptic [NumberFormatException].
+     */
+    private fun requireApiConfig(): com.altude.core.api.ConfigResponse {
+        val config = SdkConfig.apiConfig          // single volatile read
+        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
+            throw IllegalStateException(
+                "Provenance SDK is not initialized. " +
+                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
+                "before using Provenance. " +
+                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
+            )
+        }
+        try {
+            foundation.metaplex.solanapublickeys.PublicKey(config.FeePayer)
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') is not a valid " +
+                "Base58 public key. Check the value returned by your API. " +
+                "Original error: ${e.message}"
+            , e)
+        }
+        return config
+    }
+
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
         ignoreUnknownKeys = true
@@ -755,7 +788,7 @@ object Provenance {
         // ── Keypair + PDA — once ───────────────────────────────────────────────
         val keypair   = ProvenanceManager.getKeyPair(first.account)
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        val feePayer  = PublicKey(SdkConfig.apiConfig.FeePayer) ?: keypair.publicKey
+        val feePayer  = PublicKey(requireApiConfig().FeePayer)
         val credentialPda = AttestationProgram .deriveCredentialAddress (feePayer, "test007")
 
         // No client-side createSchema submission here either. Backend must create schema.

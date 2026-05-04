@@ -69,8 +69,50 @@ internal object ProvenanceManager {
     const val CREDENTIAL_NAME = "image_hash_credential"
 
     private val schemaPdaCache = ConcurrentHashMap<String, PublicKey>()
-    private val rpc            get() = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
-    private val feePayerPubKey get() = PublicKey(SdkConfig.apiConfig.FeePayer)
+    /**
+     * Returns the current [com.altude.core.api.ConfigResponse] or throws a clear
+     * [IllegalStateException] if [SdkConfig.setApiKey] has not completed yet.
+     * Use this instead of bare `SdkConfig.apiConfig` so callers inside `runCatching`
+     * blocks receive a readable `Result.failure(IllegalStateException(...))`.
+     *
+     * Also validates that [com.altude.core.api.ConfigResponse.RpcUrl] and
+     * [com.altude.core.api.ConfigResponse.FeePayer] look like real values — guards
+     * against the race-condition window where `apiConfig` holds the default empty
+     * [com.altude.core.api.ConfigResponse] on the IO thread even though the main
+     * thread has already written the real one (mitigated by @Volatile but double-checked
+     * here for safety).
+     */
+    private fun requireApiConfig(): com.altude.core.api.ConfigResponse {
+        val config = SdkConfig.apiConfig          // single volatile read
+        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
+            throw IllegalStateException(
+                "Provenance SDK is not initialized. " +
+                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
+                "before using any Provenance features. " +
+                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
+            )
+        }
+        // Validate FeePayer is parseable as a Base58 public key right here so that
+        // callers get IllegalStateException("Bad FeePayer …") instead of a cryptic
+        // NumberFormatException("Illegal character O at position N") deep in the stack.
+        try {
+            PublicKey(config.FeePayer)
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') is not a valid " +
+                "Base58 public key. Check the value returned by your API. " +
+                "Original error: ${e.message}"
+            , e)
+        }
+        return config
+    }
+
+    private val rpc get(): AltudeRpc {
+        return AltudeRpc(requireApiConfig().RpcUrl)
+    }
+    private val feePayerPubKey get(): PublicKey {
+        return PublicKey(requireApiConfig().FeePayer)
+    }
 
     // ── Keypair ───────────────────────────────────────────────────────────────
 
@@ -642,7 +684,7 @@ internal object ProvenanceManager {
             val p = payload ?: return@withContext Result.failure(Exception("Missing payload in AttestBuilder"))
             return@withContext runCatching {
                 val keypair = getKeyPair(p.account)
-                val feePayer = PublicKey(SdkConfig.apiConfig.FeePayer)
+                val feePayer = PublicKey(requireApiConfig().FeePayer)
                 // Derive credential/schema PDAs using the fee payer as authority (matching public API behaviour)
                 val credentialPda = AttestationProgram.deriveCredentialAddress(authority = feePayer, name = credentialName)
                 val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 1)

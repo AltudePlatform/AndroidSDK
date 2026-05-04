@@ -22,9 +22,42 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    private val rpc = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
-    val feePayerPubKey =
-        PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
+    /**
+     * Returns the current API config or throws [IllegalStateException] with a clear message.
+     * Guards against:
+     * - Race condition: IO thread reads stale default ConfigResponse() (@Volatile on apiConfig
+     *   in SdkConfig is the primary fix; this is the secondary safety net).
+     * - Invalid FeePayer: surfaces as IllegalStateException instead of a cryptic
+     *   NumberFormatException("Illegal character O at position N").
+     */
+    private fun requireApiConfig(): com.altude.core.api.ConfigResponse {
+        val config = SdkConfig.apiConfig          // single volatile read
+        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
+            throw IllegalStateException(
+                "NFT SDK is not initialized. " +
+                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
+                "before using TransactionManager. " +
+                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
+            )
+        }
+        try {
+            PublicKey(config.FeePayer)
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') is not a valid " +
+                "Base58 public key. Check the value returned by your API. " +
+                "Original error: ${e.message}", e
+            )
+        }
+        return config
+    }
+
+    private val rpc get(): AltudeRpc {
+        return AltudeRpc(requireApiConfig().RpcUrl)
+    }
+    val feePayerPubKey get(): PublicKey {
+        return PublicKey(requireApiConfig().FeePayer)
+    }
 
 
 
