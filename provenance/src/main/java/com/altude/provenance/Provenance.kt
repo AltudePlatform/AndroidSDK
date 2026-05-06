@@ -805,7 +805,10 @@ object Provenance {
         val keypair   = ProvenanceManager.getKeyPair(first.account)
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
         val feePayer  = PublicKey(requireApiConfig().FeePayer)
-        val credentialPda = AttestationProgram .deriveCredentialAddress (feePayer, "test007")
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            feePayer,
+            ProvenanceManager.CREDENTIAL_NAME
+        )
 
         // No client-side createSchema submission here either. Backend must create schema.
 
