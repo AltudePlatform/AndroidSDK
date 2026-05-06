@@ -50,26 +50,34 @@ import kotlin.math.pow
 
 object GaslessManager {
 
+    @Volatile
     private var cachedRpc: AltudeRpc? = null
+
+    @Volatile
     private var cachedRpcUrl: String? = null
 
     private val rpc: AltudeRpc
         get() {
-            SdkConfig.requireConfigured()
-            val rpcUrl = SdkConfig.apiConfig.RpcUrl
+            val rpcUrl = SdkConfig.requireApiConfig().RpcUrl
             val existingRpc = cachedRpc
             if (existingRpc != null && cachedRpcUrl == rpcUrl) {
                 return existingRpc
             }
 
-            return AltudeRpc(rpcUrl).also {
-                cachedRpc = it
-                cachedRpcUrl = rpcUrl
+            return synchronized(this) {
+                val synchronizedExistingRpc = cachedRpc
+                if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                    synchronizedExistingRpc
+                } else {
+                    AltudeRpc(rpcUrl).also {
+                        cachedRpc = it
+                        cachedRpcUrl = rpcUrl
+                    }
+                }
             }
         }
     val feePayerPubKey get(): PublicKey {
-        SdkConfig.requireConfigured()
-        return PublicKey(SdkConfig.apiConfig.FeePayer)
+        return PublicKey(SdkConfig.requireApiConfig().FeePayer)
     }
     @OptIn(ExperimentalSerializationApi::class)
     val json = Json {
