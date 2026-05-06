@@ -439,7 +439,14 @@ object Provenance {
     suspend fun init(context: Context,apiKey: String, isDevnet: Boolean = true ){
         SdkConfig.setNetwork(isDevnet = isDevnet)
         SdkConfig.setApiKey(context, apiKey)
-        StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
+
+        val existingSeed = runCatching {
+            StorageService.getDecryptedSeed("")
+        }.getOrNull()
+
+        if (existingSeed.isNullOrBlank()) {
+            StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
+        }
     }
 
     // ── Single image ──────────────────────────────────────────────────────────
