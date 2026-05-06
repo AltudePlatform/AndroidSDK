@@ -437,7 +437,7 @@ object Provenance {
     // Schema + credential creation must be handled out-of-band or via `ProvenanceManager.setSchemaPda`.
 
     suspend fun init(context: Context,apiKey: String, isDevnet: Boolean = true ){
-        SdkConfig.setNetwork(isDevnet = true)
+        SdkConfig.setNetwork(isDevnet = isDevnet)
         SdkConfig.setApiKey(context, apiKey)
         StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
     }
