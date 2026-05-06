@@ -50,10 +50,23 @@ import kotlin.math.pow
 
 object GaslessManager {
 
-    private val rpc get(): AltudeRpc {
-        SdkConfig.requireConfigured()
-        return AltudeRpc(SdkConfig.apiConfig.RpcUrl)
-    }
+    private var cachedRpc: AltudeRpc? = null
+    private var cachedRpcUrl: String? = null
+
+    private val rpc: AltudeRpc
+        get() {
+            SdkConfig.requireConfigured()
+            val rpcUrl = SdkConfig.apiConfig.RpcUrl
+            val existingRpc = cachedRpc
+            if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+                return existingRpc
+            }
+
+            return AltudeRpc(rpcUrl).also {
+                cachedRpc = it
+                cachedRpcUrl = rpcUrl
+            }
+        }
     val feePayerPubKey get(): PublicKey {
         SdkConfig.requireConfigured()
         return PublicKey(SdkConfig.apiConfig.FeePayer)
