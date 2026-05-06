@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.security.KeyStore
+import java.security.KeyStoreException
 import javax.crypto.AEADBadTagException
 import kotlinx.serialization.Serializable
 
@@ -99,6 +101,24 @@ object StorageService {
         Log.w("SecureStorage", "Deleted stale encrypted file for $accountAddress: $deleted")
     }
 
+    /**
+     * Deletes the MasterKey entry from the Android Keystore so [getMasterKey] regenerates it.
+     * Required when the key is permanently invalidated (e.g. new biometric enrolled, lock screen
+     * changed, or Keystore ErrorCode -30).
+     */
+    private fun deleteKeyStoreEntry() {
+        try {
+            val ks = KeyStore.getInstance("AndroidKeyStore").also { it.load(null) }
+            val alias = MasterKey.DEFAULT_MASTER_KEY_ALIAS
+            if (ks.containsAlias(alias)) {
+                ks.deleteEntry(alias)
+                Log.w("SecureStorage", "Deleted invalidated KeyStore entry: $alias")
+            }
+        } catch (ex: Exception) {
+            Log.e("SecureStorage", "Failed to delete KeyStore entry", ex)
+        }
+    }
+
     private suspend fun storeWalletSeedInternal(accountAddress: String, seedData: SeedData) =
         withContext(Dispatchers.IO) {
             val file = File(appContext.filesDir, getSeedFileName(accountAddress))
@@ -128,13 +148,20 @@ object StorageService {
         try {
             storeWalletSeedInternal(accountAddress, seedData)
         } catch (e: Exception) {
+            val msg = (e.message ?: "") + (e.cause?.message ?: "")
             val isKeyInvalidated = e is AEADBadTagException
                     || e.cause is AEADBadTagException
-                    || e.message?.contains("VERIFICATION_FAILED") == true
+                    || e is KeyStoreException
+                    || e.cause is KeyStoreException
+                    || msg.contains("VERIFICATION_FAILED", ignoreCase = true)
+                    || msg.contains("verification failed", ignoreCase = true)
+                    || msg.contains("ErrorCode(-30)", ignoreCase = true)
+                    || msg.contains("KeyPermanentlyInvalidatedException", ignoreCase = true)
 
             if (isKeyInvalidated) {
-                Log.w("SecureStorage", "Key invalidated for $accountAddress — deleting stale file and retrying.")
+                Log.w("SecureStorage", "Key invalidated for $accountAddress — purging stale key+file and retrying.")
                 deleteEncryptedSeedFile(accountAddress)
+                deleteKeyStoreEntry()
                 try {
                     storeWalletSeedInternal(accountAddress, seedData)
                 } catch (retryEx: Exception) {
