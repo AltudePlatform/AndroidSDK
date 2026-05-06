@@ -109,9 +109,37 @@ internal object ProvenanceManager {
         return config
     }
 
-    private val rpc get(): AltudeRpc {
-        return AltudeRpc(requireApiConfig().RpcUrl)
+    @Volatile
+    private var cachedRpcUrl: String? = null
+
+    @Volatile
+    private var cachedRpc: AltudeRpc? = null
+
+    private fun getRpc(): AltudeRpc {
+        val config = requireApiConfig()
+        val rpcUrl = config.RpcUrl
+
+        val existingRpc = cachedRpc
+        if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+            return existingRpc
+        }
+
+        return synchronized(this) {
+            val synchronizedExistingRpc = cachedRpc
+            if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                synchronizedExistingRpc
+            } else {
+                AltudeRpc(rpcUrl).also {
+                    cachedRpc = it
+                    cachedRpcUrl = rpcUrl
+                }
+            }
+        }
     }
+
+    private val rpc: AltudeRpc
+        get() = getRpc()
+
     private val feePayerPubKey get(): PublicKey {
         return PublicKey(requireApiConfig().FeePayer)
     }
