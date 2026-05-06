@@ -47,11 +47,17 @@ class AltudeRpc(val endpoint: String) {
             ignoreUnknownKeys = true
         }
         //temp token for 3 days
-        var token: String = SdkConfig.apiConfig.Token
+        var token: String = SdkConfig.apiConfig.Token  // may be blank until setApiKey() is called
         private var expiry: Long = 0
 
         @OptIn(ExperimentalTime::class)
         suspend fun getValidToken(): String {
+            if (!SdkConfig.isConfigured) {
+                throw IllegalStateException(
+                    "SdkConfig.apiConfig is not initialised. " +
+                    "Call SdkConfig.setApiKey(context, apiKey) before making network requests."
+                )
+            }
             val token = SdkConfig.apiConfig.Token
             val expiry = SdkConfig.apiConfig.TokenExpiration
             val now = Clock.System.now()

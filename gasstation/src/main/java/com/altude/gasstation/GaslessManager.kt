@@ -50,9 +50,35 @@ import kotlin.math.pow
 
 object GaslessManager {
 
-    private val rpc = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
-    val feePayerPubKey =
-        PublicKey(SdkConfig.apiConfig.FeePayer) // PublicKey("Hwdo4thQCFKB3yuohhmmnb1gbUBXySaVJwBnkmRgN8cK") //ALZ8NJcf8JDL7j7iVfoyXM8u3fT3DoBXsnAU6ML7Sb5W BjLvdmqDjnyFsewJkzqPSfpZThE8dGPqCAZzVbJtQFSr
+    @Volatile
+    private var cachedRpc: AltudeRpc? = null
+
+    @Volatile
+    private var cachedRpcUrl: String? = null
+
+    private val rpc: AltudeRpc
+        get() {
+            val rpcUrl = SdkConfig.requireApiConfig().RpcUrl
+            val existingRpc = cachedRpc
+            if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+                return existingRpc
+            }
+
+            return synchronized(this) {
+                val synchronizedExistingRpc = cachedRpc
+                if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                    synchronizedExistingRpc
+                } else {
+                    AltudeRpc(rpcUrl).also {
+                        cachedRpcUrl = rpcUrl
+                        cachedRpc = it
+                    }
+                }
+            }
+        }
+    val feePayerPubKey get(): PublicKey {
+        return PublicKey(SdkConfig.requireApiConfig().FeePayer)
+    }
     @OptIn(ExperimentalSerializationApi::class)
     val json = Json {
         ignoreUnknownKeys = true   // don’t crash if backend adds new fields

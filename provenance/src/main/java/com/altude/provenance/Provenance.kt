@@ -1,8 +1,10 @@
 package com.altude.provenance
 
+import android.content.Context
 import android.util.Log
 import com.altude.core.config.SdkConfig
 import com.altude.core.Programs.AttestationProgram
+import com.altude.core.helper.Mnemonic
 import foundation.metaplex.solanapublickeys.PublicKey
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.AttestRequest
@@ -400,6 +402,19 @@ object Provenance {
     // createSchema and createCredential APIs removed.
     // Schema + credential creation must be handled out-of-band or via `ProvenanceManager.setSchemaPda`.
 
+    suspend fun init(context: Context,apiKey: String, isDevnet: Boolean = true ){
+        SdkConfig.setNetwork(isDevnet = isDevnet)
+        SdkConfig.setApiKey(context, apiKey)
+
+        val existingSeed = runCatching {
+            StorageService.getDecryptedSeed("")
+        }.getOrNull()
+
+        if (existingSeed.isNullOrBlank()) {
+            StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
+        }
+    }
+
     // ── Single image ──────────────────────────────────────────────────────────
 
     /**
@@ -755,8 +770,11 @@ object Provenance {
         // ── Keypair + PDA — once ───────────────────────────────────────────────
         val keypair   = ProvenanceManager.getKeyPair(first.account)
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        val feePayer  = PublicKey(SdkConfig.apiConfig.FeePayer) ?: keypair.publicKey
-        val credentialPda = AttestationProgram .deriveCredentialAddress (feePayer, "test007")
+        val feePayer  = PublicKey(SdkConfig.requireApiConfig().FeePayer)
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            feePayer,
+            ProvenanceManager.CREDENTIAL_NAME
+        )
 
         // No client-side createSchema submission here either. Backend must create schema.
 

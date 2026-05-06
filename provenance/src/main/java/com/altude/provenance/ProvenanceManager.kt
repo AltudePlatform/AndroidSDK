@@ -69,8 +69,41 @@ internal object ProvenanceManager {
     const val CREDENTIAL_NAME = "image_hash_credential"
 
     private val schemaPdaCache = ConcurrentHashMap<String, PublicKey>()
-    private val rpc            get() = AltudeRpc(SdkConfig.apiConfig.RpcUrl)
-    private val feePayerPubKey get() = PublicKey(SdkConfig.apiConfig.FeePayer)
+
+    @Volatile
+    private var cachedRpcUrl: String? = null
+
+    @Volatile
+    private var cachedRpc: AltudeRpc? = null
+
+    private fun getRpc(): AltudeRpc {
+        val config = SdkConfig.requireApiConfig()
+        val rpcUrl = config.RpcUrl
+
+        val existingRpc = cachedRpc
+        if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+            return existingRpc
+        }
+
+        return synchronized(this) {
+            val synchronizedExistingRpc = cachedRpc
+            if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                synchronizedExistingRpc
+            } else {
+                AltudeRpc(rpcUrl).also {
+                    cachedRpcUrl = rpcUrl
+                    cachedRpc = it
+                }
+            }
+        }
+    }
+
+    private val rpc: AltudeRpc
+        get() = getRpc()
+
+    private val feePayerPubKey get(): PublicKey {
+        return PublicKey(SdkConfig.requireApiConfig().FeePayer)
+    }
 
     // ── Keypair ───────────────────────────────────────────────────────────────
 
@@ -642,7 +675,7 @@ internal object ProvenanceManager {
             val p = payload ?: return@withContext Result.failure(Exception("Missing payload in AttestBuilder"))
             return@withContext runCatching {
                 val keypair = getKeyPair(p.account)
-                val feePayer = PublicKey(SdkConfig.apiConfig.FeePayer)
+                val feePayer = PublicKey(SdkConfig.requireApiConfig().FeePayer)
                 // Derive credential/schema PDAs using the fee payer as authority (matching public API behaviour)
                 val credentialPda = AttestationProgram.deriveCredentialAddress(authority = feePayer, name = credentialName)
                 val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 1)
