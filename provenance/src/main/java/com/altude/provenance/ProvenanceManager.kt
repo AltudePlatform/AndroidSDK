@@ -91,8 +91,8 @@ internal object ProvenanceManager {
                 synchronizedExistingRpc
             } else {
                 AltudeRpc(rpcUrl).also {
-                    cachedRpc = it
                     cachedRpcUrl = rpcUrl
+                    cachedRpc = it
                 }
             }
         }

@@ -22,9 +22,33 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    private val rpc get(): AltudeRpc {
-        return AltudeRpc(SdkConfig.requireApiConfig().RpcUrl)
-    }
+    @Volatile
+    private var cachedRpcUrl: String? = null
+
+    @Volatile
+    private var cachedRpc: AltudeRpc? = null
+
+    private val rpc: AltudeRpc
+        get() {
+            val rpcUrl = SdkConfig.requireApiConfig().RpcUrl
+            val existingRpc = cachedRpc
+            if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+                return existingRpc
+            }
+
+            return synchronized(this) {
+                val synchronizedExistingRpc = cachedRpc
+                if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                    synchronizedExistingRpc
+                } else {
+                    AltudeRpc(rpcUrl).also {
+                        cachedRpcUrl = rpcUrl
+                        cachedRpc = it
+                    }
+                }
+            }
+        }
+
     val feePayerPubKey get(): PublicKey {
         return PublicKey(SdkConfig.requireApiConfig().FeePayer)
     }

@@ -70,8 +70,8 @@ object GaslessManager {
                     synchronizedExistingRpc
                 } else {
                     AltudeRpc(rpcUrl).also {
-                        cachedRpc = it
                         cachedRpcUrl = rpcUrl
+                        cachedRpc = it
                     }
                 }
             }
