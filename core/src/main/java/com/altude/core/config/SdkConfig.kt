@@ -29,6 +29,8 @@ import kotlin.time.ExperimentalTime
 
 object SdkConfig {
 
+    /** Valid characters in a Base58-encoded Solana public key (excludes 0, O, I, l). */
+    private const val BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
     private var baseUrl: String =  "https://api.altude.so" //"http://10.0.2.2:54363/"//
     var apiKey: String = ""
@@ -65,6 +67,42 @@ object SdkConfig {
             "Call SdkConfig.setApiKey(context, apiKey) and await its completion before " +
             "using network or on-chain features."
         }
+    }
+
+    /**
+     * Returns the current [ConfigResponse] or throws [IllegalStateException] with a clear message.
+     *
+     * Validates that [ConfigResponse.RpcUrl] and [ConfigResponse.FeePayer] have been populated
+     * and that [ConfigResponse.FeePayer] is a valid Base58 public key — surfacing backend data
+     * issues as a clear [IllegalStateException] instead of a cryptic [NumberFormatException]
+     * that would otherwise appear during transaction serialization.
+     *
+     * Use this in every module that needs the API configuration instead of accessing
+     * [apiConfig] directly, to keep validation rules consistent across all modules.
+     *
+     * @throws IllegalStateException if [setApiKey] has not completed, or if [ConfigResponse.FeePayer]
+     *   contains a non-Base58 character.
+     */
+    fun requireApiConfig(): ConfigResponse {
+        val config = apiConfig          // single volatile read
+        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
+            throw IllegalStateException(
+                "Altude SDK is not initialized. " +
+                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
+                "before using network or on-chain features. " +
+                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
+            )
+        }
+        val badChar = config.FeePayer.firstOrNull { it !in BASE58_ALPHABET }
+        if (badChar != null) {
+            throw IllegalStateException(
+                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') contains an invalid " +
+                "Base58 character '$badChar' (position ${config.FeePayer.indexOf(badChar)}). " +
+                "Valid Base58 excludes '0' (zero), 'O' (capital o), 'I' (capital i) and 'l' (lowercase L). " +
+                "Check the FeePayer value returned by your API."
+            )
+        }
+        return config
     }
 
     @OptIn(ExperimentalSerializationApi::class)

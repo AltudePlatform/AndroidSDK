@@ -84,40 +84,6 @@ import retrofit2.await
  */
 object Provenance {
 
-    /**
-     * Returns the current [com.altude.core.api.ConfigResponse] or throws a clear
-     * [IllegalStateException] if [SdkConfig.setApiKey] has not completed yet.
-     * Using this inside every `runCatching` / `withContext` block ensures callers
-     * receive a readable `Result.failure(IllegalStateException(...))` rather than
-     * a raw NPE or uninitialised-field crash.
-     *
-     * Also validates that [com.altude.core.api.ConfigResponse.FeePayer] is a valid
-     * Base58 public key so any backend data issue (e.g. 'O' in address) surfaces here
-     * as a clear [IllegalStateException] instead of a cryptic [NumberFormatException].
-     */
-    private fun requireApiConfig(): com.altude.core.api.ConfigResponse {
-        val config = SdkConfig.apiConfig          // single volatile read
-        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
-            throw IllegalStateException(
-                "Provenance SDK is not initialized. " +
-                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
-                "before using Provenance. " +
-                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
-            )
-        }
-        val base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        val badChar = config.FeePayer.firstOrNull { it !in base58Alphabet }
-        if (badChar != null) {
-            throw IllegalStateException(
-                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') contains an invalid " +
-                "Base58 character '$badChar' (position ${config.FeePayer.indexOf(badChar)}). " +
-                "Valid Base58 excludes '0' (zero), 'O' (capital o), 'I' (capital i) and 'l' (lowercase L). " +
-                "Check the FeePayer value returned by your API."
-            )
-        }
-        return config
-    }
-
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
         ignoreUnknownKeys = true
@@ -437,9 +403,16 @@ object Provenance {
     // Schema + credential creation must be handled out-of-band or via `ProvenanceManager.setSchemaPda`.
 
     suspend fun init(context: Context,apiKey: String, isDevnet: Boolean = true ){
-        SdkConfig.setNetwork(isDevnet = true)
+        SdkConfig.setNetwork(isDevnet = isDevnet)
         SdkConfig.setApiKey(context, apiKey)
-        StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
+
+        val existingSeed = runCatching {
+            StorageService.getDecryptedSeed("")
+        }.getOrNull()
+
+        if (existingSeed.isNullOrBlank()) {
+            StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
+        }
     }
 
     // ── Single image ──────────────────────────────────────────────────────────
@@ -797,8 +770,11 @@ object Provenance {
         // ── Keypair + PDA — once ───────────────────────────────────────────────
         val keypair   = ProvenanceManager.getKeyPair(first.account)
         val schemaPda = ProvenanceManager.deriveSchemaAddress(first.account)
-        val feePayer  = PublicKey(requireApiConfig().FeePayer)
-        val credentialPda = AttestationProgram .deriveCredentialAddress (feePayer, "test007")
+        val feePayer  = PublicKey(SdkConfig.requireApiConfig().FeePayer)
+        val credentialPda = AttestationProgram.deriveCredentialAddress(
+            feePayer,
+            ProvenanceManager.CREDENTIAL_NAME
+        )
 
         // No client-side createSchema submission here either. Backend must create schema.
 

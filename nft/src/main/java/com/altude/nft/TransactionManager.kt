@@ -22,42 +22,35 @@ import kotlin.text.format
 
 object TransactionManager {
 
-    /**
-     * Returns the current API config or throws [IllegalStateException] with a clear message.
-     * Guards against:
-     * - Race condition: IO thread reads stale default ConfigResponse() (@Volatile on apiConfig
-     *   in SdkConfig is the primary fix; this is the secondary safety net).
-     * - Invalid FeePayer: surfaces as IllegalStateException instead of a cryptic
-     *   NumberFormatException("Illegal character O at position N").
-     */
-    private fun requireApiConfig(): com.altude.core.api.ConfigResponse {
-        val config = SdkConfig.apiConfig          // single volatile read
-        if (config.RpcUrl.isBlank() || config.FeePayer.isBlank()) {
-            throw IllegalStateException(
-                "NFT SDK is not initialized. " +
-                "Call SdkConfig.setApiKey(context, apiKey) and await its completion " +
-                "before using TransactionManager. " +
-                "(RpcUrl='${config.RpcUrl}', FeePayer='${config.FeePayer}')"
-            )
-        }
-        val base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        val badChar = config.FeePayer.firstOrNull { it !in base58Alphabet }
-        if (badChar != null) {
-            throw IllegalStateException(
-                "SdkConfig.apiConfig.FeePayer ('${config.FeePayer}') contains an invalid " +
-                "Base58 character '$badChar' (position ${config.FeePayer.indexOf(badChar)}). " +
-                "Valid Base58 excludes '0' (zero), 'O' (capital o), 'I' (capital i) and 'l' (lowercase L). " +
-                "Check the FeePayer value returned by your API."
-            )
-        }
-        return config
-    }
+    @Volatile
+    private var cachedRpcUrl: String? = null
 
-    private val rpc get(): AltudeRpc {
-        return AltudeRpc(requireApiConfig().RpcUrl)
-    }
+    @Volatile
+    private var cachedRpc: AltudeRpc? = null
+
+    private val rpc: AltudeRpc
+        get() {
+            val rpcUrl = SdkConfig.requireApiConfig().RpcUrl
+            val existingRpc = cachedRpc
+            if (existingRpc != null && cachedRpcUrl == rpcUrl) {
+                return existingRpc
+            }
+
+            return synchronized(this) {
+                val synchronizedExistingRpc = cachedRpc
+                if (synchronizedExistingRpc != null && cachedRpcUrl == rpcUrl) {
+                    synchronizedExistingRpc
+                } else {
+                    AltudeRpc(rpcUrl).also {
+                        cachedRpcUrl = rpcUrl
+                        cachedRpc = it
+                    }
+                }
+            }
+        }
+
     val feePayerPubKey get(): PublicKey {
-        return PublicKey(requireApiConfig().FeePayer)
+        return PublicKey(SdkConfig.requireApiConfig().FeePayer)
     }
 
 
