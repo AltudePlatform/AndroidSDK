@@ -102,11 +102,15 @@ object StorageService {
     }
 
     /**
-     * Deletes the MasterKey entry from the Android Keystore so [getMasterKey] regenerates it.
+     * Deletes the MasterKey entry from the Android Keystore so [getMasterKey] regenerates it,
+     * and also purges Tink's encrypted keyset SharedPreferences so they are regenerated with
+     * the new master key on the next [EncryptedFile.Builder.build] call.
+     *
      * Required when the key is permanently invalidated (e.g. new biometric enrolled, lock screen
      * changed, or Keystore ErrorCode -30).
      */
     private fun deleteKeyStoreEntry() {
+        // 1. Delete the AndroidKeyStore master key entry.
         try {
             val ks = KeyStore.getInstance("AndroidKeyStore").also { it.load(null) }
             val alias = MasterKey.DEFAULT_MASTER_KEY_ALIAS
@@ -117,11 +121,39 @@ object StorageService {
         } catch (ex: Exception) {
             Log.e("SecureStorage", "Failed to delete KeyStore entry", ex)
         }
+
+        // 2. Delete Tink's encrypted keyset SharedPreferences.
+        // EncryptedFile stores a per-file keyset in a shared-prefs file named
+        // "__androidx_security_crypto_encrypted_file_keyset__".
+        // If the master key is gone those keysets are permanently unreadable, so
+        // we wipe the entire prefs file so Tink regenerates fresh keysets next time.
+        try {
+            val tinkPrefsName = "__androidx_security_crypto_encrypted_file_keyset__"
+            appContext.getSharedPreferences(tinkPrefsName, Context.MODE_PRIVATE)
+                .edit().clear().commit()
+            // Also delete the backing XML so there is no stale state.
+            val tinkPrefsFile = appContext.filesDir.parentFile
+                ?.resolve("shared_prefs/$tinkPrefsName.xml")
+            if (tinkPrefsFile?.exists() == true) {
+                tinkPrefsFile.delete()
+                Log.w("SecureStorage", "Deleted Tink keyset prefs file")
+            }
+        } catch (ex: Exception) {
+            Log.e("SecureStorage", "Failed to delete Tink keyset prefs", ex)
+        }
     }
 
     private suspend fun storeWalletSeedInternal(accountAddress: String, seedData: SeedData) =
         withContext(Dispatchers.IO) {
             val file = File(appContext.filesDir, getSeedFileName(accountAddress))
+
+            // EncryptedFile cannot overwrite an existing file; delete it first so
+            // a retry after key-recovery (or an intentional overwrite) always succeeds.
+            if (file.exists()) {
+                file.delete()
+                Log.d("SecureStorage", "Deleted existing seed file for $accountAddress before write")
+            }
+
             val json = Json.encodeToString(seedData)
 
             val encryptedFile = EncryptedFile.Builder(
@@ -139,11 +171,6 @@ object StorageService {
         }
 
     suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
-        val file = File(appContext.filesDir, getSeedFileName(accountAddress))
-        if (file.exists()) {
-            Log.i("SecureStorage", "Seed for $accountAddress already exists. Skipping.")
-            return
-        }
 
         try {
             storeWalletSeedInternal(accountAddress, seedData)
