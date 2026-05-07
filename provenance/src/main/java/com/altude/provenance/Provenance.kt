@@ -410,7 +410,7 @@ object Provenance {
             StorageService.getDecryptedSeed("")
         }.getOrNull()
 
-        if (existingSeed.isNullOrBlank()) {
+        if (existingSeed == null) {
             StorageService.storeMnemonic(Mnemonic.generateMnemonic(12))
         }
     }
