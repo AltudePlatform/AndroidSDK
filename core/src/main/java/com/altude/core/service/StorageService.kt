@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.security.KeyStore
+import java.security.KeyStoreException
 import javax.crypto.AEADBadTagException
 import kotlinx.serialization.Serializable
 
@@ -99,50 +101,168 @@ object StorageService {
         Log.w("SecureStorage", "Deleted stale encrypted file for $accountAddress: $deleted")
     }
 
+    /**
+     * Deletes the MasterKey entry from the Android Keystore so [getMasterKey] regenerates it,
+     * and also purges Tink's encrypted keyset SharedPreferences so they are regenerated with
+     * the new master key on the next [EncryptedFile.Builder.build] call.
+     *
+     * Required when the key is permanently invalidated (e.g. new biometric enrolled, lock screen
+     * changed, or Keystore ErrorCode -30).
+     */
+    private fun deleteKeyStoreEntry() {
+        // 1. Delete the AndroidKeyStore master key entry.
+        try {
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
+            val alias = MasterKey.DEFAULT_MASTER_KEY_ALIAS
+            if (ks.containsAlias(alias)) {
+                ks.deleteEntry(alias)
+                Log.w("SecureStorage", "Deleted invalidated KeyStore entry: $alias")
+            }
+        } catch (ex: Exception) {
+            Log.e("SecureStorage", "Failed to delete KeyStore entry", ex)
+        }
+
+        // 2. Delete Tink's encrypted keyset SharedPreferences.
+        // EncryptedFile stores a per-file keyset in a shared-prefs file named
+        // "__androidx_security_crypto_encrypted_file_keyset__".
+        // If the master key is gone those keysets are permanently unreadable, so
+        // we wipe the entire prefs file so Tink regenerates fresh keysets next time.
+        try {
+            val tinkPrefsName = "__androidx_security_crypto_encrypted_file_keyset__"
+            appContext.getSharedPreferences(tinkPrefsName, Context.MODE_PRIVATE)
+                .edit().clear().commit()
+            // Also delete the backing XML so there is no stale state.
+            val tinkPrefsFile = appContext.filesDir.parentFile
+                ?.resolve("shared_prefs/$tinkPrefsName.xml")
+            if (tinkPrefsFile?.exists() == true) {
+                tinkPrefsFile.delete()
+                Log.w("SecureStorage", "Deleted Tink keyset prefs file")
+            }
+        } catch (ex: Exception) {
+            Log.e("SecureStorage", "Failed to delete Tink keyset prefs", ex)
+        }
+    }
+
     private suspend fun storeWalletSeedInternal(accountAddress: String, seedData: SeedData) =
         withContext(Dispatchers.IO) {
             val file = File(appContext.filesDir, getSeedFileName(accountAddress))
-            val json = Json.encodeToString(seedData)
+            val backupFile = File(appContext.filesDir, getSeedFileName(accountAddress) + ".bak")
 
-            val encryptedFile = EncryptedFile.Builder(
-                appContext,
-                file,
-                getMasterKey(),
-                EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
-            ).build()
-
-            encryptedFile.openFileOutput().use { output ->
-                output.write(json.toByteArray(Charsets.UTF_8))
+            // EncryptedFile cannot overwrite an existing file. Instead of deleting it
+            // outright (which creates a data-loss window on crash), atomically move it
+            // to a backup so we retain a copy during the write. renameTo() is atomic
+            // on the same filesystem partition.
+            if (file.exists()) {
+                // Remove a stale backup left by a previous interrupted write.
+                if (backupFile.exists() && !backupFile.delete()) {
+                    throw StorageException(
+                        "Cannot prepare write for $accountAddress: stale backup file could not be removed"
+                    )
+                }
+                if (!file.renameTo(backupFile)) {
+                    throw StorageException(
+                        "Cannot prepare write for $accountAddress: existing seed file could not be moved aside"
+                    )
+                }
+                Log.d("SecureStorage", "Moved existing seed file to backup for $accountAddress")
             }
 
-            Log.i("SecureStorage", "Seed stored securely for $accountAddress")
+            val json = Json.encodeToString(seedData)
+
+            try {
+                val encryptedFile = EncryptedFile.Builder(
+                    appContext,
+                    file,
+                    getMasterKey(),
+                    EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                ).build()
+
+                encryptedFile.openFileOutput().use { output ->
+                    output.write(json.toByteArray(Charsets.UTF_8))
+                }
+
+                // Write succeeded; the new file is in place — remove the backup.
+                if (backupFile.exists() && !backupFile.delete()) {
+                    Log.w("SecureStorage", "Backup file could not be removed after successful write for $accountAddress")
+                }
+                Log.i("SecureStorage", "Seed stored securely for $accountAddress")
+            } catch (e: Exception) {
+                // Write failed; restore the backup to prevent data loss.
+                if (backupFile.exists()) {
+                    if (file.exists() && !file.delete()) {
+                        Log.e("SecureStorage", "Failed to remove partial write for $accountAddress during restore")
+                    }
+                    if (backupFile.renameTo(file)) {
+                        Log.w("SecureStorage", "Restored backup seed file for $accountAddress after write failure")
+                    } else {
+                        Log.e("SecureStorage", "Failed to restore backup seed file for $accountAddress")
+                    }
+                }
+                throw e
+            }
         }
 
-    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
-        val file = File(appContext.filesDir, getSeedFileName(accountAddress))
-        if (file.exists()) {
-            Log.i("SecureStorage", "Seed for $accountAddress already exists. Skipping.")
-            return
+    /**
+     * Walks the full exception cause chain to check if the exception or any of its causes
+     * indicates a key invalidation scenario.
+     */
+    private fun isKeyInvalidatedException(e: Throwable): Boolean {
+        var current: Throwable? = e
+        while (current != null) {
+            // Check for specific invalidation exception types
+            if (current is AEADBadTagException) {
+                return true
+            }
+            
+            // Check for KeyPermanentlyInvalidatedException by fully qualified class name
+            if (current.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException") {
+                return true
+            }
+            
+            // Check for specific error messages that indicate key invalidation
+            val msg = current.message ?: ""
+            if (msg.contains("VERIFICATION_FAILED", ignoreCase = true)
+                || msg.contains("ErrorCode(-30)", ignoreCase = true)
+                || msg.contains("Key permanently invalidated", ignoreCase = true)
+            ) {
+                return true
+            }
+            
+            current = current.cause
+        }
+        return false
+    }
+
+    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData, overwrite: Boolean = false) {
+        // By default, do not overwrite an existing seed file (wallet seeds are sensitive).
+        // Callers must explicitly pass overwrite=true to replace an existing seed.
+        if (!overwrite) {
+            val file = File(appContext.filesDir, getSeedFileName(accountAddress))
+            if (file.exists()) {
+                Log.i("SecureStorage", "Seed already exists. Skipping.")
+                return
+            }
         }
 
         try {
             storeWalletSeedInternal(accountAddress, seedData)
         } catch (e: Exception) {
-            val isKeyInvalidated = e is AEADBadTagException
-                    || e.cause is AEADBadTagException
-                    || e.message?.contains("VERIFICATION_FAILED") == true
-
-            if (isKeyInvalidated) {
-                Log.w("SecureStorage", "Key invalidated for $accountAddress — deleting stale file and retrying.")
-                deleteEncryptedSeedFile(accountAddress)
-                try {
-                    storeWalletSeedInternal(accountAddress, seedData)
-                } catch (retryEx: Exception) {
-                    Log.e("SecureStorage", "Retry failed for $accountAddress", retryEx)
-                    throw StorageException("Failed to store seed after key recovery for $accountAddress", retryEx)
+            if (isKeyInvalidatedException(e)) {
+                // Wrap the entire key-recovery path (purge + retry) in IO dispatcher
+                // to avoid blocking the caller thread with keystore/SharedPreferences/file I/O.
+                withContext(Dispatchers.IO) {
+                    Log.w("SecureStorage", "Key invalidated — purging stale key+file and retrying.")
+                    deleteEncryptedSeedFile(accountAddress)
+                    deleteKeyStoreEntry()
+                    try {
+                        storeWalletSeedInternal(accountAddress, seedData)
+                    } catch (retryEx: Exception) {
+                        Log.e("SecureStorage", "Retry failed", retryEx)
+                        throw StorageException("Failed to store seed after key recovery for $accountAddress", retryEx)
+                    }
                 }
             } else {
-                Log.e("SecureStorage", "Error storing seed for $accountAddress", e)
+                Log.e("SecureStorage", "Error storing seed", e)
                 throw StorageException("Failed to store seed securely for $accountAddress", e)
             }
         }

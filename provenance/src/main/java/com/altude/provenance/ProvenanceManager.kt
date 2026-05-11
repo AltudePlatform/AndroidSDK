@@ -98,6 +98,7 @@ internal object ProvenanceManager {
         }
     }
 
+    @get:JvmName("getRpcInstance")
     private val rpc: AltudeRpc
         get() = getRpc()
 
