@@ -146,28 +146,58 @@ object StorageService {
     private suspend fun storeWalletSeedInternal(accountAddress: String, seedData: SeedData) =
         withContext(Dispatchers.IO) {
             val file = File(appContext.filesDir, getSeedFileName(accountAddress))
+            val backupFile = File(appContext.filesDir, getSeedFileName(accountAddress) + ".bak")
 
-            // EncryptedFile cannot overwrite an existing file; delete it first so
-            // a retry after key-recovery (or an intentional overwrite) always succeeds.
+            // EncryptedFile cannot overwrite an existing file. Instead of deleting it
+            // outright (which creates a data-loss window on crash), atomically move it
+            // to a backup so we retain a copy during the write. renameTo() is atomic
+            // on the same filesystem partition.
             if (file.exists()) {
-                file.delete()
-                Log.d("SecureStorage", "Deleted existing seed file for $accountAddress before write")
+                // Remove a stale backup left by a previous interrupted write.
+                if (backupFile.exists() && !backupFile.delete()) {
+                    throw StorageException(
+                        "Cannot prepare write for $accountAddress: stale backup file could not be removed"
+                    )
+                }
+                if (!file.renameTo(backupFile)) {
+                    throw StorageException(
+                        "Cannot prepare write for $accountAddress: existing seed file could not be moved aside"
+                    )
+                }
+                Log.d("SecureStorage", "Moved existing seed file to backup for $accountAddress")
             }
 
             val json = Json.encodeToString(seedData)
 
-            val encryptedFile = EncryptedFile.Builder(
-                appContext,
-                file,
-                getMasterKey(),
-                EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
-            ).build()
+            try {
+                val encryptedFile = EncryptedFile.Builder(
+                    appContext,
+                    file,
+                    getMasterKey(),
+                    EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                ).build()
 
-            encryptedFile.openFileOutput().use { output ->
-                output.write(json.toByteArray(Charsets.UTF_8))
+                encryptedFile.openFileOutput().use { output ->
+                    output.write(json.toByteArray(Charsets.UTF_8))
+                }
+
+                // Write succeeded; the new file is in place — remove the backup.
+                if (!backupFile.delete() && backupFile.exists()) {
+                    Log.w("SecureStorage", "Backup file could not be removed after successful write for $accountAddress")
+                }
+                Log.i("SecureStorage", "Seed stored securely for $accountAddress")
+            } catch (e: Exception) {
+                // Write failed; restore the backup to prevent data loss.
+                if (backupFile.exists()) {
+                    file.delete() // remove any partial write
+                    if (backupFile.renameTo(file)) {
+                        Log.w("SecureStorage", "Restored backup seed file for $accountAddress after write failure")
+                    } else {
+                        Log.e("SecureStorage", "Failed to restore backup seed file for $accountAddress")
+                    }
+                }
+                throw e
             }
-
-            Log.i("SecureStorage", "Seed stored securely for $accountAddress")
         }
 
     suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
