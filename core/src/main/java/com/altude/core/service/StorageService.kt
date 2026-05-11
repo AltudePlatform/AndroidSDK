@@ -208,7 +208,7 @@ object StorageService {
         if (!overwrite) {
             val file = File(appContext.filesDir, getSeedFileName(accountAddress))
             if (file.exists()) {
-                Log.i("SecureStorage", "Seed for $accountAddress already exists. Skipping.")
+                Log.i("SecureStorage", "Seed already exists. Skipping.")
                 return
             }
         }
