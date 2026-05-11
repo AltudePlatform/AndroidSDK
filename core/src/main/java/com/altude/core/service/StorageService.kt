@@ -214,16 +214,14 @@ object StorageService {
                 return true
             }
             
-            // Check for KeyPermanentlyInvalidatedException by class name
-            // (android.security.keystore.KeyPermanentlyInvalidatedException)
-            if (current.javaClass.simpleName == "KeyPermanentlyInvalidatedException") {
+            // Check for KeyPermanentlyInvalidatedException by fully qualified class name
+            if (current.javaClass.name == "android.security.keystore.KeyPermanentlyInvalidatedException") {
                 return true
             }
             
             // Check for specific error messages that indicate key invalidation
             val msg = current.message ?: ""
             if (msg.contains("VERIFICATION_FAILED", ignoreCase = true)
-                || msg.contains("verification failed", ignoreCase = true)
                 || msg.contains("ErrorCode(-30)", ignoreCase = true)
                 || msg.contains("Key permanently invalidated", ignoreCase = true)
             ) {
