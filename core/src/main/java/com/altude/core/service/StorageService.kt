@@ -202,6 +202,39 @@ object StorageService {
             }
         }
 
+    /**
+     * Walks the full exception cause chain to check if the exception or any of its causes
+     * indicates a key invalidation scenario.
+     */
+    private fun isKeyInvalidatedException(e: Throwable): Boolean {
+        var current: Throwable? = e
+        while (current != null) {
+            // Check for specific invalidation exception types
+            if (current is AEADBadTagException) {
+                return true
+            }
+            
+            // Check for KeyPermanentlyInvalidatedException by class name
+            // (android.security.keystore.KeyPermanentlyInvalidatedException)
+            if (current.javaClass.simpleName == "KeyPermanentlyInvalidatedException") {
+                return true
+            }
+            
+            // Check for specific error messages that indicate key invalidation
+            val msg = current.message ?: ""
+            if (msg.contains("VERIFICATION_FAILED", ignoreCase = true)
+                || msg.contains("verification failed", ignoreCase = true)
+                || msg.contains("ErrorCode(-30)", ignoreCase = true)
+                || msg.contains("Key permanently invalidated", ignoreCase = true)
+            ) {
+                return true
+            }
+            
+            current = current.cause
+        }
+        return false
+    }
+
     suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData, overwrite: Boolean = false) {
         // By default, do not overwrite an existing seed file (wallet seeds are sensitive).
         // Callers must explicitly pass overwrite=true to replace an existing seed.
@@ -216,28 +249,18 @@ object StorageService {
         try {
             storeWalletSeedInternal(accountAddress, seedData)
         } catch (e: Exception) {
-            val msg = (e.message ?: "") + (e.cause?.message ?: "")
-            val isKeyInvalidated = e is AEADBadTagException
-                    || e.cause is AEADBadTagException
-                    || e is KeyStoreException
-                    || e.cause is KeyStoreException
-                    || msg.contains("VERIFICATION_FAILED", ignoreCase = true)
-                    || msg.contains("verification failed", ignoreCase = true)
-                    || msg.contains("ErrorCode(-30)", ignoreCase = true)
-                    || msg.contains("KeyPermanentlyInvalidatedException", ignoreCase = true)
-
-            if (isKeyInvalidated) {
-                Log.w("SecureStorage", "Key invalidated for $accountAddress — purging stale key+file and retrying.")
+            if (isKeyInvalidatedException(e)) {
+                Log.w("SecureStorage", "Key invalidated — purging stale key+file and retrying.")
                 deleteEncryptedSeedFile(accountAddress)
                 deleteKeyStoreEntry()
                 try {
                     storeWalletSeedInternal(accountAddress, seedData)
                 } catch (retryEx: Exception) {
-                    Log.e("SecureStorage", "Retry failed for $accountAddress", retryEx)
+                    Log.e("SecureStorage", "Retry failed", retryEx)
                     throw StorageException("Failed to store seed after key recovery for $accountAddress", retryEx)
                 }
             } else {
-                Log.e("SecureStorage", "Error storing seed for $accountAddress", e)
+                Log.e("SecureStorage", "Error storing seed", e)
                 throw StorageException("Failed to store seed securely for $accountAddress", e)
             }
         }
