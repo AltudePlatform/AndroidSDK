@@ -112,7 +112,7 @@ object StorageService {
     private fun deleteKeyStoreEntry() {
         // 1. Delete the AndroidKeyStore master key entry.
         try {
-            val ks = KeyStore.getInstance("AndroidKeyStore").also { it.load(null) }
+            val ks = KeyStore.getInstance(ANDROID_KEYSTORE).also { it.load(null) }
             val alias = MasterKey.DEFAULT_MASTER_KEY_ALIAS
             if (ks.containsAlias(alias)) {
                 ks.deleteEntry(alias)
