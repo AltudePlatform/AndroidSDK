@@ -182,14 +182,16 @@ object StorageService {
                 }
 
                 // Write succeeded; the new file is in place — remove the backup.
-                if (!backupFile.delete() && backupFile.exists()) {
+                if (backupFile.exists() && !backupFile.delete()) {
                     Log.w("SecureStorage", "Backup file could not be removed after successful write for $accountAddress")
                 }
                 Log.i("SecureStorage", "Seed stored securely for $accountAddress")
             } catch (e: Exception) {
                 // Write failed; restore the backup to prevent data loss.
                 if (backupFile.exists()) {
-                    file.delete() // remove any partial write
+                    if (file.exists() && !file.delete()) {
+                        Log.e("SecureStorage", "Failed to remove partial write for $accountAddress during restore")
+                    }
                     if (backupFile.renameTo(file)) {
                         Log.w("SecureStorage", "Restored backup seed file for $accountAddress after write failure")
                     } else {
