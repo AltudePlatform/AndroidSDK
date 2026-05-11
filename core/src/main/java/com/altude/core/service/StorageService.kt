@@ -248,14 +248,18 @@ object StorageService {
             storeWalletSeedInternal(accountAddress, seedData)
         } catch (e: Exception) {
             if (isKeyInvalidatedException(e)) {
-                Log.w("SecureStorage", "Key invalidated — purging stale key+file and retrying.")
-                deleteEncryptedSeedFile(accountAddress)
-                deleteKeyStoreEntry()
-                try {
-                    storeWalletSeedInternal(accountAddress, seedData)
-                } catch (retryEx: Exception) {
-                    Log.e("SecureStorage", "Retry failed", retryEx)
-                    throw StorageException("Failed to store seed after key recovery for $accountAddress", retryEx)
+                // Wrap the entire key-recovery path (purge + retry) in IO dispatcher
+                // to avoid blocking the caller thread with keystore/SharedPreferences/file I/O.
+                withContext(Dispatchers.IO) {
+                    Log.w("SecureStorage", "Key invalidated — purging stale key+file and retrying.")
+                    deleteEncryptedSeedFile(accountAddress)
+                    deleteKeyStoreEntry()
+                    try {
+                        storeWalletSeedInternal(accountAddress, seedData)
+                    } catch (retryEx: Exception) {
+                        Log.e("SecureStorage", "Retry failed", retryEx)
+                        throw StorageException("Failed to store seed after key recovery for $accountAddress", retryEx)
+                    }
                 }
             } else {
                 Log.e("SecureStorage", "Error storing seed", e)
