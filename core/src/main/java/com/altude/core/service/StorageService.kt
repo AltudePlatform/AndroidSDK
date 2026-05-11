@@ -202,7 +202,16 @@ object StorageService {
             }
         }
 
-    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData) {
+    suspend fun storeWalletSeed(accountAddress: String, seedData: SeedData, overwrite: Boolean = false) {
+        // By default, do not overwrite an existing seed file (wallet seeds are sensitive).
+        // Callers must explicitly pass overwrite=true to replace an existing seed.
+        if (!overwrite) {
+            val file = File(appContext.filesDir, getSeedFileName(accountAddress))
+            if (file.exists()) {
+                Log.i("SecureStorage", "Seed for $accountAddress already exists. Skipping.")
+                return
+            }
+        }
 
         try {
             storeWalletSeedInternal(accountAddress, seedData)
