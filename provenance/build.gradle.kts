@@ -63,7 +63,7 @@ dependencies {
         exclude(group = "com.ditchoom")
     }
 
-    // JPEG XMP metadata embedding (C2PA manifest)
+    // JPEG XMP metadata embedding for attestation manifests
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 }
 
