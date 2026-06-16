@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.altude.provenance.Provenance
 import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
+import com.altude.android.BuildConfig
 
 
 class MainActivity : ComponentActivity() {

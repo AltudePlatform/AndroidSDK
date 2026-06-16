@@ -6,7 +6,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
 import com.altude.provenance.data.AttestationResult
-import com.altude.provenance.data.C2paManifest
 import com.altude.provenance.data.Commitment
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ManifestOption
@@ -83,166 +82,21 @@ class ProvenanceInstrumentedTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 1. C2PA Manifest — offline / pure-crypto
+    // C2PA Manifest tests — DISABLED (C2PA has been moved to separate repo)
     // ═════════════════════════════════════════════════════════════════════════
-
-    /**
-     * Both SHA-256 hashes are well-formed 64-char hex strings and are distinct:
-     *   assetHash    = SHA-256 of the raw image bytes
-     *   manifestHash = SHA-256 of the canonical claim JSON  ← stored on-chain
-     */
-    @Test
-    fun testC2paManifestBuildFromBytes() {
-        val bytes    = "hello provenance sdk".toByteArray()
-        val manifest = C2paManifest.buildFromBytes(
-            imageBytes = bytes,
-            mimeType   = "image/png",
-            filename   = "test.png",
-            producer   = "test-producer"
-        )
-
-        assertEquals("assetHash must be 64 hex chars",    64, manifest.assetHash.length)
-        assertEquals("manifestHash must be 64 hex chars", 64, manifest.manifestHash.length)
-        assertNotEquals("assetHash and manifestHash must differ",
-            manifest.assetHash, manifest.manifestHash)
-        assertEquals("filename",  "test.png",      manifest.filename)
-        assertEquals("mimeType",  "image/png",     manifest.mimeType)
-        assertEquals("producer",  "test-producer", manifest.producer)
-        assertTrue("assetHash must be lowercase hex",
-            manifest.assetHash.all { it.isDigit() || it in 'a'..'f' })
-        assertTrue("manifestHash must be lowercase hex",
-            manifest.manifestHash.all { it.isDigit() || it in 'a'..'f' })
-
-        println("✅ assetHash:    ${manifest.assetHash}")
-        println("✅ manifestHash: ${manifest.manifestHash}")
-    }
-
-    /**
-     * Same bytes → same assetHash every time (deterministic raw-bytes hashing).
-     */
-    @Test
-    fun testC2paManifestAssetHashDeterministic() {
-        val bytes = "deterministic content 12345".toByteArray()
-        val m1    = C2paManifest.buildFromBytes(bytes, mimeType = "image/png")
-        val m2    = C2paManifest.buildFromBytes(bytes, mimeType = "image/png")
-
-        assertEquals("assetHash must be deterministic for identical bytes",
-            m1.assetHash, m2.assetHash)
-        println("✅ assetHash is deterministic: ${m1.assetHash}")
-    }
-
-    /**
-     * The file-path overload and the bytes overload must produce the same assetHash
-     * when given identical content.
-     */
-    @Test
-    fun testC2paManifestBuildFromFileMatchesBytes() {
-        val bytes   = "file vs bytes consistency check".toByteArray()
-        val tmpFile = File(context.filesDir, "hash_consistency.png")
-            .also { it.writeBytes(bytes) }
-
-
-        try {
-            val fromFile  = C2paManifest.build(filePath = tmpFile.absolutePath, mimeType = "image/png")
-            val fromBytes = C2paManifest.buildFromBytes(
-                imageBytes = bytes,
-                mimeType   = "image/png",
-                filename   = tmpFile.name
-            )
-
-            assertEquals("assetHash must match across build() and buildFromBytes()",
-                fromBytes.assetHash, fromFile.assetHash)
-            assertEquals("filename preserved", "hash_consistency.png", fromFile.filename)
-        } finally {
-            tmpFile.delete()
-            // Clean up any sidecars written to the custom offline test directory
-            try {
-                val dir = File(context.filesDir, "provenance_offline_sidecars_test")
-                if (dir.exists()) {
-                    dir.listFiles()?.forEach { it.delete() }
-                    dir.delete()
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Different byte contents must produce different asset hashes (collision sanity).
-     */
-    @Test
-    fun testC2paManifestDifferentBytesProduceDifferentHashes() {
-        val m1 = C2paManifest.buildFromBytes("image content A — unique".toByteArray())
-        val m2 = C2paManifest.buildFromBytes("image content B — unique".toByteArray())
-
-        assertNotEquals("different content must yield different assetHash",
-            m1.assetHash, m2.assetHash)
-        println("✅ Collision sanity: A=${m1.assetHash.take(16)}… B=${m2.assetHash.take(16)}…")
-    }
-
-    /**
-     * toJson() → Json.decodeFromString() preserves every field including attestationId.
-     */
-    @Test
-    fun testC2paManifestJsonRoundTrip() {
-        val original = C2paManifest.buildFromBytes(
-            imageBytes    = "roundtrip test image".toByteArray(),
-            mimeType      = "image/jpeg",
-            filename      = "photo.jpg",
-            producer      = "wallet-address-xxx",
-            softwareAgent = "test-agent-v1"
-        ).copy(attestationId = "SolanaAttestPDA1111111111111111111111111111")
-
-        val jsonStr = original.toJson()
-        val parsed  = json.decodeFromString<C2paManifest>(jsonStr)
-
-        assertEquals("claimType",     original.claimType,     parsed.claimType)
-        assertEquals("assetHash",     original.assetHash,     parsed.assetHash)
-        assertEquals("manifestHash",  original.manifestHash,  parsed.manifestHash)
-        assertEquals("mimeType",      original.mimeType,      parsed.mimeType)
-        assertEquals("filename",      original.filename,      parsed.filename)
-        assertEquals("producer",      original.producer,      parsed.producer)
-        assertEquals("softwareAgent", original.softwareAgent, parsed.softwareAgent)
-        assertEquals("attestationId", original.attestationId, parsed.attestationId)
-
-        println("✅ C2paManifest JSON round-trip passed")
-    }
-
-    /**
-     * saveTo() creates a correctly-named .c2pa.json file that contains
-     * the manifestHash, assetHash, and attestationId.
-     */
-    @Test
-    fun testC2paManifestSidecarSave() {
-        val manifest = C2paManifest.buildFromBytes(
-            imageBytes = "sidecar save test bytes".toByteArray(),
-            filename   = "photo.png"
-        ).copy(attestationId = "ATTEST_PDA_TEST_11111111111111111111111111")
-
-        val dir     = File(context.filesDir, "provenance_manifests_test")
-        val sidecar = manifest.saveTo(dir)
-
-        try {
-            assertTrue("sidecar file must exist",             sidecar.exists())
-            assertTrue("sidecar name must end in .c2pa.json", sidecar.name.endsWith(".c2pa.json"))
-
-            val content = sidecar.readText()
-            assertTrue("sidecar must contain manifestHash",
-                content.contains(manifest.manifestHash))
-            assertTrue("sidecar must contain assetHash",
-                content.contains(manifest.assetHash))
-            assertTrue("sidecar must contain attestationId",
-                content.contains("ATTEST_PDA_TEST_11111111111111111111111111"))
-
-            println("✅ Sidecar saved: ${sidecar.name}")
-        } finally {
-            sidecar.delete()
-            dir.delete()
-        }
-    }
-
+    // Skipping C2PA-specific tests as the C2paManifest class has been removed
+    // from this repository. These tests are preserved in the C2PA repository.
+    //
+    // Originally included tests:
+    // - testC2paManifestBuildFromBytes
+    // - testC2paManifestAssetHashDeterministic
+    // - testC2paManifestBuildFromFileMatchesBytes
+    // - testC2paManifestDifferentBytesProduceDifferentHashes
+    // - testC2paManifestJsonRoundTrip
+    // - testC2paManifestSidecarSave
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 3. ProvenanceCertificate — JSON round-trip
+    // 1. ProvenanceCertificate — JSON round-trip
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
@@ -485,59 +339,23 @@ class ProvenanceInstrumentedTest {
             .onSuccess { pr ->
                 println("✅ attestationId: ${pr.attestationId}")
                 println("   txSignature:   ${pr.response?.Signature}")
-                // Print consumer-facing sidecar JSON that matches the exact
-                // structure requested by clients (version, claim_generator, asset,
-                // relationships, provenance, optional signature).
+                // Print certificate details (manifest printing removed with C2PA removal)
                 try {
-                    // Build a payload map used by toSidecarJson to populate
-                    // signature, program_id, network, and attestation_pda fields.
-                    val sidecarPayload = mutableMapOf<String, Any?>()
-                    // Copy width/height/file_size if present on the payload used to attest
-                    // Attempt to read values from pr.manifestFile or certificate if available
-                    // but keep 0/defaults when missing.
-                    // Add network & program fields explicitly so output matches sample.
-                    sidecarPayload["network"] = if (com.altude.core.Programs.AttestationProgram.isDevnet) "solana-devnet" else "solana-mainnet"
-                    sidecarPayload["program_id"] = com.altude.core.Programs.AttestationProgram.PROGRAM_ID.toBase58()
-                    sidecarPayload["attestation_pda"] = pr.manifest.attestationId
-
-                    // Include parent_hash if present on the manifest (some tests set it)
-                    // The C2paManifest.toSidecarJson will include relationships when parent_hash provided.
-                    // We don't mutate the manifest here; instead pass it through the map.
-                    // If a certificate exists, convert its hex signature to Base64 for the sidecar.
                     val cert = pr.certificate
                     if (cert != null) {
-                        try {
-                            // Convert hex signature -> bytes -> Base64 string
-                            val sigHex = cert.signature
-                            val sigBytes = ByteArray(sigHex.length / 2)
-                            for (i in sigBytes.indices) {
-                                val idx = i * 2
-                                sigBytes[i] = Integer.parseInt(sigHex.substring(idx, idx + 2), 16).toByte()
-                            }
-                            val sigB64 = android.util.Base64.encodeToString(sigBytes, android.util.Base64.NO_WRAP)
-                            sidecarPayload["signature_base64"] = sigB64
-                            // signer should be wallet:<address> to match sample
-                            sidecarPayload["signer"] = "wallet:${cert.signerAddress}"
-                            sidecarPayload["signature_alg"] = "ed25519"
-
-                        } catch (hexEx: Exception) {
-                            println("Failed to convert signature hex->base64: ${hexEx.message}")
-                        }
+                        println("--- Certificate JSON ---")
+                        println(cert.toJson())
+                        println("--- Certificate fields ---")
+                        println("instanceId: ${cert.instanceId}")
+                        println("imageSha256: ${cert.imageSha256}")
+                        println("signerAddress: ${cert.signerAddress}")
+                        println("signerPublicKey: ${cert.signerPublicKey}")
+                        println("signature (hex): ${cert.signature}")
+                    } else {
+                        println("--- Certificate: <null> ---")
                     }
-
-                    val sidecarJson = pr.manifest.toSidecarJson(sidecarPayload)
-                    println("--- C2PA Sidecar JSON (consumer-facing) ---")
-                    println(sidecarJson)
-
-                    println("--- Manifest fields ---")
-                    println("assetHash: ${pr.manifest.assetHash}")
-                    println("manifestHash: ${pr.manifest.manifestHash}")
-                    println("filename: ${pr.manifest.filename}")
-                    println("mimeType: ${pr.manifest.mimeType}")
-                    println("producer: ${pr.manifest.producer}")
-                    println("attestationId (in manifest): ${pr.manifest.attestationId}")
                 } catch (e: Exception) {
-                    println("Failed to print sidecar manifest: ${e.message}")
+                    println("Failed to print certificate: ${e.message}")
                 }
                 // Print certificate details when present
                 try {
@@ -566,8 +384,8 @@ class ProvenanceInstrumentedTest {
                 // We requested a sidecar be written to a custom directory earlier in this test
                 assertNotNull("manifestFile must be present for sidecar option", pr.manifestFile)
                 assertTrue("sidecar file must exist on disk", pr.manifestFile!!.exists())
-                assertTrue("sidecar name ends in .c2pa.json",
-                    pr.manifestFile.name.endsWith(".c2pa.json"))
+                assertTrue("sidecar name ends in .json",
+                    pr.manifestFile.name.endsWith(".json"))
 
                 assertNull("no embeddedFile for sidecar option", pr.embeddedImageFile)
                 assertFalse("isQueued must be false", pr.isQueued)
@@ -590,8 +408,8 @@ class ProvenanceInstrumentedTest {
 
     /**
      * Attest with ManifestOption.SidecarFile:
-     * verifies the .c2pa.json sidecar is created on disk and contains
-     * attestationId, manifestHash, and assetHash so offline verification works.
+     * verifies the .json sidecar is created on disk and contains
+     * attestationId and other certificate data so offline verification works.
      */
     @Test
     fun testAttestImageHashWithSidecar() = runBlocking {

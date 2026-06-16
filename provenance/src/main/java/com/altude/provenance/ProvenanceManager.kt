@@ -387,17 +387,12 @@ internal object ProvenanceManager {
     ): ProvenanceCertificate {
         val pubKeyBytes = decodeBase58(keypair.publicKey.toBase58())
         val pubKeyHex   = pubKeyBytes.joinToString("") { "%02x".format(it) }
-                val imageSha256Value = payload.c2paManifest?.assetHash ?: run {
-                    // Fallback: if no C2PA manifest is present, derive hex from payload.imageHash
-                    try {
-                        payload.imageHash.joinToString("") { "%02x".format(it) }
-                    } catch (_: Exception) { "" }
-                }
+        val imageSha256Value = payload.imageHash.joinToString("") { "%02x".format(it) }
 
-                val draft = ProvenanceCertificate(
-                    instanceId         = "urn:uuid:${java.util.UUID.randomUUID()}",
-                    captureTimestampMs = System.currentTimeMillis(),
-                    imageSha256        = imageSha256Value,
+        val draft = ProvenanceCertificate(
+            instanceId         = "urn:uuid:${java.util.UUID.randomUUID()}",
+            captureTimestampMs = System.currentTimeMillis(),
+            imageSha256        = imageSha256Value,
             signerAddress      = keypair.publicKey.toBase58(),
             signerPublicKey    = pubKeyHex,
             signature          = "",

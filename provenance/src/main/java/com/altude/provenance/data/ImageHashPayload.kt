@@ -42,7 +42,18 @@ data class ImageHashPayload internal constructor(
     /** Pre-built certificate (set internally after offline signing). */
     internal val certificate: ProvenanceCertificate? = null,
     /** Optional SHA-256 hex of the certificate JSON — stored on-chain as `certificate_hash`. */
-    val certificateHash: String = ""
+    val certificateHash: String = "",
+    // Schema data fields extracted for convenient access
+    val imageHash: ByteArray = ByteArray(0),
+    val parentHash: ByteArray? = null,
+    val hashAlgorithm: String = "sha256",
+    val mimeType: String = "image/png",
+    val width: Int = 0,
+    val height: Int = 0,
+    val fileSize: Long = 0L,
+    val filename: String = "",
+    val owner: String = "",
+    val timestamp: Long = System.currentTimeMillis() / 1000
 ) {
     companion object {
         /**
@@ -70,13 +81,62 @@ data class ImageHashPayload internal constructor(
             commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
             val dataHash = computeDataHash(schemaData)
+            
+            // Extract fields from schemaData with sensible defaults
+            val imageHashBytes = when (val v = schemaData["image_hash"] ?: schemaData["imageHash"]) {
+                is ByteArray -> v
+                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toByteOrNull(16) else null }.toByteArray()
+                else -> ByteArray(0)
+            }
+            
+            val parentHashBytes = when (val v = schemaData["parent_hash"] ?: schemaData["parentHash"]) {
+                is ByteArray -> v
+                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toByteOrNull(16) else null }.toByteArray()
+                else -> null
+            }
+            
+            val hashAlg = ((schemaData["hash_algorithm"] ?: schemaData["hashAlgorithm"]) as? String) ?: "sha256"
+            val mimeType = ((schemaData["mime_type"] ?: schemaData["mime"]) as? String) ?: "image/png"
+            val width = when (val w = schemaData["width"]) {
+                is Number -> w.toInt()
+                is String -> w.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val height = when (val h = schemaData["height"]) {
+                is Number -> h.toInt()
+                is String -> h.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val fileSize = when (val f = schemaData["file_size"] ?: schemaData["fileSize"]) {
+                is Number -> f.toLong()
+                is String -> f.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            val filename = ((schemaData["filename"] ?: schemaData["file_name"]) as? String) ?: ""
+            val owner = ((schemaData["owner"] ?: schemaData["producer"]) as? String) ?: ""
+            val timestamp = when (val t = schemaData["timestamp"]) {
+                is Number -> t.toLong()
+                is String -> t.toLongOrNull() ?: (System.currentTimeMillis() / 1000)
+                else -> System.currentTimeMillis() / 1000
+            }
+            
             return ImageHashPayload(
                 schemaData = schemaData,
                 dataHash = dataHash,
                 account = account,
                 recipient = recipient,
                 expireAt = expireAt,
-                commitment = commitment
+                commitment = commitment,
+                imageHash = imageHashBytes,
+                parentHash = parentHashBytes,
+                hashAlgorithm = hashAlg,
+                mimeType = mimeType,
+                width = width,
+                height = height,
+                fileSize = fileSize,
+                filename = filename,
+                owner = owner,
+                timestamp = timestamp
             )
         }
 
