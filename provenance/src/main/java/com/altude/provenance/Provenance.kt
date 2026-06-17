@@ -325,12 +325,10 @@ object Provenance {
             }
 
             Result.success(ProvenanceResult(
-                response          = response,
-                dataHash          = payload.dataHash,
-                attestationId     = attested.attestationId,
-                certificate       = null,
-                manifestFile      = null,
-                embeddedImageFile = null
+                response      = response,
+                dataHash      = payload.dataHash,
+                attestationId = attested.attestationId,
+                certificate   = null
             ))
         } catch (e: Throwable) {
             // Propagate errors to caller; do not queue offline from this API
