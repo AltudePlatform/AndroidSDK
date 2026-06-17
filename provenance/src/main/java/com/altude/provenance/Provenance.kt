@@ -14,7 +14,6 @@ import com.altude.provenance.data.Commitment
 // ...existing imports...
 import com.altude.provenance.data.ImageHashPayload
 import com.altude.provenance.data.ProvenanceResponse
-import com.altude.provenance.data.ManifestOption
 import com.altude.provenance.data.OfflineAttestResult
 import com.altude.provenance.data.PendingAttestation
 import com.altude.provenance.data.ProvenanceCertificate
@@ -285,32 +284,21 @@ object Provenance {
      * Attests a single image on-chain.
      *
      * @param payload        Built via [ImageHashPayload.create].
-     * @param manifestOption How to save the manifest. Default: [ManifestOption.SidecarFile].
-     *
-     * Options:
-     * - [ManifestOption.SidecarFile]   — saves `{name}.c2pa.json` in `filesDir/provenance_manifests/`
-     * - [ManifestOption.EmbedInImage]  — embeds manifest into JPEG XMP or PNG tEXt chunk
-     * - [ManifestOption.Both]          — saves sidecar file AND embeds in image
-     * - [ManifestOption.None]          — no file saved; manifest still in [ProvenanceResult.manifest]
+     * @param credentialName Credential name (created out-of-band).
+     * @param schemaName     Schema name (created out-of-band).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun attestImageHash(
         payload:      ImageHashPayload,
-        manifestOption:  ManifestOption = ManifestOption.SidecarFile,
         // Optional: credential and schema names when the credential/schema were created out-of-band
         credentialName:  String,
         schemaName:      String
     ): Result<ProvenanceResult> = withContext(Dispatchers.IO) {
         try {
-            // Use provided ImageHashPayload directly (no map conversion needed)
-            // 1. Keypair (needed to produce deterministic payload owner field) and
-            // build the explicit attestation payload map (matches on-chain fixed schema)
-            val keypair = ProvenanceManager.getKeyPair(payload.account)
-            val payloadMap = ProvenanceManager.buildPayloadJson(payload, keypair.publicKey)
+            // Use the user-supplied schema data as the attestation payload.
+            val payloadMap = payload.schemaData
 
-            // 2. Use AttestBuilder to centralise PDA derivation and call into the
-            // existing attest(...) helper. Pass the explicit payload map so the
-            // on-chain bytes are deterministic.
+            // Centralise PDA derivation and tx construction.
             val attestResult = ProvenanceManager.AttestBuilder()
                 .withPayload(payload)
                 .credentialName(credentialName)
@@ -336,45 +324,13 @@ object Provenance {
                 return@withContext Result.failure(Exception("Failed to parse attest response: ${e.message}", e))
             }
 
-            // 5. Apply chosen manifest option — inject attestationId for verifyOnChain
-            val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
-
-            // Build a display-friendly payload map for the sidecar:
-            // - keep the raw attestation payload for on-chain bytes
-            // - convert binary parent_hash to a readable "<alg>:<hex>" string for display
-            val sidecarPayloadMap: MutableMap<String, Any?> = linkedMapOf()
-            sidecarPayloadMap.putAll(payloadMap)
-            val parentRaw = payloadMap["parent_hash"]
-            if (parentRaw is ByteArray && parentRaw.isNotEmpty()) {
-                val hex = parentRaw.joinToString("") { "%02x".format(it) }
-                val hashAlg = (payloadMap["hash_algorithm"] as? String) ?: "sha256"
-                sidecarPayloadMap["parent_hash"] = "$hashAlg:$hex"
-            } else {
-                // ensure parent_hash isn't a raw empty byte array in the sidecar
-                sidecarPayloadMap.remove("parent_hash")
-            }
-            // Add a base64-encoded copy of the raw image_hash bytes so consumer sidecars
-            // expose the exact on-chain bytes in a JSON-safe form.
-            try {
-                val imgBytes = payload.imageHash
-                if (imgBytes.isNotEmpty()) {
-                    val imgB64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
-                    sidecarPayloadMap["image_hash_b64"] = imgB64
-                }
-            } catch (_: Exception) {
-                // ignore if payload.imageHash not available for some reason
-            }
-
-            // Write a consumer-facing sidecar populated from the display map
-            val (manifestFile, embeddedImageFile) =
-                applyManifestOption(manifestOption, certificateWithId, sidecarPayloadMap)
-
             Result.success(ProvenanceResult(
                 response          = response,
+                dataHash          = payload.dataHash,
                 attestationId     = attested.attestationId,
-                certificate       = attested.certificate,
-                manifestFile      = manifestFile,
-                embeddedImageFile = embeddedImageFile
+                certificate       = null,
+                manifestFile      = null,
+                embeddedImageFile = null
             ))
         } catch (e: Throwable) {
             // Propagate errors to caller; do not queue offline from this API
@@ -410,7 +366,6 @@ object Provenance {
      */
     fun attestBatch(
         payloads:       List<ImageHashPayload>,
-        manifestOption: ManifestOption = ManifestOption.SidecarFile,
         // Optional: credential and schema names when created out-of-band
         credentialName: String,
         schemaName: String
@@ -446,11 +401,9 @@ object Provenance {
                     if (isNetworkError(e)) {
                         payloads.drop(index).forEachIndexed { i, p ->
                             val offlineResult = runCatching {
-                                val offline = attestOffline(p, manifestOption).getOrThrow()
+                                val offline = attestOffline(p).getOrThrow()
                                 ProvenanceResult(
                                     certificate       = offline.certificate,
-                                    manifestFile      = offline.manifestFile,
-                                    embeddedImageFile = offline.embeddedImageFile,
                                     isQueued          = true,
                                     queueId           = offline.queueId
                                 )
@@ -474,17 +427,13 @@ object Provenance {
 
                 // Apply chosen manifest option per image — inject attestationId for verifyOnChain
                 val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
-                val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(manifestOption, certificateWithId, null)
 
                 ProvenanceResult(
                     response          = response,
                     attestationId     = attested.attestationId,
                     certificate       = certificateWithId,
-                    manifestFile      = manifestFile,
-                    embeddedImageFile = embeddedImageFile
                 )
-            }.recoverNetworkToOffline(payload, manifestOption)
+            }.recoverNetworkToOffline(payload)
             emit(AttestationResult(index, payload.filename, payload.dataHash, itemResult))
         }
     }.flowOn(Dispatchers.IO)
@@ -512,12 +461,9 @@ object Provenance {
      * ```
      *
      * @param payload        Built via [ImageHashPayload.create] — no network needed.
-     * @param manifestOption Applied immediately (local file I/O only); saved in the
-     *                       queue entry and re-applied after successful submission.
      */
     suspend fun attestOffline(
-        payload:        ImageHashPayload,
-        manifestOption: ManifestOption = ManifestOption.SidecarFile
+        payload:        ImageHashPayload
     ): Result<OfflineAttestResult> = withContext(Dispatchers.IO) {
         runCatching {
             // 1. Get keypair from local storage — no network
@@ -537,20 +483,10 @@ object Provenance {
                 .deriveAttestationAddress(schemaPda, attester, recipient)
                 .toBase58()
 
-            // 4. Inject attestationId so sidecar/embedded image supports verifyOnChain
+            // 4. Inject attestationId so the certificate is fully self-contained
             val certificateWithId = certificate.copy(attestationId = attestationId)
-            val (manifestFile, embeddedImageFile) =
-                applyManifestOption(manifestOption, certificateWithId, null)
 
-            // 5. Serialise manifest option for storage
-            val (optType, optPath) = when (manifestOption) {
-                is ManifestOption.EmbedInImage -> "embed" to manifestOption.sourceFilePath
-                is ManifestOption.Both         -> "both"  to manifestOption.sourceFilePath
-                is ManifestOption.None         -> "none"  to ""
-                else                           -> "sidecar" to ""
-            }
-
-            // 6. Enqueue
+            // 5. Enqueue
             val queueId = java.util.UUID.randomUUID().toString()
             val schemaDataJson = org.json.JSONObject(payload.schemaData).toString()
             ProvenanceQueue.enqueue(
@@ -566,17 +502,13 @@ object Provenance {
                     recipient          = payload.recipient,
                     expireAt           = payload.expireAt,
                     commitment         = payload.commitment.name,
-                    certificateJson    = certificateWithId.toJson(),
-                    manifestOptionType = optType,
-                    manifestOptionPath = optPath
+                    certificateJson    = certificateWithId.toJson()
                 )
             )
 
             OfflineAttestResult(
                 queueId           = queueId,
-                certificate       = certificateWithId,
-                manifestFile      = manifestFile,
-                embeddedImageFile = embeddedImageFile
+                certificate       = certificateWithId
             )
         }.mapFailure()
     }
@@ -676,26 +608,10 @@ object Provenance {
 
                 // Ensure attestationId is in the certificate written to disk
                 val certificateWithId = certificate?.copy(attestationId = attestationId)
-                val manifestOption = entry.toManifestOption()
-                val (manifestFile, embeddedImageFile) =
-                    applyManifestOption(manifestOption, certificateWithId ?: ProvenanceCertificate(
-                        instanceId = "",
-                        captureTimestampMs = 0L,
-                        imageSha256 = "",
-                        signerAddress = "",
-                        signerPublicKey = "",
-                        signature = "",
-                        deviceMake = "",
-                        deviceModel = "",
-                        osVersion = "",
-                        attestationId = attestationId
-                    ), null)
 
                 ProvenanceResult(
                     response          = response,
                     certificate       = certificateWithId,
-                    manifestFile      = manifestFile,
-                    embeddedImageFile = embeddedImageFile,
                     attestationId     = attestationId
                 )
             }
@@ -794,94 +710,6 @@ object Provenance {
         }.mapFailure()
     }
 
-    // ── Manifest option helper ────────────────────────────────────────────────
-
-    /**
-     * Applies the [option] to save or embed the certificate locally.
-     *
-     * When [certificate] is provided its [ProvenanceCertificate.toJson] (which includes
-     * the ED25519 signature) is written to the sidecar file or embedded in the image,
-     * making the sidecar / embedded image fully self-contained for offline verification.
-     */
-    private fun applyManifestOption(
-        option:      ManifestOption,
-        certificate: ProvenanceCertificate,
-        payloadMap:  Map<String, Any?>? = null
-    ): Pair<java.io.File?, java.io.File?> {
-        val manifestsDir = java.io.File(StorageService.getContext().filesDir, "provenance_manifests")
-
-        // Build the sidecar JSON. Include certificate info and payload data
-        val baseMap: MutableMap<String, Any?> = linkedMapOf()
-        if (payloadMap != null) baseMap.putAll(payloadMap)
-
-        val sidecarToWrite: String = try {
-            // Convert hex signature -> base64
-            val sigHex = certificate.signature
-            val sigBytes = sigHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-            val sigB64 = android.util.Base64.encodeToString(sigBytes, android.util.Base64.NO_WRAP)
-            val signer = if (certificate.signerAddress.startsWith("wallet:")) certificate.signerAddress else "wallet:${certificate.signerAddress}"
-
-            baseMap["certificate"] = certificate.toJson()
-            baseMap["signature_base64"] = sigB64
-            baseMap["signer"] = signer
-            baseMap["signature_alg"] = "ed25519"
-
-            org.json.JSONObject(baseMap).toString()
-        } catch (e: Exception) {
-            // Fallback to certificate.toJson() if anything goes wrong
-            certificate.toJson()
-        }
-
-        return when (option) {
-            is ManifestOption.SidecarFile -> {
-                Pair(runCatching { saveSidecarFile(manifestsDir, sidecarToWrite, certificate.instanceId) }.getOrNull(), null)
-            }
-            is ManifestOption.SidecarDir -> {
-                val dir = java.io.File(option.directoryPath)
-                Pair(runCatching { saveSidecarFile(dir, sidecarToWrite, certificate.instanceId) }.getOrNull(), null)
-            }
-            is ManifestOption.EmbedInImage -> {
-                val embedded = runCatching {
-                    embedInImage(java.io.File(option.sourceFilePath), sidecarToWrite)
-                }.getOrNull()
-                if (embedded != null) {
-                    Pair(null, embedded)
-                } else {
-                    val sidecar = runCatching { saveSidecarFile(manifestsDir, sidecarToWrite, certificate.instanceId) }.getOrNull()
-                    Pair(sidecar, null)
-                }
-            }
-            is ManifestOption.Both -> {
-                val sidecar  = runCatching { saveSidecarFile(manifestsDir, sidecarToWrite, certificate.instanceId) }.getOrNull()
-                val embedded = runCatching {
-                    embedInImage(java.io.File(option.sourceFilePath), sidecarToWrite)
-                }.getOrNull()
-                Pair(sidecar, embedded)
-            }
-            else -> Pair(null, null)
-        }
-    }
-
-    private fun saveSidecarFile(dir: java.io.File, content: String, manifestId: String): java.io.File {
-        if (!dir.exists()) dir.mkdirs()
-        val filename = "$manifestId.json"
-        val file = java.io.File(dir, filename)
-        file.writeText(content, Charsets.UTF_8)
-        return file
-    }
-
-    private fun embedInImage(imageFile: java.io.File, manifestJson: String): java.io.File {
-        if (!imageFile.exists()) throw Exception("Image file not found: ${imageFile.absolutePath}")
-        
-        // For now, just create a modified copy in the same directory with .manifest suffix
-        // A full implementation would embed into JPEG XMP or PNG tEXt chunk
-        val manifestFile = java.io.File(
-            imageFile.parentFile,
-            imageFile.nameWithoutExtension + ".provenance.json"
-        )
-        manifestFile.writeText(manifestJson, Charsets.UTF_8)
-        return manifestFile
-    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -957,17 +785,14 @@ object Provenance {
      * Non-network errors are propagated as-is.
      */
     private suspend fun Result<ProvenanceResult>.recoverNetworkToOffline(
-        payload:        ImageHashPayload,
-        manifestOption: ManifestOption
+        payload:        ImageHashPayload
     ): Result<ProvenanceResult> {
         val err = exceptionOrNull() ?: return this
         if (!isNetworkError(err)) return this
         return runCatching {
-            val offline = attestOffline(payload, manifestOption).getOrThrow()
+            val offline = attestOffline(payload).getOrThrow()
             ProvenanceResult(
                 certificate       = offline.certificate,
-                manifestFile      = offline.manifestFile,
-                embeddedImageFile = offline.embeddedImageFile,
                 isQueued          = true,
                 queueId           = offline.queueId
             )

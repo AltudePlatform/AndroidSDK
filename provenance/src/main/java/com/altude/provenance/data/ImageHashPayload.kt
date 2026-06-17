@@ -141,6 +141,71 @@ data class ImageHashPayload internal constructor(
         }
 
         /**
+         * Compatibility overload for file-based payload construction.
+         * The resulting payload still centers on [schemaData].
+         */
+        fun create(
+            filePath: String,
+            mime: String = "image/png",
+            filename: String = java.io.File(filePath).name,
+            producer: String = "",
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
+        ): ImageHashPayload {
+            val file = java.io.File(filePath)
+            require(file.exists()) { "File does not exist: $filePath" }
+            val imageBytes = file.readBytes()
+            return createFromBytes(
+                imageBytes = imageBytes,
+                mime = mime,
+                filename = filename,
+                producer = producer,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            )
+        }
+
+        /**
+         * Compatibility overload for raw image bytes.
+         */
+        fun createFromBytes(
+            imageBytes: ByteArray,
+            mime: String = "image/png",
+            filename: String = "",
+            producer: String = "",
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
+        ): ImageHashPayload {
+            val schemaData = linkedMapOf<String, Any>(
+                "image_hash" to imageBytes,
+                "hash_algorithm" to "sha256",
+                "mime_type" to mime,
+                "filename" to filename,
+                "owner" to producer,
+                "timestamp" to (System.currentTimeMillis() / 1000)
+            )
+            return create(
+                schemaData = schemaData,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            ).copy(
+                imageHash = imageBytes,
+                hashAlgorithm = "sha256",
+                mimeType = mime,
+                filename = filename,
+                owner = producer
+            )
+        }
+
+        /**
          * Helper to compute image file hash from file path.
          * Returns SHA-256 hex string of the file bytes.
          */
@@ -173,11 +238,25 @@ data class ImageHashPayload internal constructor(
          * Serializes the map to canonical JSON and hashes it.
          */
         private fun computeDataHash(data: Map<String, Any>): String {
-            // Convert map to sorted JSON string for canonical representation
-            val jsonString = data.toSortedMap().toString()
+            val jsonString = canonicalJsonString(data)
             val digest = MessageDigest.getInstance("SHA-256")
             digest.update(jsonString.toByteArray(Charsets.UTF_8))
             return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        private fun canonicalJsonString(value: Any?): String = when (value) {
+            null -> "null"
+            is String -> org.json.JSONObject.quote(value)
+            is Number, is Boolean -> value.toString()
+            is ByteArray -> org.json.JSONObject.quote(value.joinToString(separator = "") { "%02x".format(it) })
+            is Map<*, *> -> value.entries
+                .sortedBy { it.key?.toString().orEmpty() }
+                .joinToString(prefix = "{", postfix = "}") { (key, entryValue) ->
+                    "${org.json.JSONObject.quote(key?.toString().orEmpty())}:${canonicalJsonString(entryValue)}"
+                }
+            is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { canonicalJsonString(it) }
+            is Array<*> -> canonicalJsonString(value.toList())
+            else -> org.json.JSONObject.quote(value.toString())
         }
     }
 }
@@ -227,13 +306,12 @@ typealias ImageHashResponse = ProvenanceResponse
  * Returned to the SDK user after a successful attestation.
  *
  * Contains:
- * - [response]           — the on-chain result (attestation PDA, tx signature)
- * - [dataHash]           — hash of the attested schema data
- * - [manifestFile]       — sidecar `.json` file saved on device (if [ManifestOption.SidecarFile] or [ManifestOption.Both])
- * - [embeddedImageFile]  — the image file with manifest embedded in metadata (if [ManifestOption.EmbedInImage] or [ManifestOption.Both])
+ * - [response]       — the on-chain result (attestation PDA, tx signature)
+ * - [dataHash]       — hash of the attested schema data
+ * - [certificate]    — signed [ProvenanceCertificate] with device metadata
  *
  * ```kotlin
- * val pr = Provenance.attestImageHash(payload, ManifestOption.Both(filePath)).getOrThrow()
+ * val pr = Provenance.attestImageHash(payload, credentialName, schemaName).getOrThrow()
  *
  * // On-chain
  * pr.response.attestationId       // Solana Attestation PDA
@@ -241,12 +319,6 @@ typealias ImageHashResponse = ProvenanceResponse
  *
  * // Data hash
  * pr.dataHash                     // SHA-256 of schema data — what's on-chain
- *
- * // Sidecar file (ManifestOption.SidecarFile or Both)
- * pr.manifestFile?.absolutePath   // ".../provenance_manifests/data.json"
- *
- * // Embedded image (ManifestOption.EmbedInImage or Both)
- * pr.embeddedImageFile?.absolutePath  // the image file now carries the manifest in its metadata
  * ```
  */
 data class ProvenanceResult(
@@ -270,16 +342,6 @@ data class ProvenanceResult(
      * schema data, device metadata, and optional GPS coordinates.
      */
     val certificate: ProvenanceCertificate? = null,
-    /**
-     * Sidecar `.json` file saved on device.
-     * Non-null when [ManifestOption.SidecarFile] or [ManifestOption.Both] was used.
-     */
-    val manifestFile: java.io.File? = null,
-    /**
-     * The image file with the manifest embedded in its metadata.
-     * Non-null when [ManifestOption.EmbedInImage] or [ManifestOption.Both] was used.
-     */
-    val embeddedImageFile: java.io.File? = null,
     /**
      * `true` when the device was offline at attestation time.
      * Call [com.altude.provenance.Provenance.submitPending] when back online.
@@ -382,14 +444,10 @@ data class VerifyResult(
  * @property queueId           UUID identifying this entry in the pending queue.
  * @property certificate       Signed [ProvenanceCertificate] — already tamper-evident
  *                             even before on-chain submission.
- * @property manifestFile      Sidecar `.json` saved locally (if [ManifestOption.SidecarFile]).
- * @property embeddedImageFile Image file with manifest embedded (if [ManifestOption.EmbedInImage]).
  */
 data class OfflineAttestResult(
     val queueId:           String,
-    val certificate:       ProvenanceCertificate,
-    val manifestFile:      java.io.File? = null,
-    val embeddedImageFile: java.io.File? = null
+    val certificate:       ProvenanceCertificate
 )
 
 /**

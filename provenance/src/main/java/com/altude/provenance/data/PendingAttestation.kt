@@ -13,8 +13,6 @@ import kotlinx.serialization.Serializable
  * @property id                 UUID — used to dequeue after successful submission.
  * @property certificateJson    [ProvenanceCertificate.toJson()] — signed offline.
  * @property schemaDataJson     JSON string of the user-defined schema data.
- * @property manifestOptionType One of `"sidecar"`, `"embed"`, `"both"`, `"none"`.
- * @property manifestOptionPath Absolute file path for `"embed"` / `"both"` options.
  * @property queuedAtMs         UTC epoch ms when this entry was queued.
  */
 @Serializable
@@ -36,19 +34,6 @@ data class PendingAttestation(
     val commitment:         String,
     /** [ProvenanceCertificate.toJson()] — already ED25519-signed at queue time. */
     val certificateJson:    String,
-    /** `"sidecar"` | `"embed"` | `"both"` | `"none"` */
-    val manifestOptionType: String  = "sidecar",
-    /** Absolute source file path — required for `"embed"` and `"both"` options. */
-    val manifestOptionPath: String  = "",
     /** UTC epoch ms when this entry was added to the queue. */
     val queuedAtMs:         Long    = System.currentTimeMillis()
-) {
-    /** Reconstructs the [ManifestOption] from the stored type + path fields. */
-    fun toManifestOption(): ManifestOption = when (manifestOptionType) {
-        "embed" -> ManifestOption.EmbedInImage(manifestOptionPath)
-        "both"  -> ManifestOption.Both(manifestOptionPath)
-        "none"  -> ManifestOption.None
-        else    -> ManifestOption.SidecarFile
-    }
-}
-
+)

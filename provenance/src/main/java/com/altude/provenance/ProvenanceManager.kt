@@ -23,6 +23,7 @@ import foundation.metaplex.solanaeddsa.SolanaEddsa
 import foundation.metaplex.solanapublickeys.PublicKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -288,15 +289,6 @@ internal object ProvenanceManager {
         AttestationProgram.parseAttestationData(base64Data)
     }
 
-    // ── AttestResult ──────────────────────────────────────────────────────────
-
-    internal data class AttestResult(
-        val signedTx:      String,
-        val certificate:   ProvenanceCertificate,
-        /** Attestation PDA derived locally — no backend round-trip needed. */
-        val attestationId: String
-    )
-
     // ── Network helpers ───────────────────────────────────────────────────────
 
     /**
@@ -433,12 +425,8 @@ internal object ProvenanceManager {
 
 
         // Build payload Map with explicit field order required by on-chain schema.
-        // If the caller provided an explicit attestationPayloadMap (from the public
-        // API) use it directly so callers can supply custom schema-aligned fields.
-        val payloadMap: Map<String, Any?> = attestationPayloadMap ?: run {
-            // Default deterministic payload used when no explicit map provided.
-            buildPayloadJson(payload, attester)
-        }
+        // Prefer the caller-provided schema map; otherwise use the payload's own schemaData.
+        val payloadMap: Map<String, Any?> = attestationPayloadMap ?: payload.schemaData
         Log.d("ProvenanceManager", "payloadMap for attestation: $payloadMap")
 //        val forAttestcredPda = AttestationProgram.deriveCredentialAddress(feePayerPubKey, "attestcredpda_01")
 //        Log.d("AttestationProgram", "forAttestcredPda Example credential PDA (for reference): ${forAttestcredPda}")
@@ -458,13 +446,9 @@ internal object ProvenanceManager {
             try {
                 val decodedSchema = decodeSasSchemaFixed(schemaBase64)
 
-                // If caller provided an explicit attestationPayloadMap, normalize it to
-                // match the on-chain schema field names & types (aliases, hex -> bytes for vec<u8>, etc.)
-                val payloadForSchema = if (attestationPayloadMap != null) {
-                    normalizeAttestationPayload(decodedSchema, attestationPayloadMap)
-                } else {
-                    payloadMap
-                }
+                // Normalize the user payload against the decoded on-chain schema so
+                // dynamic field names and types are resolved consistently.
+                val payloadForSchema = normalizeAttestationPayload(decodedSchema, payloadMap)
 
                 attestData = SasSchemaBorshSerializer.serializeAttestationData(decodedSchema, payloadForSchema)
             } catch (e: Exception) {
@@ -501,6 +485,72 @@ internal object ProvenanceManager {
         return Pair(signedTx, attestationPda.toBase58())
     }
 
+    // ── Attest result helpers ────────────────────────────────────────────────
+
+    internal data class AttestResult(
+        val signedTx:      String,
+        val certificate:   ProvenanceCertificate,
+        /** Attestation PDA derived locally — no backend round-trip needed. */
+        val attestationId: String
+    )
+
+    internal suspend fun attestWithPrefetched(
+        payload:        ImageHashPayload,
+        schemaPda:      PublicKey,
+        keypair:        Keypair,
+        credentialPda:  PublicKey,
+        attestationPayloadMap: Map<String, Any?>? = null
+    ): Result<AttestResult> = runCatching {
+        val certificate = buildCertificate(payload, keypair)
+        val (signedTx, attestationId) = buildTx(payload, schemaPda, keypair, credentialPda, attestationPayloadMap)
+        AttestResult(signedTx = signedTx, certificate = certificate, attestationId = attestationId)
+    }.let { r ->
+        r.exceptionOrNull()?.let { e ->
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+        } ?: Result.success(r.getOrThrow())
+    }
+
+    internal suspend fun attest(
+        payload:        ImageHashPayload,
+        schemaPda:      PublicKey,
+        credentialPda:  PublicKey,
+        attestationPayloadMap: Map<String, Any?>? = null
+    ): Result<AttestResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val keypair = getKeyPair(payload.account)
+            attestWithPrefetched(payload, schemaPda, keypair, credentialPda, attestationPayloadMap).getOrThrow()
+        }.let { r ->
+            r.exceptionOrNull()?.let { e ->
+                Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
+            } ?: Result.success(r.getOrThrow())
+        }
+    }
+
+    /**
+     * Internal convenience to centralise PDA/keypair derivation for a single attestation.
+     */
+    internal class AttestBuilder {
+        private var payload: ImageHashPayload? = null
+        private var credentialName: String = CREDENTIAL_NAME
+        private var schemaName: String = SCHEMA_NAME
+
+        fun withPayload(p: ImageHashPayload) = apply { this.payload = p }
+        fun credentialName(n: String) = apply { this.credentialName = n }
+        fun schemaName(n: String) = apply { this.schemaName = n }
+
+        suspend fun execute(attestationPayloadMap: Map<String, Any?>? = null): Result<AttestResult> = withContext(Dispatchers.IO) {
+            val p = payload ?: return@withContext Result.failure(Exception("Missing payload in AttestBuilder"))
+            return@withContext runCatching {
+                val feePayer = PublicKey(SdkConfig.requireApiConfig().FeePayer)
+                val credentialPda = AttestationProgram.deriveCredentialAddress(authority = feePayer, name = credentialName)
+                val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 1)
+                attest(p, schemaPda, credentialPda, attestationPayloadMap).getOrThrow()
+            }.let { r ->
+                r.exceptionOrNull()?.let { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) } ?: Result.success(r.getOrThrow())
+            }
+        }
+    }
+
     /**
      * Helper to build the deterministic payload JSON string used by the on-chain attestation schema.
      * Public for tests/internal inspection.
@@ -526,71 +576,146 @@ internal object ProvenanceManager {
 
     /**
      * Normalize a caller-provided attestation payload Map to the decoded SAS schema.
-     * - Preserves field ordering from the schema
-     * - Accepts common aliases (camelCase, legacy names)
-     * - Converts hex strings for vec<u8> into ByteArray
+     *
+     * Matching rules:
+     * - preserve schema field order
+     * - exact key match first
+     * - fall back to case-insensitive / separator-insensitive matching
+     * - coerce values into the Borsh type expected by the schema
      */
-    private fun normalizeAttestationPayload(schema: com.altude.provenance.DecodedSasSchemaFixed, provided: Map<String, Any?>): Map<String, Any?> {
+    private fun normalizeAttestationPayload(
+        schema: com.altude.provenance.DecodedSasSchemaFixed,
+        provided: Map<String, Any?>
+    ): Map<String, Any?> {
         val out = linkedMapOf<String, Any?>()
         for (field in schema.fields) {
-            val name = field.name
-            val type = field.type
-
-            // Try direct key first
-            var value: Any? = provided[name]
-
-            // Fallback aliases
-            if (value == null) {
-                val aliases = when (name) {
-                    "image_hash" -> listOf("image_hash", "imageHash", "asset_hash", "assetHash", "hash", "manifestHash", "assetHashHex")
-                    "parent_hash" -> listOf("parent_hash", "parentHash", "parentHashHex")
-                    "hash_algorithm" -> listOf("hash_algorithm", "hashAlgorithm", "algorithm")
-                    "mime_type" -> listOf("mime_type", "mimeType", "mime")
-                    "width" -> listOf("width")
-                    "height" -> listOf("height")
-                    "file_size" -> listOf("file_size", "fileSize", "size")
-                    "filename" -> listOf("filename", "fileName", "name")
-                    "owner" -> listOf("owner", "ownerAddress", "creator")
-                    "timestamp" -> listOf("timestamp", "ts", "time")
-                    else -> listOf(name)
-                }
-                for (k in aliases) {
-                    if (provided.containsKey(k)) {
-                        value = provided[k]
-                        break
-                    }
-                }
-            }
-
-            // Type-specific conversions
-            val normalized: Any? = when (type) {
-                "vec<u8>" -> {
-                    when (value) {
-                        is ByteArray -> value
-                        is String -> {
-                            // Accept hex (0-9a-f) or base64. Detect hex if only hex chars and even length.
-                            val s = value.trim()
-                            val hexRegex = Regex("^[0-9a-fA-F]{2,}")
-                            if ((s.length % 2 == 0) && hexRegex.matches(s)) {
-                                try { hexToByteArray(s) } catch (_: Exception) { s.toByteArray(Charsets.UTF_8) }
-                            } else {
-                                // treat as base64 or raw string; let serializer handle base64 decode
-                                s
-                            }
-                        }
-                        is List<*> -> value
-                        is Number -> listOf((value.toInt() and 0xFF).toByte())
-                        null -> null
-                        else -> value.toString().toByteArray(Charsets.UTF_8)
-                    }
-                }
-                "string" -> value?.toString() ?: ""
-                else -> value
-            }
-
-            out[name] = normalized
+            val value = resolvePayloadValue(field.name, provided)
+            out[field.name] = coerceSchemaValue(field.type, value)
         }
         return out
+    }
+
+    private fun resolvePayloadValue(fieldName: String, provided: Map<String, Any?>): Any? {
+        if (provided.containsKey(fieldName)) return provided[fieldName]
+        val target = canonicalPayloadKey(fieldName)
+        return provided.entries.firstOrNull { canonicalPayloadKey(it.key) == target }?.value
+    }
+
+    private fun canonicalPayloadKey(key: String): String =
+        key.trim().lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    private fun coerceSchemaValue(type: String, value: Any?): Any? {
+        val normalizedType = type.trim().lowercase()
+        return when {
+            normalizedType.startsWith("vec<") && normalizedType.endsWith(">") -> {
+                coerceVectorValue(normalizedType.substring(4, normalizedType.length - 1), value)
+            }
+            normalizedType == "u8" || normalizedType == "u16" || normalizedType == "u32" -> toLongValue(value).toInt()
+            normalizedType == "u64" -> toLongValue(value)
+            normalizedType == "u128" -> toBigIntegerValue(value)
+            normalizedType == "i8" || normalizedType == "i16" || normalizedType == "i32" -> toLongValue(value).toInt()
+            normalizedType == "i64" -> toLongValue(value)
+            normalizedType == "i128" -> toBigIntegerValue(value)
+            normalizedType == "bool" -> toBooleanValue(value)
+            normalizedType == "char" -> toCharValue(value)
+            normalizedType == "string" -> toStringValue(value)
+            else -> value
+        }
+    }
+
+    private fun coerceVectorValue(innerType: String, value: Any?): Any? {
+        val normalizedInner = innerType.trim().lowercase()
+        return when {
+            normalizedInner == "u8" -> coerceVecU8(value)
+            normalizedInner == "u16" || normalizedInner == "u32" -> toList(value) { toLongValue(it).toInt() }
+            normalizedInner == "u64" -> toList(value) { toLongValue(it) }
+            normalizedInner == "u128" -> toList(value) { toBigIntegerValue(it) }
+            normalizedInner == "i8" || normalizedInner == "i16" || normalizedInner == "i32" -> toList(value) { toLongValue(it).toInt() }
+            normalizedInner == "i64" -> toList(value) { toLongValue(it) }
+            normalizedInner == "i128" -> toList(value) { toBigIntegerValue(it) }
+            normalizedInner == "bool" -> toList(value) { toBooleanValue(it) }
+            normalizedInner == "char" -> toList(value) { toCharValue(it) }
+            normalizedInner == "string" -> toList(value) { toStringValue(it) }
+            else -> value
+        }
+    }
+
+    private fun coerceVecU8(value: Any?): Any? {
+        return when (value) {
+            null -> null
+            is ByteArray -> value
+            is String -> {
+                val trimmed = value.trim()
+                if (looksLikeHex(trimmed)) runCatching { hexToByteArray(trimmed) }.getOrElse { trimmed }
+                else trimmed
+            }
+            is Iterable<*> -> {
+                val items = value.toList()
+                if (items.all { it is Number || it is String }) {
+                    items.map { toLongValue(it).toInt().toByte() }.toByteArray()
+                } else {
+                    items
+                }
+            }
+            is Array<*> -> coerceVecU8(value.toList())
+            is Number -> byteArrayOf((value.toLong() and 0xFFL).toByte())
+            else -> value.toString()
+        }
+    }
+
+    private fun <T> toList(value: Any?, mapper: (Any?) -> T): Any? = when (value) {
+        null -> null
+        is Iterable<*> -> value.map(mapper)
+        is Array<*> -> value.map(mapper)
+        is ByteArray -> value.map { mapper(it) }
+        else -> listOf(mapper(value))
+    }
+
+    private fun toLongValue(value: Any?): Long = when (value) {
+        null -> 0L
+        is Number -> value.toLong()
+        is String -> value.trim().toLongOrNull() ?: 0L
+        is Boolean -> if (value) 1L else 0L
+        else -> value.toString().trim().toLongOrNull() ?: 0L
+    }
+
+    private fun toBigIntegerValue(value: Any?): BigInteger = when (value) {
+        null -> BigInteger.ZERO
+        is BigInteger -> value
+        is Number -> BigInteger.valueOf(value.toLong())
+        is String -> runCatching { BigInteger(value.trim()) }.getOrDefault(BigInteger.ZERO)
+        is Boolean -> if (value) BigInteger.ONE else BigInteger.ZERO
+        else -> runCatching { BigInteger(value.toString().trim()) }.getOrDefault(BigInteger.ZERO)
+    }
+
+    private fun toBooleanValue(value: Any?): Boolean = when (value) {
+        null -> false
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value.equals("true", ignoreCase = true) || value == "1"
+        else -> value.toString().equals("true", ignoreCase = true)
+    }
+
+    private fun toCharValue(value: Any?): String = when (value) {
+        null -> ""
+        is Char -> value.toString()
+        is String -> value.take(1)
+        else -> value.toString().take(1)
+    }
+
+    private fun toStringValue(value: Any?): String = when (value) {
+        null -> ""
+        is String -> value
+        is Map<*, *> -> canonicalJsonString(value)
+        is Iterable<*> -> canonicalJsonString(value)
+        is Array<*> -> canonicalJsonString(value.toList())
+        is ByteArray -> value.joinToString(separator = "") { "%02x".format(it) }
+        else -> value.toString()
+    }
+
+    private fun looksLikeHex(value: String): Boolean {
+        val trimmed = value.removePrefix("0x")
+        return trimmed.isNotEmpty() && trimmed.length % 2 == 0 && trimmed.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
     }
 
     private fun hexToByteArray(hex: String): ByteArray {
@@ -602,84 +727,19 @@ internal object ProvenanceManager {
         }
     }
 
-    // ── Batch-optimised attest (pre-fetched keypair + blockhash) ─────────────
-
-    /**
-     * Builds certificate + tx using caller-supplied [keypair] and [blockhash].
-     * No internal RPC or storage calls — use this inside [Provenance.attestBatch].
-     */
-    internal suspend fun attestWithPrefetched(
-        payload:        ImageHashPayload,
-        schemaPda:      PublicKey,
-        keypair:        Keypair,
-        credentialPda:  PublicKey,
-        attestationPayloadMap: Map<String, Any?>? = null
-    ): Result<AttestResult> = runCatching {
-        val certificate = buildCertificate(payload, keypair)
-        val (signedTx, attestationId) = buildTx(payload, schemaPda, keypair, credentialPda, attestationPayloadMap)
-        AttestResult(signedTx = signedTx, certificate = certificate, attestationId = attestationId)
-    }.let { r ->
-        r.exceptionOrNull()?.let { e ->
-            Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-        } ?: Result.success(r.getOrThrow())
-    }
-
-    // ── Single-image convenience (fetches blockhash internally) ───────────────
-
-    /**
-     * Convenience wrapper for single-image attestation.
-     * Fetches keypair and blockhash internally.
-     * For batches use [attestWithPrefetched] instead.
-     */
-    suspend fun attest(
-        payload:        ImageHashPayload,
-        schemaPda:      PublicKey,
-        credentialPda:  PublicKey,
-        attestationPayloadMap: Map<String, Any?>? = null
-    ): Result<AttestResult> = withContext(Dispatchers.IO) {
-        runCatching {
-            val keypair   = getKeyPair(payload.account)
-            //val blockhash = fetchBlockhash(payload.commitment.name)
-            attestWithPrefetched(payload, schemaPda, keypair, credentialPda, attestationPayloadMap).getOrThrow()
-        }.let { r ->
-            r.exceptionOrNull()?.let { e ->
-                Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
-            } ?: Result.success(r.getOrThrow())
-        }
-    }
-
-    /**
-     * Fluent builder for a single-image attest operation.
-     * Internal convenience to centralise PDA/keypair derivation and call the
-     * existing attest(...) helper. Usage (internal):
-     * ProvenanceManager.AttestBuilder()
-     *     .withPayload(payload)
-     *     .credentialName("name")
-     *     .schemaName("schema")
-     *     .execute(payloadMap)
-     */
-    internal class AttestBuilder {
-        private var payload: ImageHashPayload? = null
-        private var credentialName: String = CREDENTIAL_NAME
-        private var schemaName: String = SCHEMA_NAME
-
-        fun withPayload(p: ImageHashPayload) = apply { this.payload = p }
-        fun credentialName(n: String) = apply { this.credentialName = n }
-        fun schemaName(n: String) = apply { this.schemaName = n }
-
-        suspend fun execute(attestationPayloadMap: Map<String, Any?>? = null): Result<AttestResult> = withContext(Dispatchers.IO) {
-            val p = payload ?: return@withContext Result.failure(Exception("Missing payload in AttestBuilder"))
-            return@withContext runCatching {
-                val keypair = getKeyPair(p.account)
-                val feePayer = PublicKey(SdkConfig.requireApiConfig().FeePayer)
-                // Derive credential/schema PDAs using the fee payer as authority (matching public API behaviour)
-                val credentialPda = AttestationProgram.deriveCredentialAddress(authority = feePayer, name = credentialName)
-                val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 1)
-                // Delegate to existing attest helper (which builds certificate + tx)
-                attest(p, schemaPda, credentialPda, attestationPayloadMap).getOrThrow()
-            }.let { r ->
-                r.exceptionOrNull()?.let { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) } ?: Result.success(r.getOrThrow())
+    private fun canonicalJsonString(value: Any?): String = when (value) {
+        null -> "null"
+        is String -> org.json.JSONObject.quote(value)
+        is Number, is Boolean -> value.toString()
+        is ByteArray -> org.json.JSONObject.quote(value.joinToString(separator = "") { "%02x".format(it) })
+        is Map<*, *> -> value.entries
+            .sortedBy { it.key?.toString().orEmpty() }
+            .joinToString(prefix = "{", postfix = "}") { (key, entryValue) ->
+                "${org.json.JSONObject.quote(key?.toString().orEmpty())}:${canonicalJsonString(entryValue)}"
             }
-        }
+        is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { canonicalJsonString(it) }
+        is Array<*> -> canonicalJsonString(value.toList())
+        else -> org.json.JSONObject.quote(value.toString())
     }
 }
+

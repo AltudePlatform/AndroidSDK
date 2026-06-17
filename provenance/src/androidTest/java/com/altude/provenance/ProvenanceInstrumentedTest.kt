@@ -3,12 +3,13 @@ package com.altude.provenance
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.altude.core.Programs.AttestationProgram
 import com.altude.core.config.SdkConfig
 import com.altude.core.service.StorageService
+import com.altude.core.Programs.Utility
 import com.altude.provenance.data.AttestationResult
 import com.altude.provenance.data.Commitment
 import com.altude.provenance.data.ImageHashPayload
-import com.altude.provenance.data.ManifestOption
 import com.altude.provenance.data.ProvenanceCertificate
 import com.altude.provenance.data.ProvenancePrefs
 import foundation.metaplex.solanapublickeys.PublicKey
@@ -311,9 +312,7 @@ class ProvenanceInstrumentedTest {
         // Sanity checks for payload
         assertEquals("certificateHash must match sample", sampleCertHash, payloadForChecks.certificateHash)
         // The assetHash is stored in the embedded C2PA manifest
-        val assetHash = payloadForChecks.c2paManifest!!.assetHash
-        assertEquals("assetHash must be 64 hex chars", 64, assetHash.length)
-        assertFalse("assetHash must not be blank", assetHash.isBlank())
+
 
         // Verify the payload JSON ordering expected by the on-chain schema
         val keypair = ProvenanceManager.getKeyPair()
@@ -326,11 +325,10 @@ class ProvenanceInstrumentedTest {
 //            val b = payloadJson.indexOf('"' + fieldNames[i + 1] + '"')
 //            assertTrue("Field order: ${fieldNames[i]} must come before ${fieldNames[i+1]}", a >= 0 && b >= 0 && a < b)
 //        }
-        // Use the ImageHashPayload API (map-based overload removed). Pass the
-        // deterministic payload we built earlier (which includes certificateHash).
+        // Use the ImageHashPayload API. The attestation now focuses on schemaData
+        // only; local manifest/certificate artifacts are not produced here.
         val result = Provenance.attestImageHash(
             payloadForChecks,
-            ManifestOption.sidecar("${context.filesDir.absolutePath}/provenance_manifests_test"),
             "dev01",
             "devschema001"
         )
@@ -357,37 +355,14 @@ class ProvenanceInstrumentedTest {
                 } catch (e: Exception) {
                     println("Failed to print certificate: ${e.message}")
                 }
-                // Print certificate details when present
-                try {
-                    val cert = pr.certificate
-                    if (cert != null) {
-                        println("--- Certificate JSON ---")
-                        println(cert.toJson())
-                        println("--- Certificate fields ---")
-                        println("instanceId: ${cert.instanceId}")
-                        println("imageSha256: ${cert.imageSha256}")
-                        println("signerAddress: ${cert.signerAddress}")
-                        println("signerPublicKey: ${cert.signerPublicKey}")
-                        println("signature (hex): ${cert.signature}")
-                    } else {
-                        println("--- Certificate: <null> ---")
-                    }
-                } catch (e: Exception) {
-                    println("Failed to print certificate: ${e.message}")
-                }
                 assertFalse("attestationId must not be blank", pr.attestationId.isBlank())
                 // Server returns a queued status for the attest request
                 assertEquals("status must be 'queued'", "queued", pr.response?.Status?.lowercase())
                 assertFalse("tx signature must not be blank",
                     pr.response?.Signature?.isBlank() ?: true)
 
-                // We requested a sidecar be written to a custom directory earlier in this test
-                assertNotNull("manifestFile must be present for sidecar option", pr.manifestFile)
-                assertTrue("sidecar file must exist on disk", pr.manifestFile!!.exists())
-                assertTrue("sidecar name ends in .json",
-                    pr.manifestFile.name.endsWith(".json"))
-
-                assertNull("no embeddedFile for sidecar option", pr.embeddedImageFile)
+                assertEquals("data hash should match the payload", payloadForChecks.dataHash, pr.dataHash)
+                assertNull("certificate is no longer produced by attestImageHash", pr.certificate)
                 assertFalse("isQueued must be false", pr.isQueued)
             }
             .onFailure { e ->
@@ -408,8 +383,7 @@ class ProvenanceInstrumentedTest {
 
     /**
      * Attest with ManifestOption.SidecarFile:
-     * verifies the .json sidecar is created on disk and contains
-     * attestationId and other certificate data so offline verification works.
+     * verifies attestation still succeeds while local manifest output is ignored.
      */
     @Test
     fun testAttestImageHashWithSidecar() = runBlocking {
@@ -425,14 +399,8 @@ class ProvenanceInstrumentedTest {
                 commitment = Commitment.confirmed
             )
 
-            // Use a custom, app-private directory for sidecars in this test so
-            // we can assert the exact target path and clean up deterministically.
-            val customManifestsDir = File(context.filesDir, "provenance_manifests_test")
-            if (!customManifestsDir.exists()) customManifestsDir.mkdirs()
-
             val result = Provenance.attestImageHash(
                 payload,
-                ManifestOption.sidecar(customManifestsDir.absolutePath),
                 "test007",
                 "sc_test01"
             )
@@ -440,38 +408,13 @@ class ProvenanceInstrumentedTest {
             result
                 .onSuccess { pr ->
                     println("✅ attestationId: ${pr.attestationId}")
-                    assertNotNull("manifestFile must be present", pr.manifestFile)
-                    assertTrue("sidecar file must exist on disk", pr.manifestFile!!.exists())
-                    assertTrue("sidecar name ends in .c2pa.json",
-                        pr.manifestFile.name.endsWith(".c2pa.json"))
-
-                    // Ensure the manifest was written into our custom directory
-                    assertEquals("sidecar parent directory must match custom dir",
-                        customManifestsDir.absolutePath, pr.manifestFile.parentFile.absolutePath)
-
-                    val content = pr.manifestFile.readText()
-                    assertTrue("sidecar must embed attestationId",
-                        content.contains(pr.attestationId))
-                    assertTrue("sidecar must embed manifestHash",
-                        content.contains(pr.manifest.manifestHash))
-                    assertTrue("sidecar must embed assetHash",
-                        content.contains(pr.manifest.assetHash))
-
-                    println("   Sidecar: ${pr.manifestFile.absolutePath}")
+                    assertNull("certificate is no longer produced by attestImageHash", pr.certificate)
                 }
                 .onFailure { println("❌ Failed: ${it.message}") }
 
             assertTrue("attestation must succeed", result.isSuccess)
         } finally {
             tmpFile.delete()
-            // Clean up any sidecars written to our custom test directory
-            try {
-                val dir = File(context.filesDir, "provenance_manifests_test")
-                if (dir.exists()) {
-                    dir.listFiles()?.forEach { it.delete() }
-                    dir.delete()
-                }
-            } catch (_: Exception) {}
         }
     }
 
@@ -492,7 +435,7 @@ class ProvenanceInstrumentedTest {
                 filePath   = tmpFile.absolutePath,
                 commitment = Commitment.confirmed
             )
-            val pr = Provenance.attestImageHash(payload, ManifestOption.None,
+            val pr = Provenance.attestImageHash(payload,
                 "test007", "sc_test01").getOrThrow()
             println("   Attestation PDA: ${pr.attestationId}")
 
@@ -502,17 +445,17 @@ class ProvenanceInstrumentedTest {
             // 3. Verify on-chain — tamper-check with expectedHash
             val v = Provenance.verifyOnChain(
                 attestationId = pr.attestationId,
-                expectedHash  = pr.manifest.manifestHash
+                expectedHash  = payload.dataHash
             ).getOrThrow()
 
             println("✅ On-chain status: ${v.status}")
             println("   On-chain hash:   ${v.onChainHash}")
-            println("   Local hash:      ${pr.manifest.manifestHash}")
+            println("   Local hash:      ${payload.dataHash}")
 
             assertTrue("isVerified must be true",     v.isVerified)
             assertEquals("status must be 'verified'", "verified", v.status)
             assertEquals("on-chain hash must match local manifestHash",
-                pr.manifest.manifestHash, v.onChainHash)
+                payload.dataHash, v.onChainHash)
         } finally {
             tmpFile.delete()
         }
@@ -532,7 +475,7 @@ class ProvenanceInstrumentedTest {
         try {
             val pr = Provenance.attestImageHash(
                 ImageHashPayload.create(tmpFile.absolutePath, commitment = Commitment.confirmed),
-                ManifestOption.None, "test007", "sc_test01"
+                "test007", "sc_test01"
             ).getOrThrow()
 
             Thread.sleep(6_000)
@@ -565,11 +508,8 @@ class ProvenanceInstrumentedTest {
         try {
             val payload = ImageHashPayload.create(filePath = tmpFile.absolutePath)
 
-            // Use a custom directory for sidecars in offline queue tests as well
-            val customManifestsDir = File(context.filesDir, "provenance_offline_sidecars_test")
-            if (!customManifestsDir.exists()) customManifestsDir.mkdirs()
 
-            val result  = Provenance.attestOffline(payload, ManifestOption.sidecar(customManifestsDir.absolutePath))
+            val result  = Provenance.attestOffline(payload)
 
             result
                 .onSuccess { offline ->
@@ -580,10 +520,6 @@ class ProvenanceInstrumentedTest {
                         128, offline.certificate.signature.length)
                     assertFalse("attestationId must be pre-derived locally",
                         offline.certificate.attestationId.isBlank())
-                    assertNotNull("sidecar file must be returned", offline.manifestFile)
-                    assertTrue("sidecar must exist on disk", offline.manifestFile!!.exists())
-                    // Ensure sidecar saved in our custom dir
-                    assertEquals(customManifestsDir.absolutePath, offline.manifestFile.parentFile.absolutePath)
                 }
                 .onFailure { println("❌ Failed: ${it.message}") }
 
@@ -616,7 +552,7 @@ class ProvenanceInstrumentedTest {
                 filePath   = tmpFile.absolutePath,
                 commitment = Commitment.confirmed
             )
-            val offline = Provenance.attestOffline(payload, ManifestOption.None).getOrThrow()
+            val offline = Provenance.attestOffline(payload).getOrThrow()
             println("✅ Queued: ${offline.queueId}")
             assertEquals("1 item in queue before submit", 1, Provenance.pendingCount())
 
@@ -664,7 +600,7 @@ class ProvenanceInstrumentedTest {
             }
 
             val results = mutableListOf<AttestationResult>()
-            Provenance.attestBatch(payloads, ManifestOption.None,
+            Provenance.attestBatch(payloads,
                     "test007", "sc_test01"
                 ).collect { item ->
                 results.add(item)
@@ -847,7 +783,6 @@ class ProvenanceInstrumentedTest {
         println("Step 3: Attesting image...")
         val attestResult = Provenance.attestImageHash(
             payload = payload,
-            manifestOption = ManifestOption.None,
             credentialName = "test007",
             schemaName = "sc_test01"
         )
