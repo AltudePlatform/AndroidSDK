@@ -85,13 +85,15 @@ data class ImageHashPayload internal constructor(
             // Extract fields from schemaData with sensible defaults
             val imageHashBytes = when (val v = schemaData["image_hash"] ?: schemaData["imageHash"]) {
                 is ByteArray -> v
-                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toIntOrNull(16)?.toByte() else null }.toByteArray()
+                is String -> hexToByteArray(v)
+                is List<*> -> v.map { (it as Number).toByte() }.toByteArray()
                 else -> ByteArray(0)
             }
             
             val parentHashBytes = when (val v = schemaData["parent_hash"] ?: schemaData["parentHash"]) {
                 is ByteArray -> v
-                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toIntOrNull(16)?.toByte() else null }.toByteArray()
+                is String -> hexToByteArray(v)
+                is List<*> -> v.map { (it as Number).toByte() }.toByteArray()
                 else -> null
             }
             
@@ -253,6 +255,31 @@ data class ImageHashPayload internal constructor(
             is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { canonicalJsonString(it) }
             is Array<*> -> canonicalJsonString(value.toList())
             else -> org.json.JSONObject.quote(value.toString())
+        }
+
+        /**
+         * Decodes a hex string to a [ByteArray].
+         *
+         * Handles the following common representations:
+         * - Plain hex: `"a3f0..."` (must be an even number of hex digits)
+         * - `0x` prefix: `"0xa3f0..."`
+         * - `sha256:` prefix: `"sha256:a3f0..."`
+         *
+         * @throws IllegalArgumentException if the string contains non-hex characters
+         *   or has an odd number of digits after prefix stripping.
+         */
+        private fun hexToByteArray(hex: String): ByteArray {
+            val clean = hex.trim()
+                .removePrefix("sha256:")
+                .removePrefix("0x")
+                .trim()
+            require(clean.length % 2 == 0) {
+                "Hex string must have an even number of digits (got ${clean.length}): $hex"
+            }
+            require(clean.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                "Invalid hex character in: $hex"
+            }
+            return clean.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         }
     }
 }

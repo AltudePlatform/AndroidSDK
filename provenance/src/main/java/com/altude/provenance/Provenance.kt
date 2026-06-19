@@ -324,11 +324,12 @@ object Provenance {
                 return@withContext Result.failure(Exception("Failed to parse attest response: ${e.message}", e))
             }
 
+            val certificateWithId = attested.certificate.copy(attestationId = attested.attestationId)
             Result.success(ProvenanceResult(
                 response      = response,
                 dataHash      = payload.dataHash,
                 attestationId = attested.attestationId,
-                certificate   = null
+                certificate   = certificateWithId
             ))
         } catch (e: Throwable) {
             // Propagate errors to caller; do not queue offline from this API
@@ -486,7 +487,16 @@ object Provenance {
 
             // 5. Enqueue
             val queueId = java.util.UUID.randomUUID().toString()
-            val schemaDataJson = org.json.JSONObject(payload.schemaData).toString()
+            // Serialize schemaData safely: convert ByteArray values to hex strings so that
+            // org.json does not round-trip them as JSON integer arrays.
+            val jsonObj = org.json.JSONObject()
+            payload.schemaData.forEach { (key, value) ->
+                when (value) {
+                    is ByteArray -> jsonObj.put(key, value.joinToString("") { "%02x".format(it) })
+                    else         -> jsonObj.put(key, value)
+                }
+            }
+            val schemaDataJson = jsonObj.toString()
             ProvenanceQueue.enqueue(
                 PendingAttestation(
                     id                 = queueId,
@@ -495,6 +505,7 @@ object Provenance {
                     mime               = payload.mimeType,
                     name               = payload.filename,
                     manifest           = schemaDataJson,
+                    schemaDataJson     = schemaDataJson,
                     timestamp          = payload.timestamp,
                     account            = payload.account,
                     recipient          = payload.recipient,
