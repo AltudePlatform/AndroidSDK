@@ -382,8 +382,8 @@ class ProvenanceInstrumentedTest {
     }
 
     /**
-     * Attest with ManifestOption.SidecarFile:
-     * verifies attestation still succeeds while local manifest output is ignored.
+     * Attest an image hash and verify that attestation succeeds.
+     * ManifestOption has been removed; this test exercises attestImageHash directly.
      */
     @Test
     fun testAttestImageHashWithSidecar() = runBlocking {

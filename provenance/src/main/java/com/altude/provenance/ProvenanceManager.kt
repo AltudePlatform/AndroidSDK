@@ -541,10 +541,10 @@ internal object ProvenanceManager {
         suspend fun execute(attestationPayloadMap: Map<String, Any?>? = null): Result<AttestResult> = withContext(Dispatchers.IO) {
             val p = payload ?: return@withContext Result.failure(Exception("Missing payload in AttestBuilder"))
             return@withContext runCatching {
-                val feePayer = PublicKey(SdkConfig.requireApiConfig().FeePayer)
-                val credentialPda = AttestationProgram.deriveCredentialAddress(authority = feePayer, name = credentialName)
-                val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 1)
-                attest(p, schemaPda, credentialPda, attestationPayloadMap).getOrThrow()
+                val keypair = getKeyPair(p.account)
+                val credentialPda = AttestationProgram.deriveCredentialAddress(authority = keypair.publicKey, name = credentialName)
+                val schemaPda = AttestationProgram.deriveSchemaAddress(credential = credentialPda, name = schemaName, version = 0)
+                attestWithPrefetched(p, schemaPda, keypair, credentialPda, attestationPayloadMap).getOrThrow()
             }.let { r ->
                 r.exceptionOrNull()?.let { e -> Result.failure(Exception(e.message ?: e.javaClass.simpleName, e)) } ?: Result.success(r.getOrThrow())
             }

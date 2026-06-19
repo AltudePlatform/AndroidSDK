@@ -85,13 +85,13 @@ data class ImageHashPayload internal constructor(
             // Extract fields from schemaData with sensible defaults
             val imageHashBytes = when (val v = schemaData["image_hash"] ?: schemaData["imageHash"]) {
                 is ByteArray -> v
-                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toByteOrNull(16) else null }.toByteArray()
+                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toIntOrNull(16)?.toByte() else null }.toByteArray()
                 else -> ByteArray(0)
             }
             
             val parentHashBytes = when (val v = schemaData["parent_hash"] ?: schemaData["parentHash"]) {
                 is ByteArray -> v
-                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toByteOrNull(16) else null }.toByteArray()
+                is String -> v.chunked(2).mapNotNull { if (it.length == 2) it.toIntOrNull(16)?.toByte() else null }.toByteArray()
                 else -> null
             }
             
@@ -387,8 +387,7 @@ internal data class VerifyResponse(
 )
 
 /**
- * Result returned by [com.altude.provenance.Provenance.verifyByHash] and
- * [com.altude.provenance.Provenance.verifyByAttestationId].
+ * Result returned by [com.altude.provenance.Provenance.verifyOnChain].
  *
  * **Online verification flow:**
  * 1. The backend is queried with the data hash or attestation PDA.
@@ -397,7 +396,7 @@ internal data class VerifyResponse(
  *
  * **What to check after receiving a [VerifyResult]:**
  * ```kotlin
- * val v = Provenance.verifyByHash(payload.dataHash).getOrThrow()
+ * val v = Provenance.verifyOnChain(payload.dataHash).getOrThrow()
  *
  * // 1. On-chain status
  * check(v.isVerified) { v.message }
