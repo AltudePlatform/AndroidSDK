@@ -4,54 +4,33 @@ import android.content.ContentResolver
 import android.net.Uri
 import kotlinx.serialization.Serializable
 import android.graphics.BitmapFactory
+import java.security.MessageDigest
 
 /**
- * Structured payload for an image-hash attestation.
+ * Flexible payload for attestation with user-defined schema data.
  *
- * SDK users should NOT construct this directly — use the factory:
+ * SDK users can construct this with any JSON schema format:
  * ```kotlin
  * val payload = ImageHashPayload.create(
- *     filePath  = file.absolutePath,
- *     mime      = "image/png",
- *     producer  = walletAddress,
- *     account   = walletAddress
+ *     schemaData = mapOf(
+ *         "image_hash" to imageHash,
+ *         "producer" to walletAddress,
+ *         "custom_field" to "custom_value"
+ *     ),
+ *     account = walletAddress
  * )
  * val result = Provenance.attestImageHash(payload)
  * ```
  *
- * Internally, [create] builds a [C2paManifest] from the file path — the hash
- * and manifest JSON are computed automatically. The user never touches raw bytes
- * or SHA-256 directly.
+ * The payload accepts arbitrary JSON data, allowing SDK users to define
+ * their own schema formats for different use cases.
  */
 @ConsistentCopyVisibility
 data class ImageHashPayload internal constructor(
-    // Fixed schema fields (SAS devschema03)
-    /** image_hash — raw bytes (vec<u8>) of the image SHA-256 digest. */
-    val imageHash: ByteArray,
-    /** parent_hash — optional raw bytes (vec<u8>) of parent asset. */
-    val parentHash: ByteArray? = null,
-    /** hash_algorithm — e.g. "sha256" */
-    val hashAlgorithm: String = "sha256",
-    /** mime_type — e.g. "image/png" */
-    val mimeType: String = "image/png",
-    /** width — u32 pixels */
-    val width: Int = 0,
-    /** height — u32 pixels */
-    val height: Int = 0,
-    /** file_size — u64 bytes */
-    val fileSize: Long = 0L,
-    /** filename — display filename */
-    val filename: String = "",
-    /** owner — owner address or identifier */
-    val owner: String = "",
-    /** timestamp — u64 epoch seconds */
-    val timestamp: Long = System.currentTimeMillis() / 1000,
-
-    // Legacy / SDK metadata (kept for internal flows)
-    /** The canonical manifest hash (SHA-256 hex) stored on-chain. */
-    val manifestHash: String = "",
-    /** Original C2PA manifest object (optional, used when creating sidecars). */
-    internal val c2paManifest: C2paManifest? = null,
+    /** User-defined schema data as a map (will be serialized to JSON) */
+    val schemaData: Map<String, Any>,
+    /** Hash of the schema data (SHA-256 hex) — computed automatically */
+    val dataHash: String = "",
     /** Attester wallet address (Base58). Blank = stored default wallet. */
     val account: String = "",
     /** Recipient wallet (Base58). Defaults to attester if blank. */
@@ -63,53 +42,128 @@ data class ImageHashPayload internal constructor(
     /** Pre-built certificate (set internally after offline signing). */
     internal val certificate: ProvenanceCertificate? = null,
     /** Optional SHA-256 hex of the certificate JSON — stored on-chain as `certificate_hash`. */
-    val certificateHash: String = ""
+    val certificateHash: String = "",
+    // Schema data fields extracted for convenient access
+    val imageHash: ByteArray = ByteArray(0),
+    val parentHash: ByteArray? = null,
+    val hashAlgorithm: String = "sha256",
+    val mimeType: String = "image/png",
+    val width: Int = 0,
+    val height: Int = 0,
+    val fileSize: Long = 0L,
+    val filename: String = "",
+    val owner: String = "",
+    val timestamp: Long = System.currentTimeMillis() / 1000
 ) {
     companion object {
-        /** Build from file path (computes manifest and image hash). */
+        /**
+         * Create payload from user-defined schema data.
+         * Accepts any JSON-serializable map of data.
+         *
+         * Example:
+         * ```kotlin
+         * val payload = ImageHashPayload.create(
+         *     schemaData = mapOf(
+         *         "image_hash" to imageHashHex,
+         *         "mime_type" to "image/png",
+         *         "producer" to walletAddress,
+         *         "timestamp" to System.currentTimeMillis() / 1000
+         *     ),
+         *     account = walletAddress
+         * )
+         * ```
+         */
+        fun create(
+            schemaData: Map<String, Any>,
+            account: String = "",
+            recipient: String = "",
+            expireAt: Long = 0L,
+            commitment: Commitment = Commitment.finalized
+        ): ImageHashPayload {
+            val dataHash = computeDataHash(schemaData)
+            
+            // Extract fields from schemaData with sensible defaults
+            val imageHashBytes = when (val v = schemaData["image_hash"] ?: schemaData["imageHash"]) {
+                is ByteArray -> v
+                is String -> hexToByteArray(v)
+                is List<*> -> v.map { (it as Number).toByte() }.toByteArray()
+                else -> ByteArray(0)
+            }
+            
+            val parentHashBytes = when (val v = schemaData["parent_hash"] ?: schemaData["parentHash"]) {
+                is ByteArray -> v
+                is String -> hexToByteArray(v)
+                is List<*> -> v.map { (it as Number).toByte() }.toByteArray()
+                else -> null
+            }
+            
+            val hashAlg = ((schemaData["hash_algorithm"] ?: schemaData["hashAlgorithm"]) as? String) ?: "sha256"
+            val mimeType = ((schemaData["mime_type"] ?: schemaData["mime"]) as? String) ?: "image/png"
+            val width = when (val w = schemaData["width"]) {
+                is Number -> w.toInt()
+                is String -> w.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val height = when (val h = schemaData["height"]) {
+                is Number -> h.toInt()
+                is String -> h.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val fileSize = when (val f = schemaData["file_size"] ?: schemaData["fileSize"]) {
+                is Number -> f.toLong()
+                is String -> f.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            val filename = ((schemaData["filename"] ?: schemaData["file_name"]) as? String) ?: ""
+            val owner = ((schemaData["owner"] ?: schemaData["producer"]) as? String) ?: ""
+            val timestamp = when (val t = schemaData["timestamp"]) {
+                is Number -> t.toLong()
+                is String -> t.toLongOrNull() ?: (System.currentTimeMillis() / 1000)
+                else -> System.currentTimeMillis() / 1000
+            }
+            
+            return ImageHashPayload(
+                schemaData = schemaData,
+                dataHash = dataHash,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment,
+                imageHash = imageHashBytes,
+                parentHash = parentHashBytes,
+                hashAlgorithm = hashAlg,
+                mimeType = mimeType,
+                width = width,
+                height = height,
+                fileSize = fileSize,
+                filename = filename,
+                owner = owner,
+                timestamp = timestamp
+            )
+        }
+
+        /**
+         * Compatibility overload for file-based payload construction.
+         * The resulting payload still centers on [schemaData].
+         */
         fun create(
             filePath: String,
             mime: String = "image/png",
+            filename: String = java.io.File(filePath).name,
             producer: String = "",
             account: String = "",
             recipient: String = "",
             expireAt: Long = 0L,
             commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
-            val manifest = C2paManifest.build(
-                filePath = filePath,
-                mimeType = mime,
-                producer = producer
-            )
-            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
-            val fileSize = java.io.File(filePath).length()
-            // Attempt to decode image bounds to get width/height without loading the full bitmap
-            var width = 0
-            var height = 0
-            try {
-                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(filePath, opts)
-                if (opts.outWidth > 0 && opts.outHeight > 0) {
-                    width = opts.outWidth
-                    height = opts.outHeight
-                }
-            } catch (_: Exception) {
-                // leave width/height as 0 on failure
-            }
-
-            return ImageHashPayload(
-                imageHash = imageHashBytes,
-                parentHash = null,
-                hashAlgorithm = "sha256",
-                mimeType = manifest.mimeType,
-                width = width,
-                height = height,
-                fileSize = fileSize,
-                filename = manifest.filename,
-                owner = producer,
-                timestamp = manifest.timestamp,
-                manifestHash = manifest.manifestHash,
-                c2paManifest = manifest,
+            val file = java.io.File(filePath)
+            require(file.exists()) { "File does not exist: $filePath" }
+            val imageBytes = file.readBytes()
+            return createFromBytes(
+                imageBytes = imageBytes,
+                mime = mime,
+                filename = filename,
+                producer = producer,
                 account = account,
                 recipient = recipient,
                 expireAt = expireAt,
@@ -117,7 +171,9 @@ data class ImageHashPayload internal constructor(
             )
         }
 
-        /** Build from raw bytes (camera buffer or content URI read bytes). */
+        /**
+         * Compatibility overload for raw image bytes.
+         */
         fun createFromBytes(
             imageBytes: ByteArray,
             mime: String = "image/png",
@@ -128,83 +184,102 @@ data class ImageHashPayload internal constructor(
             expireAt: Long = 0L,
             commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
-            val manifest = C2paManifest.buildFromBytes(
-                imageBytes = imageBytes,
-                mimeType = mime,
-                filename = filename,
-                producer = producer
+            val imageHash = MessageDigest.getInstance("SHA-256").digest(imageBytes)
+
+            val schemaData = linkedMapOf<String, Any>(
+                "image_hash" to imageHash,
+                "hash_algorithm" to "sha256",
+                "mime_type" to mime,
+                "filename" to filename,
+                "owner" to producer,
+                "timestamp" to (System.currentTimeMillis() / 1000)
             )
-            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
-            // Decode bounds from bytes to determine width/height without full bitmap allocation
-            var width = 0
-            var height = 0
-            try {
-                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, opts)
-                if (opts.outWidth > 0 && opts.outHeight > 0) {
-                    width = opts.outWidth
-                    height = opts.outHeight
+            return create(
+                schemaData = schemaData,
+                account = account,
+                recipient = recipient,
+                expireAt = expireAt,
+                commitment = commitment
+            )
+        }
+
+        /**
+         * Helper to compute image file hash from file path.
+         * Returns SHA-256 hex string of the file bytes.
+         */
+        fun computeImageHash(filePath: String): String {
+            val file = java.io.File(filePath)
+            require(file.exists()) { "File does not exist: $filePath" }
+            return file.inputStream().use { stream ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                while (stream.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
                 }
-            } catch (_: Exception) {
-                // leave 0
+                digest.digest().joinToString("") { "%02x".format(it) }
             }
-
-            return ImageHashPayload(
-                imageHash = imageHashBytes,
-                parentHash = null,
-                hashAlgorithm = "sha256",
-                mimeType = manifest.mimeType,
-                width = width,
-                height = height,
-                fileSize = imageBytes.size.toLong(),
-                filename = manifest.filename,
-                owner = producer,
-                timestamp = manifest.timestamp,
-                manifestHash = manifest.manifestHash,
-                c2paManifest = manifest,
-                account = account,
-                recipient = recipient,
-                expireAt = expireAt,
-                commitment = commitment
-            )
         }
 
-        /** Build from an existing C2PA manifest. */
-        fun fromManifest(
-            manifest: C2paManifest,
-            account: String = "",
-            recipient: String = "",
-            expireAt: Long = 0L,
-            commitment: Commitment = Commitment.finalized
-        ): ImageHashPayload {
-            val imageHashBytes = try { hexToByteArray(manifest.assetHash) } catch (_: Exception) { manifest.assetHash.toByteArray(Charsets.UTF_8) }
-            return ImageHashPayload(
-                imageHash = imageHashBytes,
-                parentHash = null,
-                hashAlgorithm = "sha256",
-                mimeType = manifest.mimeType,
-                width = 0,
-                height = 0,
-                fileSize = 0L,
-                filename = manifest.filename,
-                owner = manifest.producer,
-                timestamp = manifest.timestamp,
-                manifestHash = manifest.manifestHash,
-                c2paManifest = manifest,
-                account = account,
-                recipient = recipient,
-                expireAt = expireAt,
-                commitment = commitment
-            )
+        /**
+         * Helper to compute image hash from raw bytes.
+         * Returns SHA-256 hex string.
+         */
+        fun computeImageHashFromBytes(imageBytes: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update(imageBytes)
+            return digest.digest().joinToString("") { "%02x".format(it) }
         }
 
+        /**
+         * Compute SHA-256 hash of the schema data map.
+         * Serializes the map to canonical JSON and hashes it.
+         */
+        private fun computeDataHash(data: Map<String, Any>): String {
+            val jsonString = canonicalJsonString(data)
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update(jsonString.toByteArray(Charsets.UTF_8))
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        private fun canonicalJsonString(value: Any?): String = when (value) {
+            null -> "null"
+            is String -> org.json.JSONObject.quote(value)
+            is Number, is Boolean -> value.toString()
+            is ByteArray -> org.json.JSONObject.quote(value.joinToString(separator = "") { "%02x".format(it) })
+            is Map<*, *> -> value.entries
+                .sortedBy { it.key?.toString().orEmpty() }
+                .joinToString(prefix = "{", postfix = "}") { (key, entryValue) ->
+                    "${org.json.JSONObject.quote(key?.toString().orEmpty())}:${canonicalJsonString(entryValue)}"
+                }
+            is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { canonicalJsonString(it) }
+            is Array<*> -> canonicalJsonString(value.toList())
+            else -> org.json.JSONObject.quote(value.toString())
+        }
+
+        /**
+         * Decodes a hex string to a [ByteArray].
+         *
+         * Handles the following common representations:
+         * - Plain hex: `"a3f0..."` (must be an even number of hex digits)
+         * - `0x` prefix: `"0xa3f0..."`
+         * - `sha256:` prefix: `"sha256:a3f0..."`
+         *
+         * @throws IllegalArgumentException if the string contains non-hex characters
+         *   or has an odd number of digits after prefix stripping.
+         */
         private fun hexToByteArray(hex: String): ByteArray {
-            val s = hex.removePrefix("0x").replace(" ", "")
-            require(s.length % 2 == 0) { "Invalid hex string length" }
-            return ByteArray(s.length / 2) { i ->
-                val idx = i * 2
-                ((s[idx].digitToInt(16) shl 4) + s[idx + 1].digitToInt(16)).toByte()
+            val clean = hex.trim()
+                .removePrefix("sha256:")
+                .removePrefix("0x")
+                .trim()
+            require(clean.length % 2 == 0) {
+                "Hex string must have an even number of digits (got ${clean.length}): $hex"
             }
+            require(clean.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                "Invalid hex character in: $hex"
+            }
+            return clean.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         }
     }
 }
@@ -254,28 +329,19 @@ typealias ImageHashResponse = ProvenanceResponse
  * Returned to the SDK user after a successful attestation.
  *
  * Contains:
- * - [response]           — the on-chain result (attestation PDA, tx signature)
- * - [manifest]           — the C2PA manifest object (assetHash, manifestHash, filename, etc.)
- * - [manifestFile]       — sidecar `.c2pa.json` file saved on device (if [ManifestOption.SidecarFile] or [ManifestOption.Both])
- * - [embeddedImageFile]  — the image file with manifest embedded in metadata (if [ManifestOption.EmbedInImage] or [ManifestOption.Both])
+ * - [response]       — the on-chain result (attestation PDA, tx signature)
+ * - [dataHash]       — hash of the attested schema data
+ * - [certificate]    — signed [ProvenanceCertificate] with device metadata
  *
  * ```kotlin
- * val pr = Provenance.attestImageHash(payload, ManifestOption.Both(filePath)).getOrThrow()
+ * val pr = Provenance.attestImageHash(payload, credentialName, schemaName).getOrThrow()
  *
  * // On-chain
  * pr.response.attestationId       // Solana Attestation PDA
  * pr.response.Signature           // tx signature
  *
- * // Manifest fields
- * pr.manifest.assetHash           // SHA-256 of raw image bytes
- * pr.manifest.manifestHash        // SHA-256 of claim JSON — what's on-chain
- * pr.manifest.filename            // "photo.png"
- *
- * // Sidecar file (ManifestOption.SidecarFile or Both)
- * pr.manifestFile?.absolutePath   // ".../provenance_manifests/photo.png.c2pa.json"
- *
- * // Embedded image (ManifestOption.EmbedInImage or Both)
- * pr.embeddedImageFile?.absolutePath  // the image file now carries the manifest in its metadata
+ * // Data hash
+ * pr.dataHash                     // SHA-256 of schema data — what's on-chain
  * ```
  */
 data class ProvenanceResult(
@@ -285,30 +351,20 @@ data class ProvenanceResult(
      * check [isQueued] to distinguish this case.
      */
     val response: ProvenanceResponse? = null,
-    /** The C2PA manifest built from the image. */
-    val manifest: C2paManifest,
+    /** Hash of the attested schema data (SHA-256 hex). */
+    val dataHash: String = "",
     /**
      * Solana Attestation PDA (Base58) — derived deterministically client-side
      * from seeds ["attestation", credential, schema, nonce] before the tx is sent.
      * Use this with [com.altude.provenance.Provenance.verifyOnChain].
-     * Also stored inside the sidecar `.c2pa.json` and embedded image metadata.
+     * Also stored inside the sidecar `.json` and embedded image metadata.
      */
     val attestationId: String = "",
     /**
-     * Signed [ProvenanceCertificate] — contains the ED25519 signature over the canonical
-     * C2PA claim, device metadata, and optional GPS coordinates.
+     * Signed [ProvenanceCertificate] — contains the ED25519 signature over the 
+     * schema data, device metadata, and optional GPS coordinates.
      */
     val certificate: ProvenanceCertificate? = null,
-    /**
-     * Sidecar `.c2pa.json` file saved on device.
-     * Non-null when [ManifestOption.SidecarFile] or [ManifestOption.Both] was used.
-     */
-    val manifestFile: java.io.File? = null,
-    /**
-     * The image file with the C2PA manifest embedded in its metadata.
-     * Non-null when [ManifestOption.EmbedInImage] or [ManifestOption.Both] was used.
-     */
-    val embeddedImageFile: java.io.File? = null,
     /**
      * `true` when the device was offline at attestation time.
      * Call [com.altude.provenance.Provenance.submitPending] when back online.
@@ -325,8 +381,8 @@ data class ProvenanceResult(
  *
  * @param index  Zero-based position in the original list passed to `attestBatch`.
  * @param name   Original filename — use to match back to your UI list.
- * @param hash   The [C2paManifest.manifestHash] stored on-chain.
- * @param result Success carries [ProvenanceResult] (manifest + response); failure carries the error.
+ * @param hash   The data hash stored on-chain.
+ * @param result Success carries [ProvenanceResult]; failure carries the error.
  */
 data class AttestationResult(
     val index:  Int,
@@ -348,7 +404,7 @@ internal data class VerifyResponse(
     val Message: String,
     /** On-chain attestation PDA (Base58). */
     val attestationId: String = "",
-    /** Hash stored on-chain — compare with local [C2paManifest.manifestHash]. */
+    /** Hash stored on-chain — compare with local dataHash. */
     val onChainHash: String = "",
     /**
      * [ProvenanceCertificate] JSON as stored by the backend at attestation time.
@@ -358,23 +414,22 @@ internal data class VerifyResponse(
 )
 
 /**
- * Result returned by [com.altude.provenance.Provenance.verifyByHash] and
- * [com.altude.provenance.Provenance.verifyByAttestationId].
+ * Result returned by [com.altude.provenance.Provenance.verifyOnChain].
  *
  * **Online verification flow:**
- * 1. The backend is queried with the manifest hash or attestation PDA.
+ * 1. The backend is queried with the data hash or attestation PDA.
  * 2. The backend returns the on-chain hash and the stored certificate.
  * 3. The SDK parses the certificate and returns this object.
  *
  * **What to check after receiving a [VerifyResult]:**
  * ```kotlin
- * val v = Provenance.verifyByHash(payload.hash).getOrThrow()
+ * val v = Provenance.verifyOnChain(payload.dataHash).getOrThrow()
  *
  * // 1. On-chain status
  * check(v.isVerified) { v.message }
  *
  * // 2. Hash matches what you computed locally
- * check(v.onChainHash == payload.hash)
+ * check(v.onChainHash == payload.dataHash)
  *
  * // 3. Certificate signer is the expected wallet
  * check(v.certificate?.signerAddress == expectedWallet)
@@ -387,7 +442,7 @@ internal data class VerifyResponse(
  * @property status         Raw status string from the backend.
  * @property message        Human-readable description.
  * @property attestationId  On-chain Attestation PDA (Base58).
- * @property onChainHash    [C2paManifest.manifestHash] stored on Solana.
+ * @property onChainHash    The data hash stored on Solana.
  * @property certificate    Parsed [ProvenanceCertificate], or `null` if absent/malformed.
  */
 data class VerifyResult(
@@ -404,21 +459,17 @@ data class VerifyResult(
 /**
  * Returned by [com.altude.provenance.Provenance.attestOffline].
  *
- * The image has been signed and queued locally — call
+ * The data has been signed and queued locally — call
  * [com.altude.provenance.Provenance.submitPending] when back online to submit
  * everything to the Solana chain in one efficient batch.
  *
  * @property queueId           UUID identifying this entry in the pending queue.
  * @property certificate       Signed [ProvenanceCertificate] — already tamper-evident
  *                             even before on-chain submission.
- * @property manifestFile      Sidecar `.c2pa.json` saved locally (if [ManifestOption.SidecarFile]).
- * @property embeddedImageFile Image file with manifest embedded (if [ManifestOption.EmbedInImage]).
  */
 data class OfflineAttestResult(
     val queueId:           String,
-    val certificate:       ProvenanceCertificate,
-    val manifestFile:      java.io.File? = null,
-    val embeddedImageFile: java.io.File? = null
+    val certificate:       ProvenanceCertificate
 )
 
 /**
