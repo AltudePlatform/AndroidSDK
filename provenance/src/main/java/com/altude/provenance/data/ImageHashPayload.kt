@@ -182,8 +182,10 @@ data class ImageHashPayload internal constructor(
             expireAt: Long = 0L,
             commitment: Commitment = Commitment.finalized
         ): ImageHashPayload {
+            val imageHash = MessageDigest.getInstance("SHA-256").digest(imageBytes)
+
             val schemaData = linkedMapOf<String, Any>(
-                "image_hash" to imageBytes,
+                "image_hash" to imageHash,
                 "hash_algorithm" to "sha256",
                 "mime_type" to mime,
                 "filename" to filename,
@@ -196,12 +198,6 @@ data class ImageHashPayload internal constructor(
                 recipient = recipient,
                 expireAt = expireAt,
                 commitment = commitment
-            ).copy(
-                imageHash = imageBytes,
-                hashAlgorithm = "sha256",
-                mimeType = mime,
-                filename = filename,
-                owner = producer
             )
         }
 
