@@ -14,13 +14,16 @@ import com.altude.core.data.SwapInstructionRequest
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.SwapResponse
 import com.altude.core.data.toQueryMap
+import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransaction
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature
+import com.altude.core.model.HotSigner
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.core.model.TransactionSigner
 import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
+import com.altude.core.service.StorageService
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
@@ -533,8 +536,16 @@ object GaslessManager {
         }
     }
 
-    private fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
+    private suspend fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
         val signer = overrideSigner ?: SdkConfig.currentSigner
+        if (account.isNotBlank() ) {
+            StorageService.getDecryptedSeed(account)?.let { seed ->
+                val mnemonic = Mnemonic(seed.mnemonic)
+                val keypair = mnemonic.getKeyPair()
+                return HotSigner(keypair)
+            }
+        }
+
         requireNotNull(signer) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
@@ -557,7 +568,7 @@ object GaslessManager {
             ?: throw IllegalArgumentException("No signer matches requested account $account")
     }
 
-    private fun resolveSignersForBatch(options: List<SendOptions>, provided: List<TransactionSigner>?): List<TransactionSigner> {
+    private suspend fun resolveSignersForBatch(options: List<SendOptions>, provided: List<TransactionSigner>?): List<TransactionSigner> {
         provided?.let { return it }
         val defaultSigner = resolveSigner()
         options.firstOrNull { it.account.isNotBlank() }?.let { option ->

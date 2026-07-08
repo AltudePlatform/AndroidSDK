@@ -45,7 +45,7 @@ enum class Token(val mainnet: String, val devnet: String) {
     ),
     KIN(
         mainnet = "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6",
-        devnet  = "REDACTED"
+        devnet  = "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6"
     ),
     SRM(
         mainnet = "ByRSn9zspZBkx4nW5z8tYtzwdRKj1jpkvxS73VrMLpGs",

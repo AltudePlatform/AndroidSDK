@@ -16,6 +16,7 @@ import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
 import com.altude.core.helper.Mnemonic
 import com.altude.core.model.TransactionSigner
+import com.altude.core.model.HotSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
@@ -70,13 +71,54 @@ object Altude {
     }
 
     /**
-     * Legacy overload — kept for backward compatibility.
-     * Prefer setApiKey(activity, apiKey) when using the default Vault.
-     * Use this overload only when you have a custom signer that does not need a FragmentActivity.
+     * Simple API key setup with optional Vault storage.
+     *
+     * Usage:
+     * ```
+     * // Normal storage (no Vault)
+     * Altude.setApiKey(context, "ak_...")
+     *
+     * // With Vault storage
+     * Altude.setApiKey(activity, "ak_...", useVault = true)
+     * ```
+     *
+     * @param context Context or FragmentActivity
+     * @param apiKey Your Altude API key
+     * @param useVault If true, use Vault with biometric signer. If false (default), use normal storage
      */
-    suspend fun setApiKey(context: Context, apiKey: String) {
-        SdkConfig.setApiKey(context, apiKey)
-        saveMnemonic(Mnemonic.generateMnemonic(12))
+    suspend fun setApiKey(context: Context, apiKey: String, useVault: Boolean = false) {
+        if (useVault) {
+            // Delegate to Vault-based initialization
+            if (context !is FragmentActivity) {
+                throw IllegalArgumentException(
+                    "Vault storage requires FragmentActivity context for biometric prompts. " +
+                            "Got ${context.javaClass.simpleName} instead."
+                )
+            }
+            AltudeGasStation.init(context, apiKey).getOrThrow()
+        } else {
+            // Use normal storage (no Vault) with HotSigner
+            SdkConfig.setApiKey(context, apiKey)
+            StorageService.init(context)
+            
+            // Generate mnemonic if not already stored
+            val existingSeeds = StorageService.getDecryptedSeeds()
+            if (existingSeeds.isEmpty()) {
+                saveMnemonic(Mnemonic.generateMnemonic(12))
+            }
+            
+            // Set up HotSigner from stored wallet
+            val storedWallets = StorageService.getDecryptedSeeds()
+            if (storedWallets.isNotEmpty()) {
+                val seedData = storedWallets.firstOrNull()
+                if (seedData != null && seedData.mnemonic.isNotEmpty()) {
+                    val mnemonic = Mnemonic(seedData.mnemonic)
+                    val keypair = mnemonic.getKeyPair()
+                    val hotSigner = HotSigner(keypair)
+                    SdkConfig.setSigner(hotSigner)
+                }
+            }
+        }
     }
 
     suspend fun saveMnemonic(mnemonicWords: String) {
