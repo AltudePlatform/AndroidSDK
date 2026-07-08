@@ -6,4 +6,5 @@ interface ISendOption {
     val amount: Double
     val token: String
     val commitment: Commitment
+    val computeOptions: ComputeOptions
 }

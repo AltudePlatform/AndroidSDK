@@ -2,6 +2,7 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.Programs.MPLCore
 import com.altude.core.Programs.SwapHelper
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.api.SwapService
@@ -24,6 +25,7 @@ import com.altude.core.model.TransactionSigner
 import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
 import com.altude.core.service.StorageService
+import com.altude.gasstation.data.ComputeOptions
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
@@ -98,6 +100,7 @@ object GaslessManager {
             val builder = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
                 .setRecentBlockHash(blockhashInfo.blockhash)
+                .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
             destinationCreateAta?.let { builder.addInstruction(it) }
             builder.addInstruction(transferInstruction)
             builder.setSigners(listOf(signerToUse))
@@ -119,6 +122,7 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val finalSigners = resolveSignersForBatch(options, signers)
+                val computeOptions = resolveBatchComputeOptions(options)
                 val transferInstructions = mutableListOf<TransactionInstruction>()
 
                 options.forEach { option ->
@@ -162,6 +166,7 @@ object GaslessManager {
                 val builder = AltudeTransactionBuilder()
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhashInfo.blockhash)
+                    .addRangeInstruction(buildComputeBudgetInstructions(computeOptions))
                     .addRangeInstruction(transferInstructions)
                     .setSigners(finalSigners.distinctBy { it.publicKey.toBase58() })
 
@@ -215,7 +220,9 @@ object GaslessManager {
 
                 val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
-                val tx = AltudeTransactionBuilder().addRangeInstruction(txInstructions)
+                val tx = AltudeTransactionBuilder()
+                    .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
+                    .addRangeInstruction(txInstructions)
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhashInfo.blockhash)
                     .setSigners(listOf(signerToUse))
@@ -280,6 +287,7 @@ object GaslessManager {
 
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
+                .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .apply {
@@ -577,6 +585,26 @@ object GaslessManager {
             }
         }
         return listOf(defaultSigner)
+    }
+
+    private fun resolveBatchComputeOptions(options: List<SendOptions>): ComputeOptions {
+        val distinct = options.map { it.computeOptions }.distinct()
+        require(distinct.size <= 1) {
+            "Batch transfer options must use the same computeOptions value"
+        }
+        return distinct.firstOrNull() ?: ComputeOptions()
+    }
+
+    private fun buildComputeBudgetInstructions(options: ComputeOptions): List<TransactionInstruction> {
+        val instructions = mutableListOf<TransactionInstruction>()
+        instructions.add(MPLCore.setComputeUnitLimit(options.computeUnitLimit))
+        options.computeUnitPriceMicroLamports?.takeIf { it > 0 }?.let {
+            instructions.add(MPLCore.setComputeUnitPrice(it))
+        }
+        options.heapFrameBytes?.takeIf { it > 0 }?.let {
+            instructions.add(MPLCore.requestHeapFrame(it))
+        }
+        return instructions
     }
 
 }
