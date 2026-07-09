@@ -547,11 +547,10 @@ object GaslessManager {
     private suspend fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
         val signer = overrideSigner ?: SdkConfig.currentSigner
         if (account.isNotBlank() ) {
-            StorageService.getDecryptedSeed(account)?.let { seed ->
-                val mnemonic = Mnemonic(seed.mnemonic)
-                val keypair = mnemonic.getKeyPair()
+            val keypair = StorageService.getDecryptedSeedKeyPair(account)
+            if(keypair != null)
                 return HotSigner(keypair)
-            }
+
         }
 
         requireNotNull(signer) {
