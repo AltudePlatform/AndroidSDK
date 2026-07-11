@@ -99,18 +99,18 @@ object Altude {
         } else {
             // Use normal storage (no Vault) with HotSigner
             SdkConfig.setApiKey(context, apiKey)
-            StorageService.init(context)
-            
-            // Generate mnemonic if not already stored
-            val existingSeeds = StorageService.getDecryptedSeeds()
-            if (existingSeeds.isEmpty()) {
-                saveMnemonic(Mnemonic.generateMnemonic(12))
-            }
-            
-            // Set up HotSigner from stored wallet
-            val storedWallets = StorageService.getDecryptedSeeds()
-            if (storedWallets.isNotEmpty()) {
-                val seedData = storedWallets.firstOrNull()
+            // StorageService.init is already called by SdkConfig.setApiKey above.
+
+            withContext(Dispatchers.IO) {
+                // Generate mnemonic if not already stored.
+                // filterNotNull() handles entries that failed to decrypt.
+                val existingSeeds = StorageService.getDecryptedSeeds().filterNotNull()
+                if (existingSeeds.isEmpty()) {
+                    saveMnemonic(Mnemonic.generateMnemonic(12))
+                }
+
+                // Set up HotSigner from the first successfully-decrypted wallet.
+                val seedData = StorageService.getDecryptedSeeds().filterNotNull().firstOrNull()
                 if (seedData != null && seedData.mnemonic.isNotEmpty()) {
                     val mnemonic = Mnemonic(seedData.mnemonic)
                     val keypair = mnemonic.getKeyPair()

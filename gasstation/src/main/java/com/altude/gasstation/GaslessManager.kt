@@ -545,21 +545,21 @@ object GaslessManager {
     }
 
     private suspend fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
-        val signer = overrideSigner ?: SdkConfig.currentSigner
-        if (account.isNotBlank() ) {
-            val keypair = StorageService.getDecryptedSeedKeyPair(account)
-            if(keypair != null)
-                return HotSigner(keypair)
+        // If caller provided an explicit signer, honour it without touching storage.
+        if (overrideSigner != null) return overrideSigner
 
+        if (account.isNotBlank()) {
+            val keypair = StorageService.getDecryptedSeedKeyPair(account)
+            if (keypair != null) return HotSigner(keypair)
         }
 
-        requireNotNull(signer) {
+        requireNotNull(SdkConfig.currentSigner) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
         // Defer account-match validation: the signer's publicKey may not be available
         // until after biometric unlock (VaultSigner throws VaultLockedException if not
         // yet cached). The check is performed in validateSignerAccount() after unlock.
-        return signer
+        return SdkConfig.currentSigner
     }
 
     private fun validateSignerAccount(signer: TransactionSigner, account: String) {
@@ -595,6 +595,9 @@ object GaslessManager {
     }
 
     private fun buildComputeBudgetInstructions(options: ComputeOptions): List<TransactionInstruction> {
+        require(options.computeUnitLimit > 0) {
+            "computeUnitLimit must be positive, got ${options.computeUnitLimit}"
+        }
         val instructions = mutableListOf<TransactionInstruction>()
         instructions.add(MPLCore.setComputeUnitLimit(options.computeUnitLimit))
         options.computeUnitPriceMicroLamports?.takeIf { it > 0 }?.let {

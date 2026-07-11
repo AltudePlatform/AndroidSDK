@@ -200,6 +200,9 @@ object StorageService {
         }
 
     suspend fun getDecryptedSeedKeyPair(accountAddress: String): Keypair? {
+        require(accountAddress.isNotBlank() && !accountAddress.contains('/') && !accountAddress.contains('\\')) {
+            "Invalid accountAddress: must be non-blank and contain no path separators"
+        }
         val seedData = getDecryptedSeed(accountAddress) ?: return null
         return when (seedData.type) {
             "mnemonic" -> {
