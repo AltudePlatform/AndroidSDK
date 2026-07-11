@@ -6,5 +6,6 @@ data class CloseAccountOption (
     val account: String = "",
     val tokens: List<String> = listOf(Token.USDC.mint()),
     val reference: String = "",
-    val commitment: Commitment = Commitment.finalized
+    val commitment: Commitment = Commitment.finalized,
+    val computeOptions: ComputeOptions = ComputeOptions()
 )

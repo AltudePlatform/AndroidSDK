@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.AEADBadTagException
+import foundation.metaplex.solanaeddsa.Keypair
 
 @Serializable
 data class SeedData(
@@ -197,4 +198,21 @@ object StorageService {
                 Json.decodeFromString<SeedData>(bytes.toString(Charsets.UTF_8))
             } catch (e: Exception) { Log.e(TAG, "Error decrypting ${file.name}", e); null }
         }
+
+    suspend fun getDecryptedSeedKeyPair(accountAddress: String): Keypair? {
+        require(accountAddress.isNotBlank() && !accountAddress.contains('/') && !accountAddress.contains('\\')) {
+            "Invalid accountAddress: must be non-blank and contain no path separators"
+        }
+        val seedData = getDecryptedSeed(accountAddress) ?: return null
+        return when (seedData.type) {
+            "mnemonic" -> {
+                val mnemonic = Mnemonic(seedData.mnemonic, seedData.passphrase)
+                mnemonic.getKeyPair()
+            }
+            "privatekey" -> {
+                seedData.privateKey?.let { SolanaEddsa.createKeypairFromSecretKey(it.copyOfRange(0, 32)) }
+            }
+            else -> null
+        }
+    }
 }

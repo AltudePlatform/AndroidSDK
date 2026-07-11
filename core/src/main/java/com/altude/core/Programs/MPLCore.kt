@@ -151,6 +151,18 @@ object MPLCore {
             data = data.array()
         )
     }
+
+    fun setComputeUnitPrice(microLamports: Long): TransactionInstruction {
+        val data = ByteBuffer.allocate(1 + 8).order(ByteOrder.LITTLE_ENDIAN)
+        data.put(3.toByte())          // tag for SetComputeUnitPrice
+        data.putLong(microLamports)   // micro-lamports per compute unit
+        return TransactionInstruction(
+            programId = Utility.COMPUTE_BUDGET_PROGRAM_ID,
+            keys = emptyList(),
+            data = data.array()
+        )
+    }
+
     fun requestHeapFrame(bytes: Int): TransactionInstruction {
         val data = ByteBuffer.allocate(1 + 4).order(ByteOrder.LITTLE_ENDIAN)
         data.put(1.toByte())          // tag for RequestHeapFrame

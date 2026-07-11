@@ -9,7 +9,8 @@ data class SendOptions (
     override val toAddress: String,
     override val amount: Double,
     override val token: String = Token.KIN.mint(),
-    override val commitment: Commitment = Commitment.finalized
+    override val commitment: Commitment = Commitment.finalized,
+    override val computeOptions: ComputeOptions = ComputeOptions()
 ) : ISendOption {
 
 }

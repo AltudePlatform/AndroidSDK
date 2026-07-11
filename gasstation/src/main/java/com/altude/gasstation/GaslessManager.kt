@@ -2,6 +2,7 @@ package com.altude.gasstation
 
 import android.util.Base64
 import com.altude.core.Programs.AssociatedTokenAccountProgram
+import com.altude.core.Programs.MPLCore
 import com.altude.core.Programs.SwapHelper
 import com.altude.core.Programs.TokenProgram
 import com.altude.core.api.SwapService
@@ -14,13 +15,17 @@ import com.altude.core.data.SwapInstructionRequest
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.SwapResponse
 import com.altude.core.data.toQueryMap
+import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransaction
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature
+import com.altude.core.model.HotSigner
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.core.model.TransactionSigner
 import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
+import com.altude.core.service.StorageService
+import com.altude.gasstation.data.ComputeOptions
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.ISendOption
@@ -95,6 +100,7 @@ object GaslessManager {
             val builder = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
                 .setRecentBlockHash(blockhashInfo.blockhash)
+                .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
             destinationCreateAta?.let { builder.addInstruction(it) }
             builder.addInstruction(transferInstruction)
             builder.setSigners(listOf(signerToUse))
@@ -116,6 +122,7 @@ object GaslessManager {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val finalSigners = resolveSignersForBatch(options, signers)
+                val computeOptions = resolveBatchComputeOptions(options)
                 val transferInstructions = mutableListOf<TransactionInstruction>()
 
                 options.forEach { option ->
@@ -159,6 +166,7 @@ object GaslessManager {
                 val builder = AltudeTransactionBuilder()
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhashInfo.blockhash)
+                    .addRangeInstruction(buildComputeBudgetInstructions(computeOptions))
                     .addRangeInstruction(transferInstructions)
                     .setSigners(finalSigners.distinctBy { it.publicKey.toBase58() })
 
@@ -212,7 +220,9 @@ object GaslessManager {
 
                 val blockhashInfo = rpc.getLatestBlockhash(commitment = option.commitment.name)
 
-                val tx = AltudeTransactionBuilder().addRangeInstruction(txInstructions)
+                val tx = AltudeTransactionBuilder()
+                    .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
+                    .addRangeInstruction(txInstructions)
                     .setFeePayer(feePayerPubKey)
                     .setRecentBlockHash(blockhashInfo.blockhash)
                     .setSigners(listOf(signerToUse))
@@ -277,6 +287,7 @@ object GaslessManager {
 
             val tx = AltudeTransactionBuilder()
                 .setFeePayer(feePayerPubKey)
+                .addRangeInstruction(buildComputeBudgetInstructions(option.computeOptions))
                 .addRangeInstruction(txInstructions)
                 .setRecentBlockHash(blockhashInfo.blockhash)
                 .apply {
@@ -533,15 +544,22 @@ object GaslessManager {
         }
     }
 
-    private fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
-        val signer = overrideSigner ?: SdkConfig.currentSigner
-        requireNotNull(signer) {
+    private suspend fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
+        // If caller provided an explicit signer, honour it without touching storage.
+        if (overrideSigner != null) return overrideSigner
+
+        if (account.isNotBlank()) {
+            val keypair = StorageService.getDecryptedSeedKeyPair(account)
+            if (keypair != null) return HotSigner(keypair)
+        }
+
+        requireNotNull(SdkConfig.currentSigner) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
         // Defer account-match validation: the signer's publicKey may not be available
         // until after biometric unlock (VaultSigner throws VaultLockedException if not
         // yet cached). The check is performed in validateSignerAccount() after unlock.
-        return signer
+        return SdkConfig.currentSigner
     }
 
     private fun validateSignerAccount(signer: TransactionSigner, account: String) {
@@ -557,7 +575,7 @@ object GaslessManager {
             ?: throw IllegalArgumentException("No signer matches requested account $account")
     }
 
-    private fun resolveSignersForBatch(options: List<SendOptions>, provided: List<TransactionSigner>?): List<TransactionSigner> {
+    private suspend fun resolveSignersForBatch(options: List<SendOptions>, provided: List<TransactionSigner>?): List<TransactionSigner> {
         provided?.let { return it }
         val defaultSigner = resolveSigner()
         options.firstOrNull { it.account.isNotBlank() }?.let { option ->
@@ -566,6 +584,29 @@ object GaslessManager {
             }
         }
         return listOf(defaultSigner)
+    }
+
+    private fun resolveBatchComputeOptions(options: List<SendOptions>): ComputeOptions {
+        val distinct = options.map { it.computeOptions }.distinct()
+        require(distinct.size <= 1) {
+            "Batch transfer options must use the same computeOptions value"
+        }
+        return distinct.firstOrNull() ?: ComputeOptions()
+    }
+
+    private fun buildComputeBudgetInstructions(options: ComputeOptions): List<TransactionInstruction> {
+        require(options.computeUnitLimit > 0) {
+            "computeUnitLimit must be positive, got ${options.computeUnitLimit}"
+        }
+        val instructions = mutableListOf<TransactionInstruction>()
+        instructions.add(MPLCore.setComputeUnitLimit(options.computeUnitLimit))
+        options.computeUnitPriceMicroLamports?.takeIf { it > 0 }?.let {
+            instructions.add(MPLCore.setComputeUnitPrice(it))
+        }
+        options.heapFrameBytes?.takeIf { it > 0 }?.let {
+            instructions.add(MPLCore.requestHeapFrame(it))
+        }
+        return instructions
     }
 
 }
