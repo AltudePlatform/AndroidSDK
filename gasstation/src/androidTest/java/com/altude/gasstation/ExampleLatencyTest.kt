@@ -15,16 +15,11 @@ import org.junit.Test
 
 class ExampleLatencyTest {
     private lateinit var context: Context
-    val accountPrivateKey = byteArrayOf(
-        235.toByte(), 144.toByte(), 12, 215.toByte(), 112, 178.toByte(), 249.toByte(), 227.toByte(), 180.toByte(), 112, 121, 214.toByte(), 13, 190.toByte(), 158.toByte(), 91,
-        208.toByte(), 118, 253.toByte(), 192.toByte(), 48, 6, 252.toByte(), 37, 111, 169.toByte(), 209.toByte(), 238.toByte(), 174.toByte(), 78, 210.toByte(), 184.toByte(),
-        9, 37, 75, 1, 98, 80, 44, 48, 119, 25, 193.toByte(), 156.toByte(), 161.toByte(), 185.toByte(), 250.toByte(), 119,
-        160.toByte(), 54, 62, 93, 4, 130.toByte(), 200.toByte(), 226.toByte(), 100, 255.toByte(), 215.toByte(), 170.toByte(), 26, 226.toByte(), 213.toByte(), 28
-    )
+    val accountPrivateKey = byteArrayOf()
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"ak_7KRePt6yFlsv_DYkuNGznpzpKFJTecsagXZwwSB0U2o")
+        Altude.setApiKey(context,"")
     }
     suspend fun <T>measureLatency(label: String, action: suspend () -> T): Long {
         val start = System.currentTimeMillis()
