@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     kotlin("plugin.serialization") version "2.2.0"
+    `maven-publish`
 }
 
 android {
@@ -105,4 +106,14 @@ dependencies {
     // Auth
     implementation(libs.jwt)
     implementation("com.solanamobile:web3-solana:0.2.5")
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+            }
+        }
+    }
 }

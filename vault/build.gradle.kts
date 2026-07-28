@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     kotlin("plugin.serialization") version "2.2.0"
+    `maven-publish`
 }
 
 android {
@@ -85,5 +86,15 @@ dependencies {
     // Serialization
     implementation(libs.serialization.json) {
         exclude(group = "com.ditchoom")
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+            }
+        }
     }
 }
