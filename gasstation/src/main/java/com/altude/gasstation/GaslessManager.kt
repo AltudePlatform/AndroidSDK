@@ -553,13 +553,13 @@ object GaslessManager {
             if (keypair != null) return HotSigner(keypair)
         }
 
-        requireNotNull(SdkConfig.currentSigner) {
+        val currentSigner = requireNotNull(SdkConfig.currentSigner) {
             "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
         }
         // Defer account-match validation: the signer's publicKey may not be available
         // until after biometric unlock (VaultSigner throws VaultLockedException if not
         // yet cached). The check is performed in validateSignerAccount() after unlock.
-        return SdkConfig.currentSigner
+        return currentSigner
     }
 
     private fun validateSignerAccount(signer: TransactionSigner, account: String) {
