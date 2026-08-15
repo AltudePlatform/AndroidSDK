@@ -2,6 +2,7 @@ package com.altude.android
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.altude.core.model.HotSigner
 import com.altude.gasstation.Altude
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.Commitment
@@ -26,7 +27,11 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        Altude.setApiKey(appContext,"my_apikey")
+        // The app owns key custody: Altude.setApiKey requires a real TransactionSigner.
+        // This placeholder signer is only used to satisfy initialization; individual
+        // tests provide their own signer explicitly for the operations they exercise.
+        val placeholderSigner = HotSigner(KeyPair.generate())
+        Altude.setApiKey(appContext, "my_apikey", placeholderSigner)
     }
     @Test
     fun useAppContext() {
@@ -37,9 +42,8 @@ class ExampleInstrumentedTest {
 
     @Test
     fun testCreateandCloseAccount() = runBlocking {
-        //Altude.saveMnemonic("size timber faint hip peasant dilemma priority woman dwarf market record fee")
         val keypair = KeyPair.generate()
-        Altude.savePrivateKey(keypair.secretKey)
+        val signer = HotSigner(keypair)
         val options = CreateAccountOption(
             account = keypair.publicKey.toBase58(),
             tokens = listOf(Token.KIN.mint()),
@@ -48,7 +52,7 @@ class ExampleInstrumentedTest {
             )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val result = Altude.createAccount(options)
+        val result = Altude.createAccount(options, signer)
 
         result
             .onSuccess {
@@ -69,7 +73,7 @@ class ExampleInstrumentedTest {
         )
 
         // Wrap the callback in a suspendable way (like a suspendCoroutine)
-        val closeresult = Altude.closeAccount(closeoptions)
+        val closeresult = Altude.closeAccount(closeoptions, signer)
 
         closeresult
             .onSuccess {

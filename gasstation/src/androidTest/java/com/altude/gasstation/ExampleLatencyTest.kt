@@ -2,10 +2,12 @@ package com.altude.gasstation
 
 import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
+import com.altude.core.model.HotSigner
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.Commitment
 import com.altude.gasstation.data.CreateAccountOption
 import com.altude.gasstation.data.GetHistoryOption
+import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SendOptions
 import com.altude.gasstation.data.Token
 import kotlinx.coroutines.runBlocking
@@ -15,11 +17,12 @@ import org.junit.Test
 
 class ExampleLatencyTest {
     private lateinit var context: Context
-    val accountPrivateKey = byteArrayOf()
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        Altude.setApiKey(context,"")
+        // App-owned signer required by Altude.setApiKey; the SDK never provides a default.
+        val signer = HotSigner(KeyPair.generate())
+        Altude.setApiKey(context, "", signer)
     }
     suspend fun <T>measureLatency(label: String, action: suspend () -> T): Long {
         val start = System.currentTimeMillis()
@@ -55,7 +58,6 @@ class ExampleLatencyTest {
                     )
                 Altude .closeAccount(options)
             })
-            Altude.savePrivateKey(accountPrivateKey)
             Thread.sleep(15000) // wait 15 seconds
             // Wrap the callback in a suspendable way (like a suspendCoroutine)
 

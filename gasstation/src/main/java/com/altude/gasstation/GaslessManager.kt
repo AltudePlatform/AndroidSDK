@@ -15,16 +15,13 @@ import com.altude.core.data.SwapInstructionRequest
 import com.altude.core.data.SwapRequest
 import com.altude.core.data.SwapResponse
 import com.altude.core.data.toQueryMap
-import com.altude.core.helper.Mnemonic
 import com.altude.core.model.AltudeTransaction
 import com.altude.core.model.AltudeTransactionBuilder
 import com.altude.core.model.EmptySignature
-import com.altude.core.model.HotSigner
 import com.altude.core.model.MessageAddressTableLookup
 import com.altude.core.model.TransactionSigner
 import com.altude.core.model.TransactionVersion
 import com.altude.core.network.AltudeRpc
-import com.altude.core.service.StorageService
 import com.altude.gasstation.data.ComputeOptions
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
@@ -62,7 +59,7 @@ object GaslessManager {
             }
     suspend fun transferToken(option: ISendOption, signer: TransactionSigner? = null): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            val signerToUse = resolveSigner(option.account, signer)
+            val signerToUse = resolveSigner(signer)
             validateSignerAccount(signerToUse, option.account)
             // After biometric unlock the public key is always available - use it as account
             val ownerKey = signerToUse.publicKey
@@ -186,7 +183,7 @@ object GaslessManager {
     suspend fun createAccount(option: CreateAccountOption, signer: TransactionSigner? = null): Result<String> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                val signerToUse = resolveSigner(option.account, signer)
+                val signerToUse = resolveSigner(signer)
                 validateSignerAccount(signerToUse, option.account)
                 val ownerKey = signerToUse.publicKey
 
@@ -245,7 +242,7 @@ object GaslessManager {
         signer: TransactionSigner? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
         return@withContext try {
-            val signerToUse = resolveSigner(option.account, signer)
+            val signerToUse = resolveSigner(signer)
             validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
                 ?: option.account.takeIf { it.isNotBlank() }?.let { PublicKey(it) }
@@ -293,7 +290,7 @@ object GaslessManager {
                 .apply {
                     if (requiresOwnerSignature) {
                         val signerForClose = signerToUse
-                            ?: throw IllegalStateException("Vault signer required to close account with owner authority")
+                            ?: throw IllegalStateException("A signer is required to close an account with owner authority")
                         setSigners(listOf(signerForClose))
                     }
                 }
@@ -316,7 +313,7 @@ object GaslessManager {
         signer: TransactionSigner? = null,
     ): Result<AltudeTransaction> = withContext(Dispatchers.IO) {
         try {
-            val signerToUse = resolveSigner(option.account, signer)
+            val signerToUse = resolveSigner(signer)
             validateSignerAccount(signerToUse, option.account)
             val ownerKey = signerToUse.publicKey
             val decimals = Utility.getTokenDecimals(option.inputMint)
@@ -448,7 +445,7 @@ object GaslessManager {
         signer: TransactionSigner? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val signerToUse = resolveSigner(option.account, signer)
+            val signerToUse = resolveSigner(signer)
             validateSignerAccount(signerToUse, option.account)
             val decimals = Utility.getTokenDecimals(option.inputMint)
             val rawAmount = (option.amount * (10.0.pow(decimals))).toLong()
@@ -542,24 +539,6 @@ object GaslessManager {
         } catch (e: Exception) {
             Result.failure(Exception(e.message ?: e.javaClass.simpleName, e))
         }
-    }
-
-    private suspend fun resolveSigner(account: String = "", overrideSigner: TransactionSigner? = null): TransactionSigner {
-        // If caller provided an explicit signer, honour it without touching storage.
-        if (overrideSigner != null) return overrideSigner
-
-        if (account.isNotBlank()) {
-            val keypair = StorageService.getDecryptedSeedKeyPair(account)
-            if (keypair != null) return HotSigner(keypair)
-        }
-
-        requireNotNull(SdkConfig.currentSigner) {
-            "Vault signer required. Call AltudeGasStation.init() before using SDK methods."
-        }
-        // Defer account-match validation: the signer's publicKey may not be available
-        // until after biometric unlock (VaultSigner throws VaultLockedException if not
-        // yet cached). The check is performed in validateSignerAccount() after unlock.
-        return SdkConfig.currentSigner
     }
 
     private fun validateSignerAccount(signer: TransactionSigner, account: String) {

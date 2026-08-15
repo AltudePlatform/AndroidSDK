@@ -37,9 +37,10 @@ object SdkConfig {
     var isDevnet: Boolean = false
 
     /**
-     * Current transaction signer. Initialized to HotSigner by default for backward compatibility.
-     * Can be overridden by setSigner() or during AltudeGasStation.init().
-     * All transaction builders use this signer unless explicitly overridden.
+     * Current transaction signer. Null until the application explicitly provides one via
+     * [setSigner] (typically through `AltudeGasStation.init()` or `Altude.setApiKey()`).
+     * The SDK never generates or defaults a signer on its own.
+     * Can be overridden per-operation by individual Gas Station calls.
      */
     var currentSigner: TransactionSigner? = null
         private set

@@ -1,10 +1,8 @@
 package com.altude.gasstation
 
 import android.content.Context
-import androidx.fragment.app.FragmentActivity
 import com.altude.core.api.GetAccountInfoRequest
 import com.altude.core.api.GetBalanceRequest
-import com.altude.core.config.InitOptions
 import com.altude.core.config.SdkConfig
 import com.altude.core.api.TransactionService
 import com.altude.gasstation.data.GetBalanceOption
@@ -14,9 +12,7 @@ import com.altude.gasstation.data.GetAccountInfoOption
 import com.altude.gasstation.data.GetHistoryData
 import com.altude.gasstation.data.GetHistoryOption
 import com.altude.gasstation.data.SendOptions
-import com.altude.core.helper.Mnemonic
 import com.altude.core.model.TransactionSigner
-import com.altude.core.model.HotSigner
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.SolanaKeypair
 import com.altude.core.service.StorageService
@@ -42,90 +38,42 @@ import retrofit2.await
 object Altude {
 
     /**
-     * Initialize the SDK with your API key and the default Vault signer.
+     * Initialize the SDK with your API key and an application-owned signer.
      *
-     * This is the only setup call SDK users need.
-     * It initialises the network layer, sets up the Vault, and registers the
-     * biometric-backed signer so every subsequent Altude.* call just works.
+     * The SDK never generates, stores, or reconstructs a signer on your behalf. You must
+     * supply a [TransactionSigner] you own (for example a [com.altude.core.model.HotSigner]
+     * built from a seed you manage, or a hardware/KMS-backed implementation). It becomes the
+     * default signer for subsequent Altude.* calls and can still be overridden per-operation
+     * by passing a `signer` argument to individual operations (e.g. [send]).
      *
      * Usage:
      * ```
      * // In onCreate() or Application.onCreate():
-     * Altude.setApiKey(this, "AK_...")
+     * Altude.setApiKey(this, "AK_...", myAppOwnedSigner)
      *
      * // Then anywhere in your app:
      * Altude.send(SendOptions(toAddress = "...", amount = 1.0))
      * ```
      *
-     * @param activity FragmentActivity required for biometric prompts (use `this` in Activity)
-     * @param apiKey   Your Altude API key
-     * @param options  Optional: override signer strategy (default = Vault with biometric)
-     * @return Result.success(Unit) or Result.failure(VaultException) with remediation info
+     * @param context Application context
+     * @param apiKey  Your Altude API key
+     * @param signer  Application-provided [TransactionSigner] to use as the default signer
+     * @return Result.success(Unit) or Result.failure(exception)
      */
     suspend fun setApiKey(
-        activity: FragmentActivity,
+        context: Context,
         apiKey: String,
-        options: InitOptions = InitOptions()
+        signer: TransactionSigner
     ): Result<Unit> {
-        return AltudeGasStation.init(activity, apiKey, options)
-    }
-
-    /**
-     * Simple API key setup with optional Vault storage.
-     *
-     * Usage:
-     * ```
-     * // Normal storage (no Vault)
-     * Altude.setApiKey(context, "ak_...")
-     *
-     * // With Vault storage
-     * Altude.setApiKey(activity, "ak_...", useVault = true)
-     * ```
-     *
-     * @param context Context or FragmentActivity
-     * @param apiKey Your Altude API key
-     * @param useVault If true, use Vault with biometric signer. If false (default), use normal storage
-     */
-    suspend fun setApiKey(context: Context, apiKey: String, useVault: Boolean = false) {
-        if (useVault) {
-            // Delegate to Vault-based initialization
-            if (context !is FragmentActivity) {
-                throw IllegalArgumentException(
-                    "Vault storage requires FragmentActivity context for biometric prompts. " +
-                            "Got ${context.javaClass.simpleName} instead."
-                )
-            }
-            AltudeGasStation.init(context, apiKey).getOrThrow()
-        } else {
-            // Use normal storage (no Vault) with HotSigner
+        return try {
             SdkConfig.setApiKey(context, apiKey)
-            // StorageService.init is already called by SdkConfig.setApiKey above.
-
-            withContext(Dispatchers.IO) {
-                // Generate mnemonic if not already stored.
-                // filterNotNull() handles entries that failed to decrypt.
-                val existingSeeds = StorageService.getDecryptedSeeds().filterNotNull()
-                if (existingSeeds.isEmpty()) {
-                    saveMnemonic(Mnemonic.generateMnemonic(12))
-                }
-
-                // Set up HotSigner from the first successfully-decrypted wallet.
-                val seedData = StorageService.getDecryptedSeeds().filterNotNull().firstOrNull()
-                if (seedData != null && seedData.mnemonic.isNotEmpty()) {
-                    val mnemonic = Mnemonic(seedData.mnemonic)
-                    val keypair = mnemonic.getKeyPair()
-                    val hotSigner = HotSigner(keypair)
-                    SdkConfig.setSigner(hotSigner)
-                }
-            }
+            SdkConfig.setSigner(signer)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-    }
-
-    suspend fun saveMnemonic(mnemonicWords: String) {
-        StorageService.storeMnemonic(mnemonicWords)
-    }
-    suspend fun savePrivateKey(byteArraySecretKey: ByteArray ) {
-        StorageService.storePrivateKeyByteArray(  byteArraySecretKey)
     }
 
     val json = Json {
@@ -312,7 +260,10 @@ object Altude {
     private fun resolveAccount(account: String): String {
         if (account.isNotBlank()) return account
         val signer = SdkConfig.currentSigner
-        requireNotNull(signer) { "Vault signer required. Call SdkConfig.setSigner(VaultSigner) before using SDK methods." }
+        requireNotNull(signer) {
+            "No signer configured. Provide a TransactionSigner via AltudeGasStation.init(), " +
+                "Altude.setApiKey(context, apiKey, signer), or SdkConfig.setSigner() before using SDK methods."
+        }
         return signer.publicKey.toBase58()
     }
 

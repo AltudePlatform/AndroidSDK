@@ -8,9 +8,11 @@ import foundation.metaplex.solanapublickeys.PublicKey
  * It extends the Metaplex Signer interface to provide a unified interface
  * for all transaction signing implementations across the SDK.
  *
- * All Gas Station signing flows route through this abstraction:
- * - VaultSigner (client-side encrypted keys with biometric auth)
- * - HotSigner (in-memory keys)
+ * The application owns key custody — the SDK never generates, stores, or
+ * defaults to a signer implementation. All Gas Station signing flows route
+ * through this abstraction, implemented by the host application, for example:
+ * - HotSigner (in-memory keys, provided by this SDK for apps to construct explicitly)
+ * - Hardware-backed or KMS-backed signers
  * - External signers (hardware wallets, multi-sig, etc.)
  * - Future signers (MPC, custodians, etc.)
  *
@@ -19,7 +21,8 @@ import foundation.metaplex.solanapublickeys.PublicKey
  * 2. Message signing (Ed25519 for Solana compatibility)
  *
  * The interface is designed to be:
- * - Transparent to most developers (auto-selected via SdkConfig)
+ * - Explicitly provided by the application (via AltudeGasStation.init, SdkConfig.setSigner,
+ *   or per-operation overrides)
  * - Overrideable per-transaction for advanced use cases
  * - Future-proof for new signing mechanisms
  */

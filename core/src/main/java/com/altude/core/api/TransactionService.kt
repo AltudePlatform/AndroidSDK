@@ -1,7 +1,6 @@
 package com.altude.core.api
 
 import com.altude.core.data.BatchTransactionRequest
-import com.altude.core.data.MintData
 import com.altude.core.data.SendTransactionRequest
 import com.altude.core.data.SwapTransactionRequest
 import kotlinx.serialization.Contextual
@@ -34,17 +33,6 @@ data class GetAccountInfoRequest(
     val accountAddress: String,
 )
 
-data class MintRequest(
-    val userId: String,
-    val transaction: String,
-    val code: String
-)
-
-
-data class MintResponse(
-    val status: String,
-    val data: MintData?
-)
 @Serializable
 data class QuickNodeResponse(
     val token: String,
@@ -101,17 +89,6 @@ interface TransactionService {
         @Query("walletAddress") address: String,
     ): Call<JsonElement>
 
-    @POST("api/nft/mint")
-    fun postMint(
-        @Body body: ISendTransactionRequest
-    ): Call<JsonElement>
-
-    @POST("api/nft/createNFTCollection")
-    fun postCreateCollectionNft(
-        @Body body: ISendTransactionRequest
-    ): Call<JsonElement>
-
     @GET("api/transaction/config")
     fun getConfig(): Call<ConfigResponse>
 }
-
