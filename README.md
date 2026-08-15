@@ -2,7 +2,7 @@
   <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
 
   # Altude Android SDK
-  
+
 **Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
 
 ***Fully Gasless, non-custodial and Simple***
@@ -16,6 +16,12 @@
 </div>
 
 ---
+
+> [!WARNING]
+> **Incubation only — unsupported and not for production.**
+> The Vault and NFT modules are experimental and unsupported. They are excluded
+> from production releases and may never ship. The `main` branch is the source of
+> truth for production-supported Android SDK modules.
 
 ## 🌟 Overview
 
@@ -37,7 +43,7 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
 <div align="center">
 <table>
   <tr>
-    <th align="center"> 
+    <th align="center">
       <b>Module</b>
     </th>
     <th align="center">
@@ -48,7 +54,7 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </th>
   </tr>
   <tr>
-    <td align="left"> 
+    <td align="left">
       Core
     </td>
     <td align="center">
@@ -59,7 +65,7 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
   </tr>
   <tr>
-    <td align="left"> 
+    <td align="left">
       Gas Station
     </td>
     <td align="center">
@@ -70,22 +76,22 @@ Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provid
     </td>
   </tr>
   <tr>
-    <td align="left"> 
+    <td align="left">
       Vault
     </td>
     <td align="center">
-      In Construction
+      Experimental / Unsupported
     </td>
     <td align="center">
       Unaudited
     </td>
   </tr>
    <tr>
-    <td align="left"> 
+    <td align="left">
       NFT
     </td>
     <td align="center">
-      In Construction
+      Experimental / Unsupported
     </td>
     <td align="center">
       Unaudited
@@ -132,7 +138,7 @@ Secure client-side key management with invisible biometric authentication:
 - Zero-knowledge architecture (keys never leave device)
 - Custom signer support (hardware wallet compatible)
 
-**Quick Start:** See [Vault Documentation](./docs/VAULT_DOCUMENTATION_INDEX.md)  
+**Quick Start:** See [Vault Documentation](./docs/VAULT_DOCUMENTATION_INDEX.md)
 **Examples:** [VaultExampleActivity](./app/src/main/java/com/altude/android/VaultExampleActivity.kt) • [ErrorHandlingExampleActivity](./app/src/main/java/com/altude/android/ErrorHandlingExampleActivity.kt)
 
 
@@ -181,10 +187,10 @@ Add dependencies to your app's `build.gradle.kts`:
 dependencies {
     // Core module (required)
     implementation("com.github.AltudePlatform.AndroidSDK:core:1.0.0")
-    
+
     // Gas Station module (for gasless transactions)
     implementation("com.github.AltudePlatform.AndroidSDK:gasstation:1.0.0")
-    
+
     // NFT module (for NFT operations)
     implementation("com.github.AltudePlatform.AndroidSDK:nft:1.0.0")
 }
@@ -210,12 +216,12 @@ import com.altude.gasstation.Altude
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        
+
         // Initialize SDK
         lifecycleScope.launch {
             SdkConfig.initialize()
             Altude.setApiKey(this@MyApplication, "your-api-key")
-            
+
             // Optional: Set up a wallet with mnemonic
             Altude.saveMnemonic("your twelve word mnemonic phrase here")
         }
@@ -256,10 +262,10 @@ val sendOptions = SendOptions(
 
 val result = Altude.send(sendOptions)
 result
-    .onSuccess { response -> 
+    .onSuccess { response ->
         println("Transaction sent! Signature: ${response.Signature}")
     }
-    .onFailure { error -> 
+    .onFailure { error ->
         println("Failed: ${error.message}")
     }
 ```
