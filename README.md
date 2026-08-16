@@ -232,6 +232,20 @@ cd AndroidSDK
 ./gradlew build
 ```
 
+## Releases
+
+`VERSION_NAME` in `gradle.properties` is the source version for the Android
+modules. Release Please runs after merges to `main`:
+
+1. Conventional commits are collected into an automated release PR.
+2. The release PR updates `VERSION_NAME`, `.release-please-manifest.json`, and
+   `CHANGELOG.md`.
+3. Merging the release PR creates the matching prerelease GitHub tag and release.
+4. JitPack builds the tagged Core and Gas Station artifacts.
+
+Use `feat:`, `fix:`, and other Conventional Commit prefixes so automated version
+bumps and changelog sections reflect the change.
+
 ### Running Tests
 
 ```bash
