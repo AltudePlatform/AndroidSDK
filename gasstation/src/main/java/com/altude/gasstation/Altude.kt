@@ -4,7 +4,6 @@ import android.content.Context
 import com.altude.core.api.GetAccountInfoRequest
 import com.altude.core.api.GetBalanceRequest
 import com.altude.core.config.SdkConfig
-import com.altude.core.keys.LocalKeyManager
 import com.altude.core.api.TransactionService
 import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
@@ -39,15 +38,15 @@ import retrofit2.await
 object Altude {
 
     /**
-     * Initialize the SDK with your API key.
+     * Initialize the SDK with your API key and a required transaction signer.
      *
-     * Core creates or reuses a basic encrypted local signer by default. Supply a custom
-     * [TransactionSigner] only when the application needs a different signing strategy.
+     * The application must supply its own [TransactionSigner]. No default signer is
+     * created automatically; passing `null` will throw an [IllegalArgumentException].
      *
      * Usage:
      * ```
      * // In onCreate() or Application.onCreate():
-     * Altude.setApiKey(this, "AK_...")
+     * Altude.setApiKey(this, "AK_...", mySigner)
      *
      * // Then anywhere in your app:
      * Altude.send(SendOptions(toAddress = "...", amount = 1.0))
@@ -55,17 +54,17 @@ object Altude {
      *
      * @param context Application context
      * @param apiKey  Your Altude API key
-     * @param signer  Optional custom signer. When omitted, Core manages a local signer.
+     * @param signer  The application-owned signer used to authorize transactions.
      * @return Result.success(Unit) or Result.failure(exception)
      */
     suspend fun setApiKey(
         context: Context,
         apiKey: String,
-        signer: TransactionSigner? = null
+        signer: TransactionSigner
     ): Result<Unit> {
         return try {
             SdkConfig.setApiKey(context, apiKey)
-            SdkConfig.setSigner(signer ?: LocalKeyManager(context).getOrCreateDefaultSigner())
+            SdkConfig.setSigner(signer)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
