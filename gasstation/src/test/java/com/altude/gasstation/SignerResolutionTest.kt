@@ -12,11 +12,9 @@ import org.junit.Test
 /**
  * Unit tests for the internal [resolveSigner] function used by [GaslessManager].
  *
- * Gas Station requires an application-provided [TransactionSigner]. The SDK never generates,
- * stores, or reconstructs one on its own (no mnemonic/private-key storage lookup, no
- * account-based key derivation). These tests pin down the exact, two-tier resolution
- * contract: an explicit per-call override always wins over the configured signer, and a
- * clear error is thrown when neither is available — with no other fallback in between.
+ * Initialization registers a Core-managed or custom [TransactionSigner]. These tests pin down
+ * operation-time resolution: an explicit per-call override always wins over the configured
+ * signer, and a clear error is thrown when neither is available.
  */
 class SignerResolutionTest {
 
@@ -74,8 +72,8 @@ class SignerResolutionTest {
         }
 
         assertEquals(
-            "No signer configured. Provide a TransactionSigner via AltudeGasStation.init(), " +
-                "Altude.setApiKey(context, apiKey, signer), or SdkConfig.setSigner() before using SDK methods.",
+            "No signer configured. Call AltudeGasStation.init() or Altude.setApiKey() " +
+                "before using SDK methods.",
             exception.message
         )
     }

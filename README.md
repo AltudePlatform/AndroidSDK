@@ -5,7 +5,7 @@
 
 **Altude is Gasless Wallet Infrastructure for Solana**
 
-***Gasless. Non-custodial. App-owned keys.***
+***Gasless. Non-custodial. Simple by default.***
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
@@ -22,17 +22,16 @@
 Altude is gasless transaction infrastructure for Solana. The Android SDK lets your app send, swap,
 and manage SPL tokens without your users ever needing SOL for gas — Altude sponsors the fees.
 
-The SDK is intentionally small in scope: it does **not** generate, store, or manage private keys on
-your behalf. Your app owns key custody end-to-end and supplies a signer that implements
-[`com.altude.core.model.TransactionSigner`](./core/src/main/java/com/altude/core/model/TransactionSigner.kt).
-How you obtain and protect that signer (Android Keystore, a hardware wallet, a remote signing
-service, or a simple in-memory key) is entirely up to you.
+Core includes basic encrypted on-device key management, so a standard integration does not need
+to implement a signer. Advanced applications can still provide a custom
+[`TransactionSigner`](./core/src/main/java/com/altude/core/model/TransactionSigner.kt) for
+hardware wallets, KMS, MPC, or other signing strategies.
 
 ## ✨ Features
 
 - **⛽ Gasless Transactions** - Send, swap, and manage SPL tokens without gas fees
 - **💸 Token Operations** - Send, receive, and swap SPL tokens via Jupiter aggregator
-- **🔑 App-Owned Signing** - You provide a `TransactionSigner`; the SDK never generates or defaults to one
+- **🔑 Built-In Key Management** - Encrypted local keys work without custom signer code
 - **🚀 Developer Friendly** - Clean APIs with full Kotlin coroutine support
 
 ## 📦 Modules
@@ -45,8 +44,8 @@ The Altude Android SDK ships two modules, plus a minimal example app:
 The foundation of the SDK, providing:
 - RPC communication with Solana nodes
 - Transaction building
-- Cryptographic primitives (`TransactionSigner` interface, `HotSigner` reference implementation)
-- Mnemonic/keypair helpers and optional encrypted local storage
+- Key-management primitives (`KeyManager`, `LocalKeyManager`, `TransactionSigner`, `HotSigner`)
+- Mnemonic/keypair helpers and Android Keystore-backed encrypted local storage
 - Network configuration
 
 ### [`gasstation`](./gasstation)
@@ -58,48 +57,40 @@ Enable sponsored transactions for your users:
 - Token swaps via Jupiter aggregator
 - Account creation and management
 - Balance and history queries
-- Automatic fee payment handling — requires an app-provided signer (see below)
+- Automatic fee payment handling
 
 ### [`app`](./app)
-A minimal example Android app demonstrating the app-owned-signer integration pattern.
+A minimal example Android app demonstrating built-in local signing.
 
-## 🔑 Signer Ownership Model
+## 🔑 Key Management
 
-Gas Station **requires** an application-provided `TransactionSigner` — there is no default,
-Vault-backed, or SDK-generated signer. You must construct and supply one before Gas Station can
-authorize any transaction:
+The basic integration creates or reuses an encrypted local signer managed by Core:
 
 ```kotlin
-import com.altude.core.model.TransactionSigner
 import com.altude.gasstation.AltudeGasStation
 
-// Implement TransactionSigner yourself (Android Keystore, HSM, hardware wallet,
-// remote signing service, or an in-memory keypair for prototyping).
-val signer: TransactionSigner = MyAppOwnedSigner(/* ... */)
-
-// Required initialization — signer is mandatory, not optional.
-AltudeGasStation.init(context, apiKey, signer)
+AltudeGasStation.init(context, apiKey)
 ```
 
-If no signer is configured, Gas Station calls fail immediately with a clear error rather than
-silently falling back to any default key material.
+Core's [`LocalKeyManager`](./core/src/main/java/com/altude/core/keys/LocalKeyManager.kt) exposes
+simple create, import, list, select, and delete operations. Keys are encrypted at rest with Android
+Keystore. For an advanced integration, pass a custom signer during initialization:
 
-Notes on the signer contract:
-- `core` ships [`HotSigner`](./core/src/main/java/com/altude/core/model/HotSigner.kt) as an
-  optional, explicit `TransactionSigner` implementation apps may choose to use — it is never
-  constructed or registered automatically by the SDK.
+```kotlin
+AltudeGasStation.init(context, apiKey, myHardwareBackedSigner)
+```
+
+Notes:
 - Individual Gas Station operations also accept a per-call signer override, letting you sign
   a specific operation with a different key than the one registered at init time.
-- There is no SDK-owned mnemonic/private-key storage or auto-signer path reachable from Gas
-  Station. `AltudeGasStation.init`/`Altude.setApiKey` require a real `TransactionSigner`
-  argument — there is no default or nullable signer path.
+- Gas Station does not choose keys from transaction account input. Initialization registers one
+  deterministic default signer, which can be replaced explicitly.
 
 ## 📖 Quick Examples
 
 ### Initialize the SDK
 
 ```kotlin
-import com.altude.core.model.TransactionSigner
 import com.altude.gasstation.AltudeGasStation
 
 class MyApplication : Application() {
@@ -107,8 +98,7 @@ class MyApplication : Application() {
         super.onCreate()
 
         lifecycleScope.launch {
-            val signer: TransactionSigner = MyAppOwnedSigner(/* ... */)
-            AltudeGasStation.init(this@MyApplication, "your-api-key", signer)
+            AltudeGasStation.init(this@MyApplication, "your-api-key")
         }
     }
 }
@@ -190,7 +180,7 @@ result.onSuccess { balance ->
 ```
 ┌─────────────────────────────────────────────┐
 │           Your Android App                  │
-│  (owns and supplies the TransactionSigner)   │
+│        (uses local or custom signing)        │
 └───────────────────┬───────────────────────────┘
                      │
              ┌───────▼────────┐
@@ -201,8 +191,8 @@ result.onSuccess { balance ->
              ┌───────▼────────┐
              │  Core Module   │
              │  - RPC Layer   │
+             │  - Key Manager │
              │  - Signer API  │
-             │  - Storage     │
              └───────┬────────┘
                      │
            ┌─────────▼─────────────┐
@@ -218,18 +208,16 @@ result.onSuccess { balance ->
 
 ## 🔐 Security
 
-- **App-owned keys**: The SDK never generates, stores, or defaults to a signer — your app controls
-  key custody end-to-end.
-- **Optional encrypted storage**: `core`'s `StorageService` is a standalone utility apps may use
-  directly (not through Gas Station) to store/retrieve key material and build their own
-  `TransactionSigner`. Gas Station never calls it automatically and has no fallback path to it.
+- **Local custody**: Core's default key manager stores encrypted key material on the device; it is
+  never sent to Altude.
+- **Pluggable signing**: Apps can replace local signing with a hardware, HSM, MPC, or remote signer.
 - **Secure communication**: API calls use HTTPS.
 - **Open Source**: Fully auditable code.
 
 ### Best Practices
 
-- Implement `TransactionSigner` using key storage appropriate for your threat model (Android
-  Keystore, HSM, remote signing service, hardware wallet).
+- Use a custom `TransactionSigner` when the built-in local key manager does not meet your threat
+  model or recovery requirements.
 - Never log or expose private keys or mnemonics.
 - Use appropriate commitment levels for your use case.
 - Validate all user inputs before creating transactions.

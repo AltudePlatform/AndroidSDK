@@ -20,7 +20,7 @@ class ExampleLatencyTest {
     @Before
     fun setup()=runBlocking{
         context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        // App-owned signer required by Altude.setApiKey; the SDK never provides a default.
+        // Use an explicit signer so latency tests have deterministic key material.
         val signer = HotSigner(KeyPair.generate())
         Altude.setApiKey(context, "", signer)
     }

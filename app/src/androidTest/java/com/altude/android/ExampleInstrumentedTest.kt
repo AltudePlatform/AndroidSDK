@@ -27,9 +27,7 @@ class ExampleInstrumentedTest {
     @Before
     fun setup()=runBlocking{
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        // The app owns key custody: Altude.setApiKey requires a real TransactionSigner.
-        // This placeholder signer is only used to satisfy initialization; individual
-        // tests provide their own signer explicitly for the operations they exercise.
+        // Use an explicit signer here so each test has deterministic key material.
         val placeholderSigner = HotSigner(KeyPair.generate())
         Altude.setApiKey(appContext, "my_apikey", placeholderSigner)
     }

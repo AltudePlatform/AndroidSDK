@@ -4,6 +4,7 @@ import android.content.Context
 import com.altude.core.api.GetAccountInfoRequest
 import com.altude.core.api.GetBalanceRequest
 import com.altude.core.config.SdkConfig
+import com.altude.core.keys.LocalKeyManager
 import com.altude.core.api.TransactionService
 import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
@@ -38,18 +39,15 @@ import retrofit2.await
 object Altude {
 
     /**
-     * Initialize the SDK with your API key and an application-owned signer.
+     * Initialize the SDK with your API key.
      *
-     * The SDK never generates, stores, or reconstructs a signer on your behalf. You must
-     * supply a [TransactionSigner] you own (for example a [com.altude.core.model.HotSigner]
-     * built from a seed you manage, or a hardware/KMS-backed implementation). It becomes the
-     * default signer for subsequent Altude.* calls and can still be overridden per-operation
-     * by passing a `signer` argument to individual operations (e.g. [send]).
+     * Core creates or reuses a basic encrypted local signer by default. Supply a custom
+     * [TransactionSigner] only when the application needs a different signing strategy.
      *
      * Usage:
      * ```
      * // In onCreate() or Application.onCreate():
-     * Altude.setApiKey(this, "AK_...", myAppOwnedSigner)
+     * Altude.setApiKey(this, "AK_...")
      *
      * // Then anywhere in your app:
      * Altude.send(SendOptions(toAddress = "...", amount = 1.0))
@@ -57,17 +55,17 @@ object Altude {
      *
      * @param context Application context
      * @param apiKey  Your Altude API key
-     * @param signer  Application-provided [TransactionSigner] to use as the default signer
+     * @param signer  Optional custom signer. When omitted, Core manages a local signer.
      * @return Result.success(Unit) or Result.failure(exception)
      */
     suspend fun setApiKey(
         context: Context,
         apiKey: String,
-        signer: TransactionSigner
+        signer: TransactionSigner? = null
     ): Result<Unit> {
         return try {
             SdkConfig.setApiKey(context, apiKey)
-            SdkConfig.setSigner(signer)
+            SdkConfig.setSigner(signer ?: LocalKeyManager(context).getOrCreateDefaultSigner())
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -261,8 +259,8 @@ object Altude {
         if (account.isNotBlank()) return account
         val signer = SdkConfig.currentSigner
         requireNotNull(signer) {
-            "No signer configured. Provide a TransactionSigner via AltudeGasStation.init(), " +
-                "Altude.setApiKey(context, apiKey, signer), or SdkConfig.setSigner() before using SDK methods."
+            "No signer configured. Call AltudeGasStation.init() or Altude.setApiKey() " +
+                "before using SDK methods."
         }
         return signer.publicKey.toBase58()
     }
@@ -306,6 +304,9 @@ object Altude {
         val keypair = KeyPair.generate()
         return SolanaKeypair(keypair.publicKey,keypair.secretKey)
     }
+
+    fun currentAccount(): String = resolveAccount("")
+
     fun storedWallet():List<String>{
         return StorageService.listStoredWalletAddresses()
     }

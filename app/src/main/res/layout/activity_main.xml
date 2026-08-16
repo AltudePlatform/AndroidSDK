@@ -35,45 +35,10 @@
                 android:id="@+id/descriptionText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="App-owned signer example: this app supplies its own com.altude.core.model.TransactionSigner — Gas Station never generates or stores keys on its own."
+                android:text="Core creates or reuses an encrypted local signer automatically. Advanced apps can still provide a custom signer."
                 android:textSize="14sp"
                 android:alpha="0.7"
                 android:paddingBottom="24dp" />
-
-            <!-- Key Pair Input -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/rounded_background"
-                android:padding="16dp"
-                android:layout_marginBottom="20dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="1. Provide Private Key (Hex):"
-                    android:textStyle="bold"
-                    android:textSize="14sp"
-                    android:paddingBottom="8dp" />
-
-                <EditText
-                    android:id="@+id/privateKeyInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:hint="64-character hex string"
-                    android:textSize="12sp"
-                    android:inputType="text"
-                    android:singleLine="true"
-                    android:layout_marginBottom="12dp" />
-
-                <Button
-                    android:id="@+id/generateKeyButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:text="Generate Test Key Pair" />
-
-            </LinearLayout>
 
             <!-- Status Display -->
             <LinearLayout
@@ -87,7 +52,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="2. Status:"
+                    android:text="Status:"
                     android:textStyle="bold"
                     android:textSize="14sp"
                     android:paddingBottom="8dp" />
@@ -96,7 +61,7 @@
                     android:id="@+id/statusText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Ready to initialize with an app-owned signer..."
+                    android:text="Ready to initialize..."
                     android:textSize="12sp"
                     android:lineSpacingMultiplier="1.5" />
 
@@ -125,9 +90,9 @@
             android:id="@+id/initButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:text="Initialize Gas Station with Signer"
+            android:text="Initialize Gas Station"
             android:layout_marginBottom="8dp"
-            android:enabled="false" />
+            android:enabled="true" />
 
         <Button
             android:id="@+id/transferButton"

@@ -37,9 +37,8 @@ object SdkConfig {
     var isDevnet: Boolean = false
 
     /**
-     * Current transaction signer. Null until the application explicitly provides one via
-     * [setSigner] (typically through `AltudeGasStation.init()` or `Altude.setApiKey()`).
-     * The SDK never generates or defaults a signer on its own.
+     * Current transaction signer. Initialization registers either Core's managed local signer
+     * or a custom signer supplied by the application.
      * Can be overridden per-operation by individual Gas Station calls.
      */
     var currentSigner: TransactionSigner? = null

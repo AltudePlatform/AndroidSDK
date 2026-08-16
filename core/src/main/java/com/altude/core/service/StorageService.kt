@@ -183,8 +183,7 @@ object StorageService {
                    else seedFile(accountAddress).takeIf { it.exists() }
         file ?: return null
         return try {
-            val bytes = encryptedFile(file, buildMasterKey()).openFileInput().use { it.readBytes() }
-            Json.decodeFromString<SeedData>(bytes.toString(Charsets.UTF_8))
+            readEncryptedSeed(file)
         } catch (e: Exception) {
             Log.e(TAG, "Decryption failed for $accountAddress", e)
             null
@@ -203,16 +202,39 @@ object StorageService {
         require(accountAddress.isNotBlank() && !accountAddress.contains('/') && !accountAddress.contains('\\')) {
             "Invalid accountAddress: must be non-blank and contain no path separators"
         }
-        val seedData = getDecryptedSeed(accountAddress) ?: return null
+        val file = seedFile(accountAddress)
+        if (!file.exists()) return null
+        val seedData = try {
+            readEncryptedSeed(file)
+        } catch (e: Exception) {
+            Log.e(TAG, "Decryption failed for $accountAddress", e)
+            throw IllegalStateException(
+                "Unable to decrypt locally managed account $accountAddress",
+                e
+            )
+        }
         return when (seedData.type) {
             "mnemonic" -> {
                 val mnemonic = Mnemonic(seedData.mnemonic, seedData.passphrase)
                 mnemonic.getKeyPair()
             }
             "privatekey" -> {
-                seedData.privateKey?.let { SolanaEddsa.createKeypairFromSecretKey(it.copyOfRange(0, 32)) }
+                val privateKey = requireNotNull(seedData.privateKey) {
+                    "Stored private-key account $accountAddress has no key material"
+                }
+                require(privateKey.size >= 32) {
+                    "Stored private-key account $accountAddress has invalid key material"
+                }
+                SolanaEddsa.createKeypairFromSecretKey(privateKey.copyOfRange(0, 32))
             }
-            else -> null
+            else -> throw IllegalStateException(
+                "Stored account $accountAddress has unsupported type '${seedData.type}'"
+            )
         }
+    }
+
+    private fun readEncryptedSeed(file: File): SeedData {
+        val bytes = encryptedFile(file, buildMasterKey()).openFileInput().use { it.readBytes() }
+        return Json.decodeFromString<SeedData>(bytes.toString(Charsets.UTF_8))
     }
 }

@@ -12,11 +12,9 @@ import org.junit.Test
 /**
  * Unit tests for [SdkConfig]'s signer registry.
  *
- * Gas Station never generates or defaults a signer on its own — the application must
- * explicitly provide a [TransactionSigner] via [SdkConfig.setSigner] (typically through
- * `AltudeGasStation.init()` or `Altude.setApiKey()`). These tests validate that registry
- * behavior: signers are only ever what the app explicitly configured, `clearSigner()`
- * removes it, and later calls to `setSigner()` replace the previous signer.
+ * Gas Station initialization registers a Core-managed or custom [TransactionSigner] through
+ * [SdkConfig.setSigner]. These tests validate the registry behavior: `clearSigner()` removes
+ * the current signer and later calls to `setSigner()` replace it.
  */
 class SignerRoutingTest {
 
