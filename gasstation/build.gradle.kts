@@ -43,7 +43,6 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":core"))
-    implementation(project(":vault"))
     // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
@@ -63,6 +62,3 @@ dependencies {
 //        exclude(group = "com.ditchoom.buffer")
 //    }
 }
-
-
-

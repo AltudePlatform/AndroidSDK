@@ -8,9 +8,10 @@ import foundation.metaplex.solanapublickeys.PublicKey
  * It extends the Metaplex Signer interface to provide a unified interface
  * for all transaction signing implementations across the SDK.
  *
- * All Gas Station signing flows route through this abstraction:
- * - VaultSigner (client-side encrypted keys with biometric auth)
+ * All Gas Station signing flows route through this abstraction. Core provides
+ * basic local key management, while applications can replace it with:
  * - HotSigner (in-memory keys)
+ * - Hardware-backed or KMS-backed signers
  * - External signers (hardware wallets, multi-sig, etc.)
  * - Future signers (MPC, custodians, etc.)
  *
@@ -19,7 +20,7 @@ import foundation.metaplex.solanapublickeys.PublicKey
  * 2. Message signing (Ed25519 for Solana compatibility)
  *
  * The interface is designed to be:
- * - Transparent to most developers (auto-selected via SdkConfig)
+ * - Backed by Core's local key manager or provided by the application
  * - Overrideable per-transaction for advanced use cases
  * - Future-proof for new signing mechanisms
  */

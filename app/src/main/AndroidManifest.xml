@@ -17,33 +17,13 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="Altude SDK Examples"
+            android:label="Altude SDK Example"
             android:theme="@style/Theme.Altudesdk">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".VaultExampleActivity"
-            android:exported="false"
-            android:label="Vault Example"
-            android:theme="@style/Theme.Altudesdk" />
-        <activity
-            android:name=".ErrorHandlingExampleActivity"
-            android:exported="false"
-            android:label="Error Handling Example"
-            android:theme="@style/Theme.Altudesdk" />
-        <activity
-            android:name=".ExternalSignerExampleActivity"
-            android:exported="false"
-            android:label="External Signer Example"
-            android:theme="@style/Theme.Altudesdk" />
-        <activity
-            android:name=".SignerExamplesActivity"
-            android:exported="false"
-            android:label="Signer Examples"
-            android:theme="@style/Theme.Altudesdk" />
     </application>
 
 </manifest>

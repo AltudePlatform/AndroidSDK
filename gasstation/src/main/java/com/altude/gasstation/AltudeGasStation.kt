@@ -1,223 +1,51 @@
 package com.altude.gasstation
 
 import android.content.Context
-import androidx.fragment.app.FragmentActivity
-import com.altude.core.config.InitOptions
 import com.altude.core.config.SdkConfig
-import com.altude.core.config.SignerStrategy
-import com.altude.core.helper.Mnemonic
-import com.altude.core.service.StorageService
-import com.altude.vault.manager.VaultManager
-import com.altude.vault.model.VaultSigner
-import com.altude.vault.model.VaultStorageCorruptedException
+import com.altude.core.model.TransactionSigner
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * ModernAltudeGasStation provides the modern SDK initialization API with Vault as the default signer.
- * This is the recommended entry point for new integrations.
+ * AltudeGasStation provides the primary SDK initialization API.
  *
- * Typical usage (defaults to Vault with biometrics):
- * ```
- * AltudeGasStation.init(context, apiKey)
- * // Then use Altude object or new async APIs
- * ```
+ * Applications must provide a custom [TransactionSigner] for hardware, KMS, or
+ * other signing requirements.
  *
- * Advanced usage (custom signer):
+ * Typical usage:
  * ```
- * AltudeGasStation.init(
- *     context,
- *     apiKey,
- *     InitOptions(signerStrategy = SignerStrategy.External(myCustomSigner))
- * )
+ * AltudeGasStation.init(context, apiKey, signer)
+ * // Then use the Altude object to send transactions.
  * ```
- *
- * Key differences from legacy `Altude.setApiKey()`:
- * - VaultSigner is the default (not HotSigner)
- * - Biometric authentication is required (no plaintext fallback)
- * - Session-based key management with TTL
- * - Modern error handling with remediation guidance
  */
 object AltudeGasStation {
 
     /**
-     * Initialize AltudeGasStation with the given API key and optional configuration.
-     * This sets up the transaction signer, initializes Core SDK services, and prepares the vault if using Vault strategy.
+     * Initialize AltudeGasStation with the given API key.
      *
      * Flow:
-     * 1. Validate inputs and check biometric availability (if required)
-     * 2. Initialize Core SDK services (SdkConfig, StorageService)
-     * 3. Generate or initialize vault based on signer strategy
-     * 4. Set up the transaction signer in SdkConfig
+     * 1. Initialize Core SDK services (SdkConfig, StorageService).
+     * 2. Register [signer].
      *
-     * @param context FragmentActivity context required for biometric prompts if using Vault
+     * @param context Application context
      * @param apiKey Altude Gas Station API key for authentication
-     * @param options Init configuration including signer strategy (defaults to Vault with biometrics)
-     * @return Result indicating success or failure with remediation messaging
-     *
-     * @throws IllegalArgumentException if context is not FragmentActivity
-     * @throws VaultException if vault initialization fails
-     * @throws BiometricNotAvailableException if biometric required but not available
+     * @param signer Application-owned signer.
+     * @return Result indicating success or failure
      */
     suspend fun init(
         context: Context,
         apiKey: String,
-        options: InitOptions = InitOptions()
+        signer: TransactionSigner? = null
     ): Result<Unit> {
         return try {
-            // Step 1: Ensure context is FragmentActivity for biometric support
-            if (options.signerStrategy is SignerStrategy.VaultDefault && context !is FragmentActivity) {
-                throw IllegalArgumentException(
-                    "VaultSigner requires FragmentActivity context for biometric prompts. " +
-                            "Got ${context.javaClass.simpleName} instead."
-                )
-            }
-
-            // Step 2: Initialize Core SDK services
+            val resolvedSigner = signer
+                ?: return Result.failure(IllegalArgumentException("Signer is required"))
             SdkConfig.setApiKey(context, apiKey)
-
-            // Step 3: Initialize storage first so we can read stored wallet addresses
-            StorageService.init(context)
-
-            // Step 4: Set up signer based on strategy
-            val strategy: SignerStrategy = options.signerStrategy
-            val signer = when (strategy) {
-                is SignerStrategy.VaultDefault -> createVaultSigner(context, options)
-                is SignerStrategy.External -> strategy.signer
-            }
-
-            // Step 5: Set the signer in SdkConfig for all subsequent operations
-            SdkConfig.setSigner(signer)
-
-            // Step 6: Generate mnemonic for backward compatibility (best-effort — don't fail init)
-            try {
-                Altude.saveMnemonic(Mnemonic.generateMnemonic(12))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                android.util.Log.w("AltudeGasStation", "saveMnemonic failed (non-fatal): ${e.message}")
-            }
-
+            SdkConfig.setSigner(resolvedSigner)
             Result.success(Unit)
-        } catch (e: com.altude.vault.model.VaultException) {
-            // Vault exceptions already have clear messages — pass through as-is
-            Result.failure(e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
-    }
-
-    /**
-     * Create and initialize a VaultSigner.
-     * This internally creates the vault if it doesn't exist, then returns the initialized signer.
-     *
-     * @param context FragmentActivity context for biometric operations
-     * @param options Init options containing vault configuration
-     * @return Initialized VaultSigner ready for signing
-     */
-    private suspend fun createVaultSigner(
-        context: Context,
-        options: InitOptions
-    ): VaultSigner {
-        val vaultOptions = options.signerStrategy as SignerStrategy.VaultDefault
-
-        val appId = vaultOptions.appId.ifEmpty {
-            context.packageName
-        }
-
-        // Create vault if it doesn't exist.
-        suspend fun ensureVaultCreated() {
-            VaultManager.createVault(
-                context,
-                appId,
-                requireBiometric = vaultOptions.enableBiometric
-            )
-        }
-
-        val isNewVault = !VaultManager.vaultExists(context, appId)
-
-        if (isNewVault) {
-            try {
-                ensureVaultCreated()
-            } catch (e: VaultStorageCorruptedException) {
-                VaultManager.clearVault(context, appId)
-                ensureVaultCreated()
-            }
-        }
-
-        // Unlock vault immediately — this prompts biometric ONCE at init time,
-        // derives the keypair, caches the session, and gives us the public key.
-        // This is the expected UX: user authenticates when tapping Initialize,
-        // not silently on the first transaction.
-        // If the vault keyset is stale (e.g. partial data clear), retry once
-        // after clearing the corrupted vault and recreating it.
-        val keypair = try {
-            VaultManager.unlockVault(
-                context = context,
-                appId = appId,
-                walletIndex = vaultOptions.walletIndex,
-                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
-                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
-                    title = if (isNewVault) "Set Up Vault" else "Unlock Vault",
-                    description = if (isNewVault)
-                        "Authenticate to secure your new wallet"
-                    else
-                        "Authenticate to unlock your wallet"
-                )
-            )
-        } catch (e: VaultStorageCorruptedException) {
-            VaultManager.clearVault(context, appId)
-            ensureVaultCreated()
-            VaultManager.unlockVault(
-                context = context,
-                appId = appId,
-                walletIndex = vaultOptions.walletIndex,
-                sessionTTLSeconds = vaultOptions.sessionTTLSeconds,
-                authMessages = com.altude.vault.model.VaultSigner.AuthMessages(
-                    title = "Set Up Vault",
-                    description = "Authenticate to secure your new wallet"
-                )
-            )
-        }
-
-        val publicKey = foundation.metaplex.solanapublickeys.PublicKey(keypair.publicKey.toByteArray())
-
-        return VaultSigner.create(
-            context = context,
-            appId = appId,
-            walletIndex = vaultOptions.walletIndex,
-            initialPublicKey = publicKey
-        )
-    }
-
-    /**
-     * Lock the current vault session (if using VaultSigner).
-     * The next transaction will require biometric re-authentication.
-     * Only has an effect if using a VaultSigner; other signers are unaffected.
-     */
-    suspend fun lockVault() {
-        VaultManager.lockVault()
-    }
-
-    /**
-     * Check if the vault session is currently unlocked.
-     * Only relevant if using VaultSigner.
-     *
-     * @return true if vault is unlocked and session is valid, false otherwise
-     */
-    suspend fun isVaultUnlocked(): Boolean {
-        return VaultManager.isVaultUnlocked()
-    }
-
-    /**
-     * Clear the vault completely (destructive operation).
-     * This deletes all vault data and should only be called when resetting the app or user.
-     * Typically called on logout or app data clear.
-     *
-     * @param context Application context
-     * @param appId Vault identifier (typically package name)
-     * @return true if vault was deleted
-     */
-    suspend fun clearVault(context: Context, appId: String = context.packageName): Boolean {
-        return VaultManager.clearVault(context, appId)
     }
 }

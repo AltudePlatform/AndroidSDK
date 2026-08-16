@@ -26,7 +26,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "altude-sdk"
 include(":app")
-include(":nft")
 include(":gasstation")
-include(":vault")
 include(":core")
