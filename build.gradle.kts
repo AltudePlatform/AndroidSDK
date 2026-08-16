@@ -8,3 +8,8 @@ plugins {
     kotlin("plugin.serialization") version "2.2.0" apply false
 }
 val buildToolsVersion by extra("35.0.0")
+
+allprojects {
+    group = "com.altude"
+    version = providers.gradleProperty("VERSION_NAME").get()
+}
