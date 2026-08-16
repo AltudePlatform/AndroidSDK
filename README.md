@@ -2,10 +2,10 @@
   <img src="ALTUDE-ICON.jpg" alt="Altude Platform" width="100"/>
 
   # Altude Android SDK
+  
+**Altude is Wallet Infrastructure for Non-Custodial Wallets on Solana**
 
-**Altude is Gasless Wallet Infrastructure for Solana**
-
-***Gasless. Non-custodial. App-owned keys.***
+***Fully Gasless, non-custodial and Simple***
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
@@ -19,38 +19,99 @@
 
 ## 🌟 Overview
 
-Altude is gasless transaction infrastructure for Solana. The Android SDK lets your app send, swap,
-and manage SPL tokens without your users ever needing SOL for gas — Altude sponsors the fees.
+Altude is a comprehensive wallet infrastructure platform designed to simplify building non-custodial wallets on Solana. The Android SDK provides powerful, easy-to-use tools for developers to integrate wallet functionality, gasless transactions, provenance tracking, and more into their Android applications.
 
-The SDK is intentionally small in scope: it does **not** generate, store, or manage private keys on
-your behalf. Your app owns key custody end-to-end and supplies a signer that implements
-[`com.altude.core.model.TransactionSigner`](./core/src/main/java/com/altude/core/model/TransactionSigner.kt).
-How you obtain and protect that signer (Android Keystore, a hardware wallet, a remote signing
-service, or a simple in-memory key) is entirely up to you.
+Whether you're building a DeFi app, NFT marketplace, or Web3 game, Altude provides the building blocks you need to create seamless user experiences on Solana.
 
 ## ✨ Features
 
-- **⛽ Gasless Transactions** - Send, swap, and manage SPL tokens without gas fees
-- **💸 Token Operations** - Send, receive, and swap SPL tokens via Jupiter aggregator
-- **🔑 App-Owned Signing** - You provide a `TransactionSigner`; the SDK never generates or defaults to one
+- **🔑 Wallet Management** - Secure key generation, mnemonic support, and encrypted storage
+- **⛽ Gasless Transactions** - Fully gasless SDK
+- **💸 Token Operations** - Send, receive, and swap SPL tokens gasless
+- **🖼️ NFT Support** - Create collections and mint NFTs without gas fees using Metaplex standards
+- **📊 Provenance Tracking** - Gasless tools for tracking asset provenance on Solana
+- **🔐 Enterprise Security** - Built-in encryption and secure key management
 - **🚀 Developer Friendly** - Clean APIs with full Kotlin coroutine support
+
+- # Status
+<div align="center">
+<table>
+  <tr>
+    <th align="center"> 
+      <b>Module</b>
+    </th>
+    <th align="center">
+      <b>Status</b>
+    </th>
+    <th align="center">
+      <b>Audit Status</b>
+    </th>
+  </tr>
+  <tr>
+    <td align="left"> 
+      Core
+    </td>
+    <td align="center">
+      Complete
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
+  </tr>
+  <tr>
+    <td align="left"> 
+      Gas Station
+    </td>
+    <td align="center">
+      Complete
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
+  </tr>
+  <tr>
+    <td align="left"> 
+      Vault
+    </td>
+    <td align="center">
+      In Construction
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
+  </tr>
+   <tr>
+    <td align="left"> 
+      NFT
+    </td>
+    <td align="center">
+      In Construction
+    </td>
+    <td align="center">
+      Unaudited
+    </td>
+  </tr>
+</table>
+</div>
+<hr/>
 
 ## 📦 Modules
 
-The Altude Android SDK ships two modules, plus a minimal example app:
+The Altude Android SDK is organized into focused modules that can be used independently or together:
 
 ### [`core`](./core)
 **Shared low-level libraries and utilities**
 
-The foundation of the SDK, providing:
+The foundation of the SDK providing:
 - RPC communication with Solana nodes
-- Transaction building
-- Cryptographic primitives (`TransactionSigner` interface, `HotSigner` reference implementation)
-- Mnemonic/keypair helpers and optional encrypted local storage
+- Transaction building and signing
+- Cryptographic primitives
+- Mnemonic and key pair generation
+- Secure storage services
 - Network configuration
 
 ### [`gasstation`](./gasstation)
-**Gasless transaction primitives**
+**Simple gasless primitives**
 
 Enable sponsored transactions for your users:
 - Send tokens without gas fees
@@ -58,60 +119,124 @@ Enable sponsored transactions for your users:
 - Token swaps via Jupiter aggregator
 - Account creation and management
 - Balance and history queries
-- Automatic fee payment handling — requires an app-provided signer (see below)
+- Automatic fee payment handling
 
-### [`app`](./app)
-A minimal example Android app demonstrating the app-owned-signer integration pattern.
+### [`vault`](./vault)
+**Biometric-Protected Key Storage** ⭐ NEW
 
-## 🔑 Signer Ownership Model
+Secure client-side key management with invisible biometric authentication:
+- AES-256-GCM encrypted seed storage
+- BiometricPrompt integration (per-operation or session-based)
+- HKDF-SHA256 deterministic key derivation
+- Multi-wallet support from single seed
+- Zero-knowledge architecture (keys never leave device)
+- Custom signer support (hardware wallet compatible)
 
-Gas Station **requires** an application-provided `TransactionSigner` — there is no default,
-Vault-backed, or SDK-generated signer. You must construct and supply one before Gas Station can
-authorize any transaction:
+**Quick Start:** See [Vault Documentation](./docs/VAULT_DOCUMENTATION_INDEX.md)  
+**Examples:** [VaultExampleActivity](./app/src/main/java/com/altude/android/VaultExampleActivity.kt) • [ErrorHandlingExampleActivity](./app/src/main/java/com/altude/android/ErrorHandlingExampleActivity.kt)
+
+
+### [`nft`](./nft)
+**Gasless tools for NFTs on Solana**
+
+NFT features:
+- Create NFT collections
+- Mint compressed NFTs
+- Metadata management
+- Metaplex Core integration
+
+### [`provenance`](./provenance)
+**Tools for Gasless provenance on Solana**
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Android Studio Arctic Fox or later
+- Minimum SDK: 21 (Android 5.0)
+- Target SDK: 36
+- Kotlin 2.2.0+
+
+### Installation
+
+Add the Altude SDK to your project:
+
+#### Option 1: Using JitPack (Recommended)
+
+Add JitPack to your project's `settings.gradle.kts`:
 
 ```kotlin
-import com.altude.core.model.TransactionSigner
-import com.altude.gasstation.AltudeGasStation
-
-// Implement TransactionSigner yourself (Android Keystore, HSM, hardware wallet,
-// remote signing service, or an in-memory keypair for prototyping).
-val signer: TransactionSigner = MyAppOwnedSigner(/* ... */)
-
-// Required initialization — signer is mandatory, not optional.
-AltudeGasStation.init(context, apiKey, signer)
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
 ```
 
-If no signer is configured, Gas Station calls fail immediately with a clear error rather than
-silently falling back to any default key material.
+Add dependencies to your app's `build.gradle.kts`:
 
-Notes on the signer contract:
-- `core` ships [`HotSigner`](./core/src/main/java/com/altude/core/model/HotSigner.kt) as an
-  optional, explicit `TransactionSigner` implementation apps may choose to use — it is never
-  constructed or registered automatically by the SDK.
-- Individual Gas Station operations also accept a per-call signer override, letting you sign
-  a specific operation with a different key than the one registered at init time.
-- There is no SDK-owned mnemonic/private-key storage or auto-signer path reachable from Gas
-  Station. `AltudeGasStation.init`/`Altude.setApiKey` require a real `TransactionSigner`
-  argument — there is no default or nullable signer path.
+```kotlin
+dependencies {
+    // Core module (required)
+    implementation("com.github.AltudePlatform.AndroidSDK:core:1.0.0")
+    
+    // Gas Station module (for gasless transactions)
+    implementation("com.github.AltudePlatform.AndroidSDK:gasstation:1.0.0")
+    
+    // NFT module (for NFT operations)
+    implementation("com.github.AltudePlatform.AndroidSDK:nft:1.0.0")
+}
+```
 
-## 📖 Quick Examples
+#### Option 2: Local Module
+
+Clone this repository and include it as a local module in your project's `settings.gradle.kts`:
+
+```kotlin
+include(":core", ":gasstation", ":nft")
+project(":core").projectDir = File("path/to/AndroidSDK/core")
+project(":gasstation").projectDir = File("path/to/AndroidSDK/gasstation")
+project(":nft").projectDir = File("path/to/AndroidSDK/nft")
+```
 
 ### Initialize the SDK
 
 ```kotlin
-import com.altude.core.model.TransactionSigner
-import com.altude.gasstation.AltudeGasStation
+import com.altude.core.config.SdkConfig
+import com.altude.gasstation.Altude
 
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-
+        
+        // Initialize SDK
         lifecycleScope.launch {
-            val signer: TransactionSigner = MyAppOwnedSigner(/* ... */)
-            AltudeGasStation.init(this@MyApplication, "your-api-key", signer)
+            SdkConfig.initialize()
+            Altude.setApiKey(this@MyApplication, "your-api-key")
+            
+            // Optional: Set up a wallet with mnemonic
+            Altude.saveMnemonic("your twelve word mnemonic phrase here")
         }
     }
 }
+```
+
+## 📖 Quick Examples
+
+### Create a Wallet
+
+```kotlin
+import com.altude.core.helper.Mnemonic
+import com.altude.gasstation.Altude
+
+// Generate a new 12-word mnemonic
+val mnemonic = Mnemonic.generateMnemonic(12)
+Altude.saveMnemonic(mnemonic)
+
+// Or import an existing one
+Altude.saveMnemonic("your existing mnemonic phrase here")
 ```
 
 ### Send SOL (Gasless)
@@ -122,8 +247,8 @@ import com.altude.gasstation.data.SendOptions
 import com.altude.gasstation.data.Commitment
 
 val sendOptions = SendOptions(
-    account = "",  // Uses the configured signer's account
-    toAddress = "recipient-wallet-address",
+    account = "",  // Uses default wallet
+    to = "recipient-wallet-address",
     amount = 1.0,  // 1 SOL
     token = "So11111111111111111111111111111111111111112", // SOL mint
     commitment = Commitment.confirmed
@@ -131,10 +256,10 @@ val sendOptions = SendOptions(
 
 val result = Altude.send(sendOptions)
 result
-    .onSuccess { response ->
+    .onSuccess { response -> 
         println("Transaction sent! Signature: ${response.Signature}")
     }
-    .onFailure { error ->
+    .onFailure { error -> 
         println("Failed: ${error.message}")
     }
 ```
@@ -144,7 +269,7 @@ result
 ```kotlin
 val sendOptions = SendOptions(
     account = "",
-    toAddress = "recipient-wallet-address",
+    to = "recipient-wallet-address",
     amount = 100.0,
     token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
     commitment = Commitment.confirmed
@@ -163,6 +288,7 @@ val swapOptions = SwapOption(
     inputMint = "So11111111111111111111111111111111111111112", // SOL
     outputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
     amount = 1.0,
+    slippageBps = 50,
     commitment = Commitment.confirmed
 )
 
@@ -176,7 +302,8 @@ import com.altude.gasstation.data.GetBalanceOption
 
 val balanceOptions = GetBalanceOption(
     account = "",
-    token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    commitment = Commitment.confirmed
 )
 
 val result = Altude.getBalance(balanceOptions)
@@ -185,54 +312,97 @@ result.onSuccess { balance ->
 }
 ```
 
+### Create NFT Collection
+
+```kotlin
+import com.altude.nft.NFTSdk
+import com.altude.core.data.CreateNFTCollectionOption
+
+val collectionOptions = CreateNFTCollectionOption(
+    account = "",
+    name = "My Collection",
+    metadataUri = "https://arweave.net/your-metadata-uri",
+    sellerFeeBasisPoints = 500 // 5% royalty
+)
+
+val result = NFTSdk.createNFTCollection(collectionOptions)
+result.onSuccess { response ->
+    println("Collection created! Signature: ${response.signature}")
+}
+```
+
+### Mint an NFT
+
+```kotlin
+import com.altude.core.data.MintOption
+
+val mintOptions = MintOption(
+    account = "",
+    name = "My NFT",
+    symbol = "NFT",
+    uri = "https://arweave.net/your-nft-metadata",
+    sellerFeeBasisPoints = 500,
+    collection = "collection-mint-address",
+    owner = "" // Uses default wallet
+)
+
+val result = NFTSdk.mint(mintOptions)
+```
+
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
 │           Your Android App                  │
-│  (owns and supplies the TransactionSigner)   │
-└───────────────────┬───────────────────────────┘
-                     │
-             ┌───────▼────────┐
-             │  Gas Station   │
-             │    Module      │
-             └───────┬────────┘
-                     │
-             ┌───────▼────────┐
-             │  Core Module   │
-             │  - RPC Layer   │
-             │  - Signer API  │
-             │  - Storage     │
-             └───────┬────────┘
-                     │
-           ┌─────────▼─────────────┐
-           │   Altude Platform     │
-           │(Fee Sponsoring/Relay) │
-           └─────────┬─────────────┘
-                     │
-              ┌──────▼───────┐
-              │    Solana    │
-              │   Blockchain │
-              └──────────────┘
+└─────────────────────────────────────────────┘
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+┌───────▼────────┐    ┌────────▼─────────┐
+│   Gas Station  │    │       NFT        │
+│    Module      │    │     Module       │
+└───────┬────────┘    └────────┬─────────┘
+        │                      │
+        └──────────┬───────────┘
+                   │
+           ┌───────▼────────┐
+           │  Core Module   │
+           │  - RPC Layer   │
+           │  - Crypto      │
+           │  - Storage     │
+           └───────┬────────┘
+                   │
+         ┌─────────▼─────────────┐
+         │   Altude Platform     │
+         │(Fee Sponsoring/Relay) │
+         └─────────┬─────────────┘
+                   │
+            ┌──────▼───────┐
+            │    Solana    │
+            │   Blockchain │
+            └──────────────┘
 ```
 
 ## 🔐 Security
 
-- **App-owned keys**: The SDK never generates, stores, or defaults to a signer — your app controls
-  key custody end-to-end.
-- **Optional encrypted storage**: `core`'s `StorageService` is a standalone utility apps may use
-  directly (not through Gas Station) to store/retrieve key material and build their own
-  `TransactionSigner`. Gas Station never calls it automatically and has no fallback path to it.
-- **Secure communication**: API calls use HTTPS.
-- **Open Source**: Fully auditable code.
+- **Encrypted Storage**: All private keys and mnemonics are encrypted using Android Keystore
+- **Secure Communication**: All API calls use HTTPS with certificate pinning
+- **No Key Exposure**: Private keys never leave the device unencrypted
+- **Open Source**: Fully auditable code
 
 ### Best Practices
 
-- Implement `TransactionSigner` using key storage appropriate for your threat model (Android
-  Keystore, HSM, remote signing service, hardware wallet).
-- Never log or expose private keys or mnemonics.
-- Use appropriate commitment levels for your use case.
-- Validate all user inputs before creating transactions.
+- Always use the secure storage APIs provided by the SDK
+- Never log or expose private keys or mnemonics
+- Use appropriate commitment levels for your use case
+- Validate all user inputs before creating transactions
+
+## 📚 Documentation
+
+- [Full API Reference](https://docs.altude.so/api-reference/introduction) *(Coming Soon)*
+- [Integration Guide](#) *(Coming Soon)*
+- [Example App](./app) - *(Coming Soon)*
+- [Migration Guide](https://docs.altude.so/api-reference/gas-station/converting-from-kinetic)
 
 ## 🛠️ Development
 
@@ -247,8 +417,7 @@ cd AndroidSDK
 ### Running Tests
 
 ```bash
-./gradlew :core:testDebugUnitTest
-./gradlew :gasstation:testDebugUnitTest
+./gradlew test
 ./gradlew connectedAndroidTest
 ```
 
@@ -277,6 +446,7 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 Built with:
 - [Solana](https://solana.com) - High-performance blockchain
+- [Metaplex](https://www.metaplex.com) - NFT standards and tools
 - [Jupiter](https://jup.ag) - Token swap aggregation
 
 ---
