@@ -1,11 +1,13 @@
 package com.altude.gasstation
 
 import android.content.Context
-import com.altude.core.api.GetAccountInfoRequest
-import com.altude.core.api.GetBalanceRequest
+import com.altude.core.Programs.AssociatedTokenAccountProgram
 import com.altude.core.config.SdkConfig
 import com.altude.core.keys.LocalKeyManager
+import com.altude.core.network.AltudeRpc
 import com.altude.core.api.TransactionService
+import com.altude.gasstation.data.Account
+import com.altude.gasstation.data.AccountInfo
 import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.CreateAccountOption
@@ -25,7 +27,10 @@ import com.altude.gasstation.data.GetAccountResponse
 import com.altude.gasstation.data.GetBalanceResponse
 import com.altude.gasstation.data.SwapOption
 import com.altude.gasstation.data.Token
+import com.altude.gasstation.data.TokenInfo
 import com.altude.gasstation.data.TransactionResponse
+import com.altude.gasstation.helper.Utility
+import foundation.metaplex.solanapublickeys.PublicKey
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -268,14 +273,65 @@ object Altude {
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getBalance(
         option: GetBalanceOption
-    ): Result<GetBalanceResponse> = withContext(Dispatchers.IO)  {
+    ): Result<GetBalanceResponse> = withContext(Dispatchers.IO) {
         try {
             val account = resolveAccount(option.account)
-            val service = SdkConfig.createService(TransactionService::class.java)
-            val request = GetBalanceRequest(account, option.token)
+            val isSol = option.token.isBlank() ||
+                option.token == Token.SOL.mint() ||
+                option.token == "11111111111111111111111111111111" ||
+                option.token.equals("SOL", ignoreCase = true)
 
-            val res = service.getBalance(request).await()
-            Result.success(deCodeJson<GetBalanceResponse>(res))
+            if (isSol) {
+                val rpc = AltudeRpc(Utility.QUICKNODE_URL)
+                val lamports = rpc.getBalance(account)
+                val balance = lamports.toDouble() / 1_000_000_000.0
+                return@withContext Result.success(
+                    GetBalanceResponse(
+                        TokenInfos = emptyList(),
+                        AccountAddress = account,
+                        Balance = balance,
+                        Symbol = "SOL"
+                    )
+                )
+            }
+
+            val ownerPubkey = PublicKey(account)
+            val mintPubkey = PublicKey(option.token)
+            val ata = AssociatedTokenAccountProgram.deriveAtaAddress(ownerPubkey, mintPubkey)
+            var ataInfo = Utility.getAccountInfo(ata.toBase58())
+            var tokenAccountPubkey = ata.toBase58()
+
+            if (ataInfo == null) {
+                val directInfo = Utility.getAccountInfo(account)
+                if (directInfo?.data?.parsed?.info?.tokenAmount != null) {
+                    ataInfo = directInfo
+                    tokenAccountPubkey = account
+                }
+            }
+
+            val balance = ataInfo?.data?.parsed?.info?.tokenAmount?.uiAmount ?: 0.0
+            val symbol = Token.entries.find { it.mint() == option.token }?.name
+
+            val tokenInfo = if (ataInfo != null) {
+                TokenInfo(
+                    pubkey = tokenAccountPubkey,
+                    Account = Account(
+                        Lamports = ataInfo.lamports,
+                        Owner = ataInfo.owner,
+                        Executable = ataInfo.executable,
+                        RentEpoch = ataInfo.rentEpoch
+                    )
+                )
+            } else null
+
+            Result.success(
+                GetBalanceResponse(
+                    TokenInfos = if (tokenInfo != null) listOf(tokenInfo) else emptyList(),
+                    AccountAddress = account,
+                    Balance = balance,
+                    Symbol = symbol
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -285,14 +341,37 @@ object Altude {
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getAccountInfo(
         option: GetAccountInfoOption = GetAccountInfoOption()
-    ): Result<GetAccountResponse> = withContext(Dispatchers.IO)  {
+    ): Result<GetAccountResponse> = withContext(Dispatchers.IO) {
         try {
             val account = resolveAccount(option.account)
-            val service = SdkConfig.createService(TransactionService::class.java)
-            val request = GetAccountInfoRequest(account)
+            val info = Utility.getAccountInfo(account)
+            val accountInfo = AccountInfo(
+                Lamports = info?.lamports ?: 0L,
+                Owner = info?.owner,
+                Executable = info?.executable,
+                RentEpoch = info?.rentEpoch
+            )
+            val tokenInfos = if (info?.data?.parsed?.info?.tokenAmount != null) {
+                listOf(
+                    TokenInfo(
+                        pubkey = account,
+                        Account = Account(
+                            Lamports = info.lamports,
+                            Owner = info.owner,
+                            Executable = info.executable,
+                            RentEpoch = info.rentEpoch
+                        )
+                    )
+                )
+            } else emptyList()
 
-            val res = service.getAccountInfo(request).await()
-            Result.success(deCodeJson<GetAccountResponse>(res))
+            Result.success(
+                GetAccountResponse(
+                    AccountAddress = account,
+                    AccountInfo = accountInfo,
+                    TokenInfos = tokenInfos
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

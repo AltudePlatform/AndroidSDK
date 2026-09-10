@@ -129,6 +129,33 @@ class AltudeRpc(val endpoint: String) {
 
         return resp.result ?: error("No result returned")
     }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun getBalance(publicKey: String, commitment: String = "finalized"): Long {
+        token = getValidToken() ?: error("No valid token")
+        val params: MutableList<JsonElement> = mutableListOf()
+        params.add(json.encodeToJsonElement(publicKey))
+        params.add(json.encodeToJsonElement(CommitmentParam(commitment)))
+
+        val rpcRequest = JsonRpc20Request(
+            jsonrpc = "2.0",
+            method = "getBalance",
+            params = JsonArray(content = params),
+            id = "${Random.nextUInt()}"
+        )
+
+        val resp: RpcResponse<BalanceResult> = rpcService.callRpcTyped(
+            json,
+            "******",
+            rpcRequest
+        )
+
+        if (resp.error != null) {
+            throw IllegalStateException("RPC error ${resp.error.code}: ${resp.error.message}")
+        }
+
+        return resp.result?.value ?: 0L
+    }
     @OptIn(ExperimentalSerializationApi::class)
     suspend inline fun <reified T>getAccountInfo(publicKey:String, isBase64: Boolean = false): T {
         token = getValidToken()
@@ -205,5 +232,11 @@ class AltudeRpc(val endpoint: String) {
 
     @kotlinx.serialization.Serializable
     data class RpcContext(val slot: Long)
+
+    @kotlinx.serialization.Serializable
+    data class BalanceResult(
+        val context: RpcContext? = null,
+        val value: Long = 0L
+    )
 }
 

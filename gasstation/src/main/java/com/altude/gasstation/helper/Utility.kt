@@ -9,8 +9,9 @@ import com.altude.gasstation.data.LookUpTableResult
 import com.altude.gasstation.data.LookUpTableValue
 
 
-object  Utility {
-    val QUICKNODE_URL = SdkConfig.apiConfig.RpcUrl//"https://cold-holy-dinghy.solana-devnet.quiknode.pro/8cc52fd5faf72bedbc72d9448fba5640cd728ace/"//"https://multi-ultra-frost.solana-devnet.quiknode.pro/417151c175bae42230bf09c1f87acda90dc21968/" //change this with envi variable
+object Utility {
+    val QUICKNODE_URL: String
+        get() = SdkConfig.apiConfig.RpcUrl
     suspend fun getAccountInfo(publicKey: String, useBase64: Boolean = false): AccountInfoValue? {
         val rpc = AltudeRpc(QUICKNODE_URL)
         return  rpc.getAccountInfo<AccountInfoResult>(publicKey).value
