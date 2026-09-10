@@ -37,11 +37,13 @@ class ExampleInstrumentedTest {
     private lateinit var context: Context
 
     @Before
-    fun setup()=runBlocking{
-        context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        // Use an explicit signer here so each test has deterministic key material.
-        val placeholderSigner = HotSigner(KeyPair.generate())
-        Altude.setApiKey(context, "", placeholderSigner)
+    fun setup() {
+        runBlocking {
+            context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
+            // Use an explicit signer here so each test has deterministic key material.
+            val placeholderSigner = HotSigner(KeyPair.generate())
+            Altude.setApiKey(context, "", placeholderSigner)
+        }
     }
 
     @Test
