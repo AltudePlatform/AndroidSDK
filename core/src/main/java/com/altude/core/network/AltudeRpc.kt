@@ -154,7 +154,7 @@ class AltudeRpc(val endpoint: String) {
             throw IllegalStateException("RPC error ${resp.error.code}: ${resp.error.message}")
         }
 
-        return resp.result?.value ?: 0L
+        return resp.result?.value ?: error("No result returned")
     }
     @OptIn(ExperimentalSerializationApi::class)
     suspend inline fun <reified T>getAccountInfo(publicKey:String, isBase64: Boolean = false): T {
