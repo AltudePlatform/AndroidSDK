@@ -18,11 +18,13 @@ import org.junit.Test
 class ExampleLatencyTest {
     private lateinit var context: Context
     @Before
-    fun setup()=runBlocking{
-        context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
-        // Use an explicit signer so latency tests have deterministic key material.
-        val signer = HotSigner(KeyPair.generate())
-        Altude.setApiKey(context, "", signer)
+    fun setup() {
+        runBlocking {
+            context = InstrumentationRegistry.getInstrumentation().targetContext//ApplicationProvider.getApplicationContext()
+            // Use an explicit signer so latency tests have deterministic key material.
+            val signer = HotSigner(KeyPair.generate())
+            Altude.setApiKey(context, "", signer)
+        }
     }
     suspend fun <T>measureLatency(label: String, action: suspend () -> T): Long {
         val start = System.currentTimeMillis()

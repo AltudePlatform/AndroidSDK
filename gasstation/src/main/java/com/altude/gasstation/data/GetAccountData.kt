@@ -3,7 +3,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GetBalanceResponse(
-    val TokenInfos: List<TokenInfo?>,
+    val TokenInfos: List<TokenInfo?> = emptyList(),
     val AccountAddress: String? = null,
     val Balance: Double? = null,
     val Symbol: String? = null
@@ -54,9 +54,9 @@ data class TokenAmount(
 
 @Serializable
 data class GetAccountResponse(
-    val AccountAddress: String,
-    val AccountInfo: AccountInfo,
-    val TokenInfos: List<TokenInfo>
+    val AccountAddress: String = "",
+    val AccountInfo: AccountInfo = AccountInfo(),
+    val TokenInfos: List<TokenInfo> = emptyList()
 )
 
 @Serializable

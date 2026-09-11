@@ -23,17 +23,6 @@ interface IBatchTransactionRequest{
 }
 
 @Serializable
-data class GetBalanceRequest(
-    val accountAddress: String,
-    val mintAddress: String
-)
-
-@Serializable
-data class GetAccountInfoRequest(
-    val accountAddress: String,
-)
-
-@Serializable
 data class QuickNodeResponse(
     val token: String,
 )
@@ -70,16 +59,6 @@ interface TransactionService {
     @POST("api/account/close")
     fun closeAccount(
         @Body body: SendTransactionRequest
-    ): Call<JsonElement>
-
-    @POST("api/account/balance")
-    fun getBalance(
-        @Body body: GetBalanceRequest
-    ): Call<JsonElement>
-
-    @POST("api/account/getaccountinfo")
-    fun getAccountInfo(
-        @Body body: GetAccountInfoRequest
     ): Call<JsonElement>
 
     @POST("api/account/gethistory")

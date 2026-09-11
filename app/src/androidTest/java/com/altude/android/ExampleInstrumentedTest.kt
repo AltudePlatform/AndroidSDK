@@ -7,6 +7,7 @@ import com.altude.gasstation.Altude
 import com.altude.gasstation.data.CloseAccountOption
 import com.altude.gasstation.data.Commitment
 import com.altude.gasstation.data.CreateAccountOption
+import com.altude.gasstation.data.GetBalanceOption
 import com.altude.gasstation.data.KeyPair
 import com.altude.gasstation.data.Token
 import kotlinx.coroutines.runBlocking
@@ -25,11 +26,13 @@ import org.junit.Before
 @RunWith(AndroidJUnit4::class)
 class ExampleInstrumentedTest {
     @Before
-    fun setup()=runBlocking{
-        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        // Use an explicit signer here so each test has deterministic key material.
-        val placeholderSigner = HotSigner(KeyPair.generate())
-        Altude.setApiKey(appContext, "my_apikey", placeholderSigner)
+    fun setup() {
+        runBlocking {
+            val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+            // Use an explicit signer here so each test has deterministic key material.
+            val placeholderSigner = HotSigner(KeyPair.generate())
+            Altude.setApiKey(appContext, "", placeholderSigner)
+        }
     }
     @Test
     fun useAppContext() {
@@ -84,5 +87,28 @@ class ExampleInstrumentedTest {
 
         // Add an assert if needed
         assert(closeresult.isSuccess)
+    }
+
+    @Test
+    fun testBalance() = runBlocking {
+        val options = GetBalanceOption(
+            account = "ALTn7gyjm29WthZGgs4z6WVAK2PK5U6w4FAtPg3TPY71",
+            //token = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            )
+
+        // Wrap the callback in a suspendable way (like a suspendCoroutine)
+        val result = Altude.getBalance(options)
+
+        result
+            .onSuccess {
+                println("✅ Sent: $it")
+            }
+            .onFailure {
+                println("❌ Failed: ${it.message}")
+            }
+
+        // Add an assert if needed
+        assertTrue("Expected balance query to succeed", result.isSuccess)
+
     }
 }
