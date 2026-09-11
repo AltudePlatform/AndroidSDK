@@ -303,7 +303,9 @@ object Altude {
 
             if (ataInfo == null) {
                 val directInfo = Utility.getAccountInfo(account)
-                if (directInfo?.data?.parsed?.info?.tokenAmount != null) {
+                if (directInfo?.data?.parsed?.info?.let {
+                        it.tokenAmount != null && it.mint == option.token
+                    } == true) {
                     ataInfo = directInfo
                     tokenAccountPubkey = account
                 }
