@@ -108,7 +108,7 @@ class ExampleInstrumentedTest {
             }
 
         // Add an assert if needed
-        assert(result.isSuccess)
+        assertTrue("Expected balance query to succeed", result.isSuccess)
 
     }
 }
