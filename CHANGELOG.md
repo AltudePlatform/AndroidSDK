@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7-alpha.2](https://github.com/AltudePlatform/AndroidSDK/compare/v0.1.7-alpha.1...v0.1.7-alpha.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **gasstation:** redirect getBalance and getAccountInfo directly to RPC ([f938982](https://github.com/AltudePlatform/AndroidSDK/commit/f938982937527e15e1d138784b812aab8606a406))
+* **gasstation:** redirect getBalance and getAccountInfo directly to RPC ([4e3f33d](https://github.com/AltudePlatform/AndroidSDK/commit/4e3f33db8ba364f20af24251ca08e2e1a2852221))
+
 ## [0.1.7-alpha.1](https://github.com/AltudePlatform/AndroidSDK/compare/v0.1.7-alpha...v0.1.7-alpha.1) (2026-08-16)
 
 
